@@ -1,0 +1,15 @@
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Claude Code session leftovers
+.claude/worktrees/
+.claude/sessions/
+
+# Local state from runs
+/tmp/issue-runner/

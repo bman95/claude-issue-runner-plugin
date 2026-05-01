@@ -1,0 +1,20 @@
+{
+  "name": "issue-runner",
+  "version": "0.1.0",
+  "description": "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue, runs each issue through an Explore -> optional Plan -> Implement-in-worktree pipeline, parallelizes independent issues with a configurable cap, and cascades skip on failure. Triggered by /issue-runner.",
+  "author": {
+    "name": "Bryan Frias",
+    "email": "bfrias@sicma21.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "issues",
+    "workflow",
+    "orchestration",
+    "subagents",
+    "automation",
+    "worktree",
+    "codex"
+  ]
+}
