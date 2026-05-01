@@ -1,7 +1,7 @@
 {
   "name": "issue-runner",
-  "version": "0.1.0",
-  "description": "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue, runs each issue through an Explore -> optional Plan -> Implement-in-worktree pipeline, parallelizes independent issues with a configurable cap, and cascades skip on failure. Triggered by /issue-runner.",
+  "version": "0.2.0",
+  "description": "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue, runs each issue through an Explore -> optional Plan -> Implement-in-worktree pipeline, parallelizes independent issues with a configurable cap, and cascades skip on failure. Bundles the gh-issue implementer skill so the plugin is self-contained. Triggered by /issue-runner.",
   "author": {
     "name": "Bryan Frias",
     "email": "bfrias@sicma21.com"

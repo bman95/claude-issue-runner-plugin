@@ -2,6 +2,31 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.2.0] - 2026-05-01
+
+### Bundled gh-issue skill
+
+The plugin is now self-contained: the `gh-issue` skill (the implementer procedure that every per-issue subagent inlines) lives at `skills/gh-issue/SKILL.md` inside this plugin instead of being read by absolute path from `~/.claude/skills/gh-issue/`. Users installing the plugin via a marketplace no longer need a separate `gh-issue` install.
+
+- Moved `skills/gh-issue/SKILL.md` (203 lines, version 0.1.0) into the plugin.
+- For local development, the `~/.claude/skills/gh-issue` directory is now a symlink to the bundled copy — single source of truth, `/gh-issue` continues to work standalone.
+- Added `version: 0.1.0` to `gh-issue`'s frontmatter (independent of the plugin's version).
+
+### Skill-spec changes (`skills/issue-runner/SKILL.md`)
+
+- **New Step 0 — resolve bundled dependencies.** Runs once at the start of every invocation. Resolves `$GH_ISSUE_SKILL` to an absolute path using `${CLAUDE_PLUGIN_ROOT}/skills/gh-issue/SKILL.md` (preferred, set by Claude Code for installed plugins) or `${HOME}/.claude/skills/gh-issue/SKILL.md` (local dev fallback via symlink). Fails loudly if neither resolves. The orchestrator must substitute the resolved path into implementer dispatch prompts because subagents do not necessarily inherit `CLAUDE_PLUGIN_ROOT`. For orchestrated runs the resolved path is also written to `$STATE_DIR/gh_issue_skill_path` for forensics.
+- Replaced both hard-coded references to `~/.claude/skills/gh-issue/SKILL.md` (Step 1c single-issue fast path, Step 4a implementer dispatch template) with `$GH_ISSUE_SKILL` / `<GH_ISSUE_SKILL>` placeholders.
+
+### Plugin metadata
+
+- `plugin.json` version 0.1.0 → 0.2.0.
+- `plugin.json` description updated to mention the bundled `gh-issue` skill.
+- `README.md`: removed the "hard dependency on gh-issue" known limitation; added a "gh-issue is forked into this plugin" caveat (trade-off for self-containment); installation snippet now creates two symlinks for local dev.
+
+### Versioning rationale
+
+Pre-1.0 minor bumps are reserved for meaningful structural changes. Bundling a previously-external dependency qualifies — even though it is functionally backwards-compatible (the fallback path keeps existing local installs working), the deployment unit is now different.
+
 ## [0.1.0] - 2026-04-30
 
 Initial versioned release. Wraps the existing `issue-runner` skill (previously living loose in `~/.claude/skills/`) into a publishable Claude Code plugin.

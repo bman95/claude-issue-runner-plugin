@@ -15,9 +15,12 @@ This plugin is not yet published to a public marketplace. To install locally:
 ```bash
 git clone <this-repo> ~/personal/claude-issue-runner-plugin
 ln -s ~/personal/claude-issue-runner-plugin/skills/issue-runner ~/.claude/skills/issue-runner
+ln -s ~/personal/claude-issue-runner-plugin/skills/gh-issue ~/.claude/skills/gh-issue
 ```
 
 Reload Claude Code (or run `/reload-plugins` if available) and invoke `/issue-runner`.
+
+When this plugin is installed via a marketplace, the symlinks above are not needed — Claude Code discovers both bundled skills (`issue-runner` and `gh-issue`) inside the plugin's install directory and exposes `${CLAUDE_PLUGIN_ROOT}` so `issue-runner` can locate `gh-issue` portably (see Step 0 in `skills/issue-runner/SKILL.md`).
 
 ## Usage
 
@@ -37,10 +40,11 @@ The full procedure is documented inside `skills/issue-runner/SKILL.md` (the orch
 
 - **Claude Code** with the Agent and Bash tools available.
 - **GitHub CLI (`gh`)** installed and authenticated against the target repository.
-- **`gh-issue` skill** at `~/.claude/skills/gh-issue/SKILL.md`. The issue-runner inlines its procedure for every implementer dispatch and reads it by absolute path. This dependency is not bundled in this plugin yet (see "Known limitations" below).
 - **`codex` CLI** if you want the Codex review loop to run inside implementers (`codex review --base $BASE_BRANCH`).
 - **`/codex:rescue` plugin command** for Step 5's "Hand off to /codex:rescue" escalation. Optional but referenced by the spec.
 - **Git worktree support** (any modern git, >= 2.5).
+
+The `gh-issue` skill (the implementer procedure) is **bundled** in this plugin under `skills/gh-issue/` — no separate installation needed.
 
 ## What it does well
 
@@ -53,10 +57,10 @@ The full procedure is documented inside `skills/issue-runner/SKILL.md` (the orch
 
 ## Known limitations
 
-- **Hard dependency on `gh-issue` skill** by absolute path. Distributing this plugin without the user already having `gh-issue` installed will break implementer dispatch. A future version should either bundle `gh-issue` as a sibling skill in this plugin or declare it as a prerequisite plugin.
 - **Single-host, single-user assumption.** Two concurrent `/issue-runner` runs on the same machine collide on `/tmp/issue-runner/state/`. See "Hard rules" in `SKILL.md`.
-- **Not auto-invocable** (`disable-model-invocation: true`). The skill only runs when the user types `/issue-runner` — it never auto-loads from descriptions.
+- **Not auto-invocable** (`disable-model-invocation: true`). The skill only runs when the user types `/issue-runner` — it never auto-loads from descriptions. Same for `/gh-issue`.
 - **No automated tests yet.** Behavior is validated by production runs documented in `CHANGELOG.md`.
+- **`gh-issue` is forked into this plugin.** If the upstream `gh-issue` skill (if/when published independently) gains improvements, they have to be manually merged here. Trade-off accepted to keep the plugin self-contained on install.
 
 ## Versioning
 

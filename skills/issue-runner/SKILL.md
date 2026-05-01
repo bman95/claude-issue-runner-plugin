@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.1.0
+version: 0.2.0
 disable-model-invocation: true
 description: "Multi-issue GitHub workflow that you (Claude Code) orchestrate end-to-end with subagents. Builds a dependency DAG over the open-issue queue, runs each issue through an Explore → optional Plan → Implement-in-worktree pipeline, parallelizes independent issues up to a cap, and cascades skip on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -57,6 +57,36 @@ Run-level files in `$STATE_DIR/`:
 
 ## Workflow
 
+### Step 0 — resolve bundled dependencies
+
+This skill depends on the bundled `gh-issue` skill (the implementer procedure that every per-issue subagent inlines). Resolve its absolute path **once** at the start of every run, before scope determination, and reuse the resolved path for all subsequent references in this document — including in implementer dispatch prompts.
+
+Resolution order, first hit wins:
+
+1. **Plugin install (preferred):** `${CLAUDE_PLUGIN_ROOT}/skills/gh-issue/SKILL.md`. `CLAUDE_PLUGIN_ROOT` is set automatically by Claude Code when this skill runs as part of an installed plugin.
+2. **Local development:** `${HOME}/.claude/skills/gh-issue/SKILL.md`. This works when the skill is symlinked into `~/.claude/skills/` directly from a development checkout.
+3. **Fail loudly.** If neither path resolves to an existing file, stop and tell the user that `gh-issue` is missing. Do not attempt to continue with a synthetic procedure.
+
+Concretely:
+
+```bash
+GH_ISSUE_SKILL=""
+for candidate in \
+    "${CLAUDE_PLUGIN_ROOT:-/nonexistent}/skills/gh-issue/SKILL.md" \
+    "${HOME}/.claude/skills/gh-issue/SKILL.md"; do
+  if [ -f "$candidate" ]; then
+    GH_ISSUE_SKILL="$candidate"
+    break
+  fi
+done
+[ -n "$GH_ISSUE_SKILL" ] || { echo "gh-issue skill not found" >&2; exit 1; }
+echo "$GH_ISSUE_SKILL"
+```
+
+Save the resolved path. Wherever the rest of this document refers to `$GH_ISSUE_SKILL` (or to "the gh-issue skill"), substitute the resolved absolute path — including when constructing implementer dispatch prompts (Step 4a). Subagents do not necessarily inherit `CLAUDE_PLUGIN_ROOT`, so always pass the resolved absolute path into the prompt rather than relying on the env var being available downstream.
+
+For orchestrated runs, also write the resolved path to `$STATE_DIR/gh_issue_skill_path` once state is initialized in 1d, so any post-mortem inspection can see which copy was used.
+
 ### Step 1 — determine scope
 
 Compute the working scope **before** initializing any state directory. The fast path and `--plan` exit must not leave behind a rotated `state.prev.*`.
@@ -91,7 +121,7 @@ Explicit-number runs bypass both the parked filter and the scope-shaping addendu
 
 **1c. Single-issue fast path.** If the resulting scope size == 1, **stop here**:
 - Do **not** initialize `/tmp/issue-runner/state` (no rotation, no `mkdir`, no prune).
-- Read `~/.claude/skills/gh-issue/SKILL.md` and follow the procedure inline on the target issue.
+- Read `$GH_ISSUE_SKILL` (resolved in Step 0) and follow the procedure inline on the target issue.
 - Same procedure as the user typing `/gh-issue N` directly — no worktree, no state directory, no DAG.
 - Because this is the **interactive** gh-issue path (not an orchestrated implementer dispatch), gh-issue Step 3 still asks the user for plan confirmation unless the issue is straightforward.
 
@@ -225,7 +255,9 @@ description: "Implement issue #N"
 prompt: |
   Implement GitHub issue #<N> end-to-end.
 
-  Follow the procedure in ~/.claude/skills/gh-issue/SKILL.md exactly:
+  Follow the procedure in <GH_ISSUE_SKILL> exactly (the parent has
+  resolved this to an absolute path before dispatching you — read
+  it from the path inserted here, not from any other location):
   understand → branch → implement → commit → push → open PR → run
   the layered review (local /review inline + codex review CLI loop)
   → merge.
