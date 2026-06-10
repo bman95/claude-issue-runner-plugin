@@ -15,7 +15,7 @@ You are the orchestrator. You drive the entire run yourself using subagents (`Ag
 - `/issue-runner 42 43 44` — only the listed issue numbers (label filter is bypassed; the user already chose)
 - `/issue-runner --plan` — build the DAG, print it, exit (no execution)
 - `/issue-runner --sequential` — equivalent to `--max-parallel 1`
-- `/issue-runner --max-parallel N` — concurrency cap (default 2)
+- `/issue-runner --max-parallel N` — concurrency cap (default 10)
 - `/issue-runner --max-codex-iterations N` — pass-through cap for the gh-issue Step 8b Codex review loop in every implementer (default 3). After a prior run blocker'd on cap-stop, bumping this in a subsequent `/issue-runner` invocation gives the next implementer a higher iteration budget — but that subsequent run is a **fresh orchestration** (new exploration, new branch, new PR), not a resume. The skill does not detect or reuse an existing PR for the same issue. **Operational consequence:** if the prior blocked run already opened a PR for this issue, you'll end up with two PRs for the same issue unless you `gh pr close` (or merge) the old one before re-running. Closing the old PR is usually the right move; its branch and review trail are preserved on the closed PR for forensics.
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass
 
@@ -228,7 +228,7 @@ Save to `$STATE_DIR/issue-N/plan.md`.
 
 ### Step 4 — execute pipelines
 
-Set `MAX_PARALLEL` (default 2, override by flag). Mark all in-scope issues `status=pending`.
+Set `MAX_PARALLEL` (default 10, override by flag). Mark all in-scope issues `status=pending`.
 
 Loop until every issue has terminal status (`done`/`failed`/`skipped`):
 
