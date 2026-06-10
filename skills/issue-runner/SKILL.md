@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.2.0
+version: 0.3.0
 disable-model-invocation: true
 description: "Multi-issue GitHub workflow that you (Claude Code) orchestrate end-to-end with subagents. Builds a dependency DAG over the open-issue queue, runs each issue through an Explore → optional Plan → Implement-in-worktree pipeline, parallelizes independent issues up to a cap, and cascades skip on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -459,14 +459,44 @@ After the loop ends:
 
   Sanity-check by confirming `git rev-parse --is-inside-work-tree` returns `true` and `git status` shows the expected branch.
 
-- **Remove worktrees for `done` issues.** Parse the `worktree: <path>` line out of each implementer's final message (the dispatch prompt in Step 4a requires it). The Agent tool keeps a lock file on every worktree it created (`lock reason: claude agent agent-XXX (pid <parent>)`), so plain `git worktree remove --force` is insufficient — git explicitly prints `use 'remove -f -f' to override or unlock first`. Use:
+- **Resolve the default branch once** before the cleanup loop — the branch deletions below must never target it:
 
   ```bash
-  git worktree unlock "$WT" 2>/dev/null || true
-  git worktree remove -f "$WT" || git worktree remove -f -f "$WT"
+  DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
+  [ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)   # parent stays on the default branch (Hard rules)
   ```
 
-  For `failed` / `skipped` issues, leave the worktree in place for forensics and record the path in `$STATE_DIR/issue-N/worktree`. After the per-issue loop completes, run `git worktree prune` once to reconcile any local-branch-delete leftovers from `gh pr merge --delete-branch` (see Step 4a override 3 cosmetic-failure note).
+- **Remove worktrees for `done` issues, then delete their merged local branches.** Parse the `worktree: <path>` line out of each implementer's final message (the dispatch prompt in Step 4a requires it). The Agent tool keeps a lock file on every worktree it created (`lock reason: claude agent agent-XXX (pid <parent>)`), so plain `git worktree remove --force` is insufficient — git explicitly prints `use 'remove -f -f' to override or unlock first`. Capture the branch first (it becomes a dangling local ref once the worktree is gone), remove the worktree, then delete the branch:
+
+  ```bash
+  WT_BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  git worktree unlock "$WT" 2>/dev/null || true
+  git worktree remove -f "$WT" || git worktree remove -f -f "$WT"
+
+  # This issue is `done` → its PR merged and closed it, so the branch is
+  # merged even though `gh pr merge --delete-branch` only removed the REMOTE
+  # copy. Use -D, NOT -d: a `--squash` merge (Step 4a's default) rewrites
+  # history, so the branch's commits are not ancestors of the squashed
+  # default-branch commit and `-d` would wrongly refuse ("not fully merged").
+  # -D is safe here precisely because `done` is positive proof of merge —
+  # never run this for failed/skipped. `git branch -D` still refuses a branch
+  # checked out in another worktree, which protects a concurrent run's branch.
+  if [ -n "$WT_BRANCH" ] && [ "$WT_BRANCH" != HEAD ] && [ "$WT_BRANCH" != "$DEFAULT_BRANCH" ]; then
+    git branch -D "$WT_BRANCH" 2>/dev/null || true
+  fi
+  ```
+
+  For `failed` / `skipped` issues, leave both the worktree AND its branch in place for forensics and record the path in `$STATE_DIR/issue-N/worktree`. After the per-issue loop completes, run `git worktree prune` once to reconcile any local-branch-delete leftovers from `gh pr merge --delete-branch` (see Step 4a override 3 cosmetic-failure note).
+
+- **Sweep merged scratch branches.** The Agent tool creates each worktree on a `worktree-agent-<hash>` branch and the implementer branches off it, leaving the scratch branch behind, pointing at the base commit (a true ancestor of the default branch). The per-issue deletion above misses these — the worktree's checked-out branch was the `feat/...` branch, not the scratch one. After `git worktree prune`, sweep any that survive:
+
+  ```bash
+  git for-each-ref --format='%(refname:short)' refs/heads/ \
+    | grep -E '^worktree-agent-' \
+    | while read -r b; do git branch -d "$b" 2>/dev/null || true; done
+  ```
+
+  Use `-d` (not `-D`) here: these point at ancestors of the default branch, so the safe ancestry check passes for genuinely-merged scratch branches and refuses any that unexpectedly carry unmerged commits. Branches checked out in a live worktree (a concurrent run) are refused automatically. The `worktree-agent-*` name is the Agent tool's current convention — if a Claude Code version changes it, this sweep is belt-and-suspenders only; the per-`done`-issue deletion above is the primary mechanism.
 
 - **Verify the main repo is clean.** Run `git status --porcelain=v1 -uall` and compare against the snapshot taken in Step 1c-pre. Anything new is either a leaked side-effect of orchestration (report to the user, don't auto-discard) or a continuation of pre-existing dirty state the user explicitly accepted. Surface the diff.
 
@@ -488,6 +518,7 @@ After the loop ends:
 
 - **Stuck pending issues at end of run** — the DAG has a cycle. Inspect `$STATE_DIR/dag.json` and re-run with `--no-llm-refine` if the LLM pass added a bogus edge.
 - **Worktrees leaking under `~/.cache/` or wherever the Agent tool put them** — `git worktree prune` in the target repo. The cleanup step in Step 6 should prevent this for `done` issues; `failed`/`skipped` issues may leave worktrees behind for forensics.
+- **Merged feature branches piling up locally** — `gh pr merge --delete-branch` deletes only the *remote* branch; the local copy lingers, and after a `--squash` merge `git branch -d` refuses it (the squashed commit isn't a descendant of the branch tip, so git can't prove the branch is merged). Step 6 force-deletes each `done` issue's branch (`git branch -D`, gated on `done` = positive proof of merge) and sweeps leftover `worktree-agent-*` scratch branches with `-d`. Branches from an *aborted* run are intentionally left behind — delete them by hand after confirming their PR merged: `git branch -D <name>` (squash/rebase) or `git branch -d <name>` (merge-commit).
 - **`fatal: cannot remove a locked working tree, lock reason: claude agent agent-XXX (pid <N>)`** — the Agent tool keeps a process-scoped lock on every worktree it created until the parent session exits. Step 6's recipe (`git worktree unlock` then `git worktree remove -f -f`) handles it. If a leftover lock survives the session entirely, `rm -rf "$WT/.git"` then `git worktree prune` from the main repo as last resort.
 - **`gh pr merge --delete-branch` printed `fatal: 'main' is already used by worktree at ...`** — cosmetic. The server-side merge and remote branch deletion both succeeded; only the local-branch-delete failed because the implementer was running from a worktree where `main` is checked out elsewhere by the parent. `git worktree prune` reconciles after Step 6.
 - **Final summary says scope was clean but `git status` shows leftover staged files** — Step 1c-pre missed something or was skipped. Diff against `$STATE_DIR/issue-N/` to see whether the file came from an orchestrated commit (look in `git log` of each branch). If it predates the run, it's pre-existing dirty state the user accepted in 1c-pre and Step 6's "Verify the main repo is clean" step would have surfaced it.

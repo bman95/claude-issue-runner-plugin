@@ -2,6 +2,18 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.3.0] - 2026-06-10
+
+### Step 6 now cleans up merged local branches
+
+Previously, Step 6 removed worktrees and ran `git worktree prune`, but never deleted the **local** branches left behind after merge. `gh pr merge --delete-branch` (Step 4a) only deletes the *remote* branch, so each completed issue leaked its local `feat/...` branch plus the Agent tool's `worktree-agent-<hash>` scratch branch. Over several runs these accumulate and have to be pruned by hand.
+
+- **Per-`done`-issue branch deletion.** The worktree-removal recipe now captures each `done` issue's branch before removing the worktree and force-deletes it (`git branch -D`). `-D` (not `-d`) is required because Step 4a's default `--squash` merge rewrites history — the branch's commits are not ancestors of the squashed default-branch commit, so `git branch -d` would refuse it. `-D` is safe here because `done` status is positive proof the PR merged; `failed`/`skipped` branches are left in place for forensics.
+- **Scratch-branch sweep.** After `git worktree prune`, a sweep deletes leftover `worktree-agent-*` branches with the safe `git branch -d` (they point at ancestors of the default branch). Belt-and-suspenders for the Agent tool's current branch-naming convention.
+- **Default-branch resolution** added at the top of the Step 6 cleanup so branch deletions never target it.
+- Both deletions rely on `git branch`'s built-in refusal to delete a branch checked out in another worktree, which protects a concurrent run's in-flight branch.
+- New Troubleshooting entry covering the squash-vs-`-d` ancestry gotcha and how to clean branches from an aborted run by hand.
+
 ## [0.2.0] - 2026-05-01
 
 ### Bundled gh-issue skill
