@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.1.0
+version: 0.2.0
 description: Picks up a GitHub issue, implements the required changes, and opens a pull request.
 disable-model-invocation: true
 ---
@@ -14,7 +14,7 @@ Takes a GitHub issue number, reads its details and discussion, implements the re
 The user may provide an issue number (e.g., `/gh-issue 42` or `/gh-issue #42`). If no number is provided, list open issues, analyze them, and propose which one(s) to work on — do NOT ask the user for a number.
 
 Optional flags:
-- `--max-codex-iterations N` — cap on Codex review/fix cycles in step 8b (default 3). Raise for high-stakes PRs; lower for trivial ones.
+- `--max-codex-iterations N` — cap on Codex **gate** passes in step 8b Phase 2 (default 2: one gate review + one verification pass). The iterative fix work happens in the Phase 1 local adversarial loop, which has its own cap and spends no Codex tokens. Raise for high-stakes PRs.
 
 ## Workflow
 
@@ -147,21 +147,43 @@ If you applied fixes, commit with `refactor: address local review feedback`, pus
 
 **Why not `Skill(review)`?** The `/review` skill is designed for the user typing `/review` at the CLI: its prompt ends at "produce the review" and the skill's job is done. When you invoke it programmatically from here, the harness injects the review skill's prompt as a new user turn — your response to that turn *is* your terminal output, and the remaining steps in this file are out of scope for that turn. The only reliable fix is to not invoke it and instead inline the procedure.
 
-#### 8b. Codex review loop (synchronous, local)
+#### 8b. Layered review loop — local adversarial iterations, Codex as the final gate
+
+Codex tokens are the scarce resource here. The naive shape — run `codex review` every iteration — spends one Codex pass per fix cycle. This loop inverts that: the **iterative convergence work runs locally** (Phase 1, zero Codex tokens), and Codex runs only as a **final certification gate** on an already-converged PR (Phase 2, 1–2 passes per PR). Codex remains the merge authority — Phase 1 never merges anything on its own.
 
 The OpenAI Codex plugin (`openai-codex`) provides `/codex:review` for interactive use. Inside this skill we invoke the same underlying CLI directly so the turn flow stays under our control — `disable-model-invocation: true` on `/codex:review` would block dispatching it via `Skill()` anyway, and shelling out keeps the loop simple.
 
 > **⚠ Same `Skill()` warning as 8a applies to `Skill(codex:review)`.** Don't try it. Always run via Bash as shown below.
 
-Loop until Codex reports no actionable findings, or `MAX_CODEX_ITERATIONS` is reached (default 3, override via `--max-codex-iterations N`):
+**Phase 1 — local adversarial loop (no Codex spend).** Loop until an iteration produces no NEW Apply-class findings, or `MAX_LOCAL_ITERATIONS` is reached (default 4). Track every finding seen across iterations (file:line_start + claim) — "new" means not in that set.
 
-1. Run a review against the PR's base branch:
+1. **Pass A — Adversarial.** Resolve the bundled prompt: `ADV=$(ls -t ~/.claude/plugins/cache/openai-codex/codex/*/prompts/adversarial-review.md 2>/dev/null | head -1)`. Read it and substitute `{{REVIEW_INPUT}}` with `gh pr diff "$PR_NUM"` plus the full content of each file in `git diff --name-only "$BASE_BRANCH"...HEAD` (read whole files, not just hunks — invariant violations only surface in the surrounding code). If `$ADV` is empty (plugin missing/moved), use a 1-line inline adversarial framing: "Red-team this PR. Find the strongest reasons it should not ship: invariant violations, partial-failure paths, race conditions, rollback hazards, empty-state, trust-boundary crossings. One strong finding beats five weak ones. file:line + concrete recommendation per finding." Produce a findings list matching the prompt's contract.
+
+2. **Pass B — Counter-Codex.** Run a second pass with this framing: *"You are preparing this PR for Codex's final gate. A reviewer who signs off quickly would miss what Codex catches. Re-read the touched files in full. Focus on: invariant violations the local diff alone doesn't reveal, partial-failure paths, version skew, retries/idempotency, rollback safety. Output findings file:line + recommendation. Skip findings that overlap with Pass A (cite the Pass A finding number if you suppress one)."*
+
+3. Take the union of A+B, dedup by `file:line_start + claim`, and triage with the four-way model below — the same triage Phase 2 uses.
+
+4. Apply Apply-class fixes inline. Commit with `refactor: address local adversarial review (iteration N)`, push, AND refresh the PR body via `gh pr edit "$PR_NUM" --body ...`.
+
+5. If the iteration surfaced no new Apply-class findings → Phase 1 has **converged**; proceed to Phase 2. If `MAX_LOCAL_ITERATIONS` is reached with Apply-class findings still being produced → treat as a cap-stop failure mode (below): stop and surface; do NOT proceed to the gate with known-unfixed findings.
+
+**Phase 2 — Codex gate (the only Codex spend; max `MAX_CODEX_ITERATIONS` passes, default 2, override via `--max-codex-iterations N`).** Runs only after Phase 1 converges.
+
+1. Run the gate against the PR's base branch:
    ```bash
-   codex review --base "$BASE_BRANCH"
+   codex review -c model=gpt-5.4 --base "$BASE_BRANCH"
    ```
-   Capture the full stdout. The output is human-readable, not JSON — read it as text.
+   Capture full stdout AND stderr (`2>&1` or redirect to a log). The output is human-readable, not JSON — read it as text. We pin `gpt-5.4` (medium reasoning, much cheaper than 5.5's xhigh default) — review tasks don't benefit from xhigh given the diff is bounded and Phase 1 already pre-cleaned it. Override only if the diff is genuinely complex (`-c model=gpt-5.5`).
 
-2. Triage findings (four-way decision model — the binary "actionable / skip" split is too coarse for repeated-review loops):
+2. **Zero actionable findings** → the loop is converged. Proceed to **Step 9**.
+
+3. **Findings** → triage with the four-way model below, apply Apply-class fixes, commit with `fix: address codex gate findings`, push, refresh the PR body — then run **one** verification pass (this consumes the second and final gate pass). Clean → proceed to Step 9. Still producing Apply-class findings → cap-stop: stop and surface (orchestrated runs return a blocker). Never leave a P1/P2 fix unverified by a subsequent pass — an unverified fix is exactly the "bouncing" hazard the cap exists to catch.
+
+4. **`codex review` exits non-zero with a credit/quota error** (stderr or stdout matches case-insensitive `credit|quota|billing|insufficient|429|rate.?limit|usage.?limit`): the gate **degrades to Phase 1's verdict**. Phase 1 converged (that's the only way to reach the gate), so accept that convergence as mergeable. Record in the PR body under `## Review notes`: `Codex gate unavailable (credit/quota); merged on local adversarial convergence (N local iterations).` Proceed to Step 9. This is the only path where a PR merges without Codex coverage — it is deliberate: the alternative (block every PR whenever credits run dry) makes the whole pipeline hostage to the Codex budget.
+
+5. **`codex review` exits non-zero for ANY OTHER reason** (auth missing, network down, schema invalid): report the error. In an interactive run, ask whether to merge without Codex coverage. In an orchestrated run, return a blocker — do not auto-merge.
+
+**Triage model (shared by Phase 1 and Phase 2)** — four-way decision; the binary "actionable / skip" split is too coarse for repeated-review loops:
 
    - **Apply** — real bug introduced by *this PR*: missed edge case in new code, broken invariant, security issue, contract violation, missing test for a new branch.
 
@@ -173,28 +195,21 @@ Loop until Codex reports no actionable findings, or `MAX_CODEX_ITERATIONS` is re
 
    - **Skip (no documentation needed)** — nits, style preferences, speculative refactors. Apply judgment; nits don't earn a PR-body mention.
 
-3. If the iteration produced no Apply-class findings AND no Stop-and-ask trigger → break the loop, proceed to **Step 9**.
-
-4. Apply Apply-class fixes inline. Read affected file/lines, make minimal edits.
-
-5. Commit with `fix: address codex review findings (iteration N)`, push, AND refresh the PR body via `gh pr edit "$PR_NUM" --body ...` so Summary, Changes, and Test plan reflect the current diff (including any new tests added). The merger should not have to read the commit log to understand the PR's current state.
-
-   **The PR body becomes the squash-commit message.** `gh pr merge --squash` (used by humans interactively, and by orchestrated `/issue-runner` runs) defaults to using the current PR body as the commit body. Keep Summary / Changes / Test plan terse and merger-facing. If you also want to record reviewer-facing iteration history, put it under a section heading **exactly equal to `## Review notes`** — no aliases, no variants. The merger's body-stripping `awk` filter (see `issue-runner` Step 4a override 3) matches that canonical heading exactly. If you name the section differently, the heading and everything below it will leak into the squash commit message.
-
-6. Increment iteration counter. If `< MAX_CODEX_ITERATIONS` AND no Stop-and-ask trigger fired this iteration, go back to step 1. Otherwise stop and report — do not loop indefinitely.
+**PR-body discipline (applies to every commit-and-push in either phase).** The PR body becomes the squash-commit message: `gh pr merge --squash` (used by humans interactively, and by orchestrated `/issue-runner` runs) defaults to using the current PR body as the commit body. Keep Summary / Changes / Test plan terse and merger-facing, and refresh them on every push so the merger never has to read the commit log. If you also want to record reviewer-facing iteration history, put it under a section heading **exactly equal to `## Review notes`** — no aliases, no variants. The merger's body-stripping `awk` filter (see `issue-runner` Step 4a override 3) matches that canonical heading exactly. If you name the section differently, the heading and everything below it will leak into the squash commit message.
 
 **Failure modes — when the loop ends NOT cleanly:**
-- **`codex review` exits non-zero** (auth missing, network down, etc.): report the error to the user. In an interactive run, ask whether to merge without Codex coverage. In an orchestrated run, return a blocker — do not auto-merge.
-- **Cap reached with findings still pending**: stop and surface the remaining findings. The default is **NOT to merge**. The user decides whether to (a) merge anyway, (b) re-run with `--max-codex-iterations N` bumped (this is the documented re-authorization path), or (c) dispatch `/codex:rescue` for a deeper investigation. In an orchestrated run, return a blocker — never silently merge after a cap-stop.
-- **Contradictory iterations** (a new iteration overturns a fix from a prior iteration): stop and surface. Don't silently re-flip your previous change. This is a Codex-loop convergence failure, not progress.
-- **Re-flagged after applied** (Codex re-raises a finding you just fixed): same — stop and surface. Either Codex isn't seeing your fix (did you commit and push? did you also `gh pr edit` the body?), or its read of the fix is incompatible with the surrounding code in a way that needs a human call.
+- **Codex-gate non-zero exits** are handled inside Phase 2 (steps 4–5): credit/quota degrades the gate to Phase 1's verdict; any other error reports/blocks. Neither belongs here — they are defined flow, not failure.
+- **Cap reached with findings still pending** (Phase 1 hit `MAX_LOCAL_ITERATIONS` still producing Apply-class findings, or the gate's verification pass came back dirty): stop and surface the remaining findings. The default is **NOT to merge**. The user decides whether to (a) merge anyway, (b) re-run with `--max-codex-iterations N` bumped (this is the documented re-authorization path for the gate; for Phase 1 it usually signals the PR needs human eyes, not more iterations), or (c) dispatch `/codex:rescue` for a deeper investigation. In an orchestrated run, return a blocker — never silently merge after a cap-stop.
+- **Contradictory iterations** (a new iteration overturns a fix from a prior iteration — in either phase): stop and surface. Don't silently re-flip your previous change. This is a convergence failure, not progress.
+- **Re-flagged after applied** (a reviewer pass re-raises a finding you just fixed): same — stop and surface. Either the reviewer isn't seeing your fix (did you commit and push? did you also `gh pr edit` the body?), or its read of the fix is incompatible with the surrounding code in a way that needs a human call.
 
 ### 9. Report back
 
 Tell the user the PR URL and a brief summary of what was done. Include the review status:
 - Whether the diff touched a security path (and so `/security-review` ran inline)
 - Local `/review` (and `/security-review` if applicable): findings count, applied fixes
-- Codex: iterations run, total findings addressed, final state (clean / max-iterations / errored)
+- Phase 1 (local adversarial): iterations run, findings applied
+- Phase 2 (Codex gate): passes spent (0–2), findings addressed, final state (clean / degraded on credit-quota / cap-stop / errored)
 
 ## Edge cases
 

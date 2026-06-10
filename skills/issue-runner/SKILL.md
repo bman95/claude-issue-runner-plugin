@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.3.0
+version: 0.4.0
 disable-model-invocation: true
 description: "Multi-issue GitHub workflow that you (Claude Code) orchestrate end-to-end with subagents. Builds a dependency DAG over the open-issue queue, runs each issue through an Explore → optional Plan → Implement-in-worktree pipeline, parallelizes independent issues up to a cap, and cascades skip on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -16,7 +16,7 @@ You are the orchestrator. You drive the entire run yourself using subagents (`Ag
 - `/issue-runner --plan` — build the DAG, print it, exit (no execution)
 - `/issue-runner --sequential` — equivalent to `--max-parallel 1`
 - `/issue-runner --max-parallel N` — concurrency cap (default 10)
-- `/issue-runner --max-codex-iterations N` — pass-through cap for the gh-issue Step 8b Codex review loop in every implementer (default 3). After a prior run blocker'd on cap-stop, bumping this in a subsequent `/issue-runner` invocation gives the next implementer a higher iteration budget — but that subsequent run is a **fresh orchestration** (new exploration, new branch, new PR), not a resume. The skill does not detect or reuse an existing PR for the same issue. **Operational consequence:** if the prior blocked run already opened a PR for this issue, you'll end up with two PRs for the same issue unless you `gh pr close` (or merge) the old one before re-running. Closing the old PR is usually the right move; its branch and review trail are preserved on the closed PR for forensics.
+- `/issue-runner --max-codex-iterations N` — pass-through cap for the gh-issue Step 8b Codex **gate** in every implementer (default 2: one gate review + one verification pass; the iterative convergence work happens in gh-issue's local adversarial loop and spends no Codex tokens). After a prior run blocker'd on cap-stop, bumping this in a subsequent `/issue-runner` invocation gives the next implementer a higher iteration budget — but that subsequent run is a **fresh orchestration** (new exploration, new branch, new PR), not a resume. The skill does not detect or reuse an existing PR for the same issue. **Operational consequence:** if the prior blocked run already opened a PR for this issue, you'll end up with two PRs for the same issue unless you `gh pr close` (or merge) the old one before re-running. Closing the old PR is usually the right move; its branch and review trail are preserved on the closed PR for forensics.
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass
 
 ## State layout
@@ -238,14 +238,14 @@ Loop until every issue has terminal status (`done`/`failed`/`skipped`):
 4. **Wait** for any in-flight agent to complete (notification arrives).
 5. **Process result.** Verify `gh issue view N --json state`:
    - Closed → `status=done`.
-   - Open + agent reported a bouncing review loop per Step 4a override 3 (cap reached with unverified P1/P2 fix, contradictory iteration, re-flagged finding, or `codex review` non-zero) → `status=blocked`. Save the agent's last message as `error`. **Cascade-skip in step 1 treats `blocked` as a paused dep, not failed** — `pending` issues with a `blocked` dep stay `pending` until Step 5 escalation transitions the blocked issue to `done` / `failed` / `skipped`.
+   - Open + agent reported a bouncing review loop per Step 4a override 3 (cap reached with unverified P1/P2 fix, contradictory iteration, re-flagged finding, or `codex review` non-zero for a reason other than credit/quota) → `status=blocked`. Save the agent's last message as `error`. **Cascade-skip in step 1 treats `blocked` as a paused dep, not failed** — `pending` issues with a `blocked` dep stay `pending` until Step 5 escalation transitions the blocked issue to `done` / `failed` / `skipped`.
    - Open + environmental block (missing credentials, irresolvable merge conflict, spec ambiguity) → `status=failed`. Save error.
    - Agent crashed, returned no usable result, or did not emit a `worktree:` line → `status=failed`. Save error.
 6. **Detect cycle.** If `in_flight` is empty, ready set is empty, and pending issues remain *after* the cascade in step 1 has already fired this iteration — the only remaining cause is a true DAG cycle (every pending issue has at least one pending dep, none failed). Mark remaining `status=skipped` with `error="cycle: depends on #X"` (cite an actual offending dep) and exit the loop. Do not use `error="deadlock"` — it conflates this case with the cascade-skip case in step 1, which is already correctly attributed to its upstream failure.
 
 ### Step 4a — implementer agent dispatch
 
-For each issue, dispatch one `Agent` call. Substitute `<N>` with the issue number and `<MAX_CODEX_ITERATIONS>` with the run-level cap (default 3, override via `/issue-runner --max-codex-iterations N`):
+For each issue, dispatch one `Agent` call. Substitute `<N>` with the issue number and `<MAX_CODEX_ITERATIONS>` with the run-level cap (default 2, override via `/issue-runner --max-codex-iterations N`):
 
 ```
 subagent_type: general-purpose
@@ -283,10 +283,12 @@ prompt: |
      implementation path from the artifacts, stop and return a
      blocker (see Blocker conditions below) instead of guessing.
 
-  2. **Step 8b (Codex review loop) cap.** Run with
-     `MAX_CODEX_ITERATIONS=<MAX_CODEX_ITERATIONS>`. Do not silently
-     exceed this — if the loop wants to continue past the cap, that
-     is a "stop and surface" signal, not a license to keep going.
+  2. **Step 8b (Codex gate) cap.** Run with
+     `MAX_CODEX_ITERATIONS=<MAX_CODEX_ITERATIONS>` (gate passes only —
+     gh-issue's Phase 1 local adversarial loop has its own cap and
+     spends no Codex tokens). Do not silently exceed this — if the
+     gate wants to continue past the cap, that is a "stop and
+     surface" signal, not a license to keep going.
 
   3. **Merging — only on a CONVERGED review loop.** gh-issue
      assumes a human merges; in this run you are the merger, but
@@ -301,7 +303,11 @@ prompt: |
        outside this issue's scope) or (b) P3 cosmetic/nit and orthogonal
        to anything fixed earlier, OR
      - The user explicitly authorized merging despite open findings via
-       a Step 5 escalation.
+       a Step 5 escalation, OR
+     - The Codex gate degraded on a credit/quota error AFTER Phase 1
+       local convergence (gh-issue Step 8b Phase 2 step 4). The
+       `## Review notes` line it records is the audit trail — verify
+       it is present in the PR body before merging on this basis.
 
      A loop is **bouncing** (NOT mergeable) when ANY of the following
      hold:
@@ -311,7 +317,9 @@ prompt: |
        in iter N+1, OR
      - The cap was reached with at least one P1/P2 fix from the final
        iteration unverified by a subsequent codex pass, OR
-     - `codex review` exited non-zero.
+     - `codex review` exited non-zero for any reason OTHER than
+       credit/quota (auth, network, schema — those still block; only
+       the credit/quota path is allowed to degrade to local convergence).
 
      "Cap reached with only P3/skip-documented findings on the final
      iteration" is **converged**, not bouncing — the previous version
@@ -385,7 +393,7 @@ prompt: |
   - Spec ambiguity per override 1.
   - Missing credentials, irresolvable merge conflict, or other
     environmental block.
-  - Codex review loop is bouncing per override 3.
+  - Codex gate (or Phase 1 local loop) is bouncing per override 3.
   Cite the specific finding(s) and termination reason. Do not
   invent answers. Do not merge if uncertain.
 
@@ -397,7 +405,7 @@ prompt: |
   `review` and `codex:review` are terminal-output producers, so
   Skill() hands them the rest of your turn and the steps after the
   review never run. Either way, inline the procedures and run codex
-  via Bash (`codex review --base "$BASE_BRANCH"`).
+  via Bash (`codex review -c model=gpt-5.4 --base "$BASE_BRANCH"`).
 ```
 
 Why `general-purpose` and not a typed agent: `general-purpose` is the only built-in subagent type that exposes `Tools: *` (the full tool surface — Bash, Edit, Write, plus everything else). The typed `Explore` and `Plan` agents are explicitly read-only and cannot run `gh pr create`, `git push`, file edits, or `gh pr merge`. Verify before changing this — if a future agent definition narrows `general-purpose`'s tool set, the implementer dispatch breaks at Step 4a.
@@ -416,7 +424,7 @@ If an implementer returns a blocker (status `blocked` per Step 4 step 5) or fail
 
 ```bash
 pushd "$WORKTREE" >/dev/null
-codex review --base "$BASE_BRANCH" \
+codex review -c model=gpt-5.4 --base "$BASE_BRANCH" \
   > "$STATE_DIR/issue-$N/codex_rerun_$(date +%s).log" 2>&1
 popd >/dev/null
 ```
@@ -508,7 +516,7 @@ After the loop ends:
 
 - **No Python orchestrator.** Don't reach for a script. The runtime here is you (the parent Claude Code session) plus subagents.
 - **State always goes through files**, not your context. After a phase produces output, write it and reference it by path in the next subagent's prompt. Don't paste exploration.md back in if you can pass the path.
-- **Never invoke `gh-issue`, `/review`, or `/codex:review` via `Skill()`.** `gh-issue` is `disable-model-invocation: true` (Skill() refuses); `/review` and `/codex:review` are terminal-output producers (Skill() steals the rest of the turn). Either way, inline the procedures or shell out (`codex review --base "$BASE_BRANCH"`).
+- **Never invoke `gh-issue`, `/review`, or `/codex:review` via `Skill()`.** `gh-issue` is `disable-model-invocation: true` (Skill() refuses); `/review` and `/codex:review` are terminal-output producers (Skill() steals the rest of the turn). Either way, inline the procedures or shell out (`codex review -c model=gpt-5.4 --base "$BASE_BRANCH"`).
 - **Fast path for single issue.** Don't orchestrate when scope == 1. Inline `gh-issue` directly.
 - **Worktree isolation** is the only way two implementers can run in parallel safely. The Agent tool's `isolation: "worktree"` does this for you — don't manage worktrees by hand unless the cleanup step requires it.
 - **Single-host, single-user assumption.** `/tmp/issue-runner/state` is a single global path with no locking. Two concurrent `/issue-runner` invocations on the same host will collide on the rotate, prune, and `details.json` writes. If you need parallel orchestrated runs, run them under different `$USER`s (so `/tmp/issue-runner/$USER/state` is per-user) or wrap the State layout block in `flock /tmp/issue-runner/.lock` — this skill itself does not.

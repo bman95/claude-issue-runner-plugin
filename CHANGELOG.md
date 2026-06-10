@@ -2,6 +2,24 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.4.0] - 2026-06-10
+
+### gh-issue Step 8b redesigned: local adversarial loop first, Codex as the final gate
+
+Codex tokens are the scarce resource. The old loop ran `codex review` on every fix cycle (N passes per PR). The new shape inverts it — typical Codex spend drops to 1–2 passes per PR while Codex remains the merge authority:
+
+- **Phase 1 — local adversarial loop** (no Codex spend, cap `MAX_LOCAL_ITERATIONS`=4): each iteration runs Pass A (bundled `adversarial-review.md` prompt, with inline fallback framing if the plugin is missing) + Pass B (counter-Codex framing), dedups the union by `file:line_start + claim`, triages with the shared four-way model, applies fixes, pushes. Converges when an iteration yields no new Apply-class findings.
+- **Phase 2 — Codex gate** (`MAX_CODEX_ITERATIONS`, default **2**, was 3): one `codex review -c model=gpt-5.4` pass on the already-converged PR. Clean → merge path. Findings → fix → exactly one verification pass; still dirty → cap-stop (blocker in orchestrated runs). Never leaves a P1/P2 fix unverified.
+- **Credit/quota degradation:** if the gate exits non-zero on a credit/quota error, it degrades to Phase 1's verdict (the PR already converged locally) and records `Codex gate unavailable (credit/quota); merged on local adversarial convergence` under `## Review notes`. Any other non-zero (auth, network) still reports/blocks as before. This is the only path that merges without Codex coverage.
+- Model pinned to `gpt-5.4` (medium reasoning) on every `codex review` invocation — including issue-runner's parent-side escalation calls, which previously ran unpinned at 5.5's xhigh default.
+- gh-issue skill version 0.1.0 → 0.2.0.
+
+### issue-runner coherence updates
+
+- Step 4 / Step 4a override 3: `codex review` non-zero now blocks only for non-credit/quota reasons; the credit/quota degradation (with its `## Review notes` audit line, which the merger must verify is present) is added to the **converged** list. Without this, override 3 would have silently overridden the gh-issue fallback in every orchestrated run.
+- `--max-codex-iterations` documented as the **gate** cap (default 3 → 2).
+- Default `--max-parallel` bumped 2 → 10 (Arguments and Step 4 now agree; they previously contradicted each other).
+
 ## [0.3.0] - 2026-06-10
 
 ### Step 6 now cleans up merged local branches
