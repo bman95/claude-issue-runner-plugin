@@ -2,6 +2,14 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.5.1] - 2026-06-12
+
+### Restore `## Blocked by` as the primary DAG source
+
+The pre-plugin standalone copy of issue-runner parsed the `## Blocked by` section that `/to-issues` emits in every issue body; that behavior was lost when the plugin became canonical (its divergences were never ported). Restored in Step 2: bullets referencing `#X` are dependency edges, "None - can start immediately" means no deps, and the inline-phrase regex (`depends on #X` etc.) is now the fallback for issues not authored by `/to-issues`. When every in-scope issue carries the section, the LLM refinement pass is asked for `conflict` edges only — dependencies are already explicit and deterministic.
+
+Also: gh-issue (0.3.1) now treats an `## Acceptance criteria` checklist in the issue body as the definition of done, verified before opening the PR.
+
 ## [0.5.0] - 2026-06-12
 
 ### Redesign around nested subagents; spec cut roughly in half

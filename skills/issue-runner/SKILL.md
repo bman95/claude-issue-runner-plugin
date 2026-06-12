@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.5.0
+version: 0.5.1
 disable-model-invocation: true
 description: "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue and dispatches each issue to an autonomous, worktree-isolated implementer subagent that follows the bundled gh-issue procedure end-to-end (explore → implement → PR → review → merge), parallelizing independent issues and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -73,11 +73,11 @@ done
 
 ### Step 2 — build the DAG
 
-Heuristic pass over each issue's body + comments: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
+**Primary source — the `## Blocked by` section** emitted by `/to-issues`: every bullet referencing `#X` is an edge N→X; a literal "None - can start immediately" means no deps. **Fallback heuristic** for issues without that section — scan body + comments for inline phrases: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
 
 **Out-of-scope edges are never dropped silently.** For each edge pointing outside `scope.txt`, ask the user: **extend** (pull the prerequisite into scope), **drop-issue** (remove the dependent), or **override** (prerequisite satisfied externally; record in `$STATE_DIR/overrides.txt`).
 
-**LLM refinement** (skip if `--no-llm-refine`): dispatch one `Plan` subagent with all issue bodies; it returns one JSON edge per line — `{"kind":"depends","from":X,"on":Y,"reason":"…"}` or `{"kind":"conflict","a":X,"b":Y,"reason":"…"}`. Parsing is best-effort: log unparseable or out-of-scope lines to `$STATE_DIR/refinement-rejects.txt` and continue; never fail the run on bad refinement output. Serialize each conflict as a `depends` edge using scope.txt order (earlier runs first) and record it in `$STATE_DIR/conflicts.json`.
+**LLM refinement** (skip if `--no-llm-refine`): dispatch one `Plan` subagent with all issue bodies; it returns one JSON edge per line. When every in-scope issue carries a `## Blocked by` section, ask the agent for `conflict` edges only — the dependencies are already explicit — `{"kind":"depends","from":X,"on":Y,"reason":"…"}` or `{"kind":"conflict","a":X,"b":Y,"reason":"…"}`. Parsing is best-effort: log unparseable or out-of-scope lines to `$STATE_DIR/refinement-rejects.txt` and continue; never fail the run on bad refinement output. Serialize each conflict as a `depends` edge using scope.txt order (earlier runs first) and record it in `$STATE_DIR/conflicts.json`.
 
 Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title) plus a section for conflicts forced into serial order. To override an order, the user re-invokes with explicit numbers in the desired order. If `--plan`, exit here.
 

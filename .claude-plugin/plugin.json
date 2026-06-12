@@ -1,6 +1,6 @@
 {
   "name": "issue-runner",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue and dispatches each issue to an autonomous worktree-isolated implementer subagent that explores, implements, reviews (fresh-eyes subagents + Codex gate), and merges. Parallelizes independent issues with a configurable cap and cascades skip on failure. Bundles the gh-issue implementer skill so the plugin is self-contained. Triggered by /issue-runner.",
   "author": {
     "name": "Bryan Frias",

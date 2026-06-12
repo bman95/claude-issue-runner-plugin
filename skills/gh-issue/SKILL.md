@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.3.0
+version: 0.3.1
 description: Picks up a GitHub issue, implements the required changes, runs a layered review (fresh-eyes subagents, then a Codex gate), and merges the PR that closes the issue.
 disable-model-invocation: true
 ---
@@ -53,7 +53,7 @@ git checkout -b <type>/issue-<number>-<short-slug>   # fix/ feat/ docs/ chore/
 
 ### 5. Implement
 
-Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior.
+Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior. If the issue body has an `## Acceptance criteria` checklist (the `/to-issues` format), treat it as the definition of done and verify every item before opening the PR.
 
 ### 6. Commit and push
 
