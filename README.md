@@ -1,8 +1,11 @@
 # issue-runner
 
-A Claude Code plugin that orchestrates multi-issue GitHub workflows end-to-end.
+A self-sufficient Claude Code plugin for the full agentic issue pipeline: from an idea to merged PRs.
 
-The orchestrator reads the open-issue queue, builds a dependency DAG, and dispatches each issue to an **autonomous implementer subagent** in an isolated worktree. Implementers spawn their own subagents — an `Explore` agent to map the codebase, fresh-eyes reviewer agents for the review loop — then converge the PR through a Codex gate and merge it. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents.
+- **`/issue-plan`** turns an idea, plan, or spec into ready-to-run issues: it asks only the questions the input needs, slices the work into tracer-bullet vertical slices, and publishes issues in the format the runner parses.
+- **`/issue-runner`** reads the issue queue, builds a dependency DAG, and dispatches each issue to an **autonomous implementer subagent** in an isolated worktree. Implementers spawn their own subagents — `Explore`/`Plan` helpers, fresh-eyes reviewers, delegated `general-purpose` chunks (helpers don't nest further) — then converge the PR through a Codex gate and merge it. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents.
+
+Run-time doubts escalate up the chain: implementer → parent (resolves coordination/context blockers from run-wide knowledge) → human (only for scope, product-behavior, or risk decisions).
 
 ## Status
 
@@ -16,6 +19,7 @@ This plugin is not yet published to a public marketplace. To install locally:
 git clone <this-repo> ~/personal/claude-issue-runner-plugin
 ln -s ~/personal/claude-issue-runner-plugin/skills/issue-runner ~/.claude/skills/issue-runner
 ln -s ~/personal/claude-issue-runner-plugin/skills/gh-issue ~/.claude/skills/gh-issue
+ln -s ~/personal/claude-issue-runner-plugin/skills/issue-plan ~/.claude/skills/issue-plan
 ```
 
 Reload Claude Code and invoke `/issue-runner`.
@@ -25,6 +29,7 @@ When installed via a marketplace, the symlinks are not needed — Claude Code di
 ## Usage
 
 ```
+/issue-plan <idea | plan | file | issue#>  # idea -> published, runnable issues
 /issue-runner                              # all open issues (label-filtered)
 /issue-runner 42 43 44                     # specific issue numbers
 /issue-runner --plan                       # build the DAG and exit
@@ -38,7 +43,8 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 
 ## Architecture
 
-- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, optional `ready-for-agent` triage filter, dirty-tree audit) → dependency DAG (heuristic + LLM refinement) → parallel dispatch → blocker escalation → cleanup. The orchestrator never enters a worktree.
+- **Planner** (`skills/issue-plan/SKILL.md`): absorb the idea → adaptive interrogation (human decisions settled up front) → tracer-bullet vertical slices → publish issues with `## What to build` / `## Acceptance criteria` / `## Blocked by` — the contract the runner and implementer parse.
+- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, dirty-tree audit) → dependency DAG (`## Blocked by` primary, heuristics + LLM refinement as fallback) → parallel dispatch → two-tier blocker escalation (parent first, human last) → cleanup. The orchestrator never enters a worktree.
 - **Implementer** (`skills/gh-issue/SKILL.md`): understand → explore (Explore subagent) → plan → branch → implement → PR → layered review → merge. The review runs fresh-eyes reviewer subagents locally (no Codex spend) and uses `codex review` only as a final certification gate (1–2 passes per PR), with a credit/quota degradation path.
 - **Reference** (`skills/issue-runner/REFERENCE.md`): troubleshooting and the rationale behind the defensive recipes (worktree locks, branch deletion after squash merges, duplicate PRs on re-runs).
 

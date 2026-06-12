@@ -2,6 +2,18 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.6.0] - 2026-06-13
+
+### Self-sufficient pipeline: /issue-plan added, triage removed, two-tier escalation
+
+The plugin now covers the whole flow from idea to merged PRs, fully agentic. Human decisions concentrate at two points: the planning interview (up front) and scope/risk escalations (during the run).
+
+- **New bundled skill `issue-plan` (0.1.0).** Adapts the grill-with-docs + to-issues pair into one command without the docs machinery (no CONTEXT.md/ADR updates) and without triage labels: absorb the idea → explore the codebase before asking → adaptive interrogation (one question at a time, recommended answer first; run-time-blocker-shaped decisions settled here) → tracer-bullet vertical slices (user approves the breakdown) → publish in dependency order using the `## What to build` / `## Acceptance criteria` / `## Blocked by` contract → offer to launch `/issue-runner`.
+- **Triage dropped from the pipeline.** The 0.5.0 `ready-for-agent` scope filter and gh-issue's agent-brief mention are removed. Rationale (REFERENCE.md): label state machines filter *incoming external* issues; this pipeline's issues are born agent-ready from `/issue-plan`. The parked-label blacklist remains as the manual brake.
+- **Two-tier blocker escalation (Step 4).** The parent now tries to resolve a blocker itself first — it holds the DAG, other issues' status, merged PRs, and the repo; coordination/context blockers get answered via `guidance.md` + retry without user involvement. Only scope / product-behavior / risk decisions escalate to the human.
+- **Implementer subagent powers made explicit (gh-issue 0.4.0, new "Your subagents" section).** Implementers have the full tool surface: Explore, Plan, general-purpose helpers (reviewers, delegated chunks), codex via Bash. Two rules: helpers inherit the implementer's worktree (never nested worktree isolation), and helpers must not spawn further subagents — depth is capped at parent → implementer → helper, and the implementer stays the single integrator of its PR.
+- plugin.json description rewritten for the pipeline; README updated (architecture, usage, third symlink for `issue-plan`).
+
 ## [0.5.1] - 2026-06-12
 
 ### Restore `## Blocked by` as the primary DAG source

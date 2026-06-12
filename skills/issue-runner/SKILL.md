@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.5.1
+version: 0.6.0
 disable-model-invocation: true
 description: "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue and dispatches each issue to an autonomous, worktree-isolated implementer subagent that follows the bundled gh-issue procedure end-to-end (explore → implement → PR → review → merge), parallelizing independent issues and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -55,7 +55,6 @@ Always pass the resolved absolute path into dispatch prompts — subagents do no
 
 **No arguments** → `gh issue list --state open --json number,title,body,labels,assignees,comments --limit 50`. If the repo has more than 50 open issues, tell the user rather than silently truncating. Then filter:
 
-- **Triage integration (optional).** If the repo's labels include `ready-for-agent` (the `/triage` state machine), ask the user one question: scope to `ready-for-agent` issues only *(recommended when triage is in use — the agent brief travels in the issue comments and becomes implementer context for free)*, or use the full open list.
 - **Parked labels.** Partition by parked labels — exact match, case/separator-insensitive: `on-hold`, `wontfix`, `parking-lot`, `blocked`, `discussion-only`, `needs-info`, `stale`, `duplicate`. If any are parked, ask via `AskUserQuestion`: skip parked *(recommended)* / include all / pick. Never auto-include a parked issue. No parked issues → no question. (`duplicate` usually wants `gh issue close`, not implementation — say so if the user includes one.)
 
 **Single-issue fast path.** If scope size == 1: do not initialize state. Read `$GH_ISSUE_SKILL` and follow the procedure inline as an interactive run (plan confirmation applies). Never `Skill("gh-issue")` — see Hard rules.
@@ -114,8 +113,10 @@ prompt: |
   - /tmp/issue-runner/state/issue-<N>/guidance.md — per-issue guidance, only if it exists
 
   You run in an isolated worktree; branch off the default branch. You can
-  spawn your own subagents — use them where gh-issue says to (Explore for
-  codebase mapping, fresh reviewers for the review loop).
+  spawn your own subagents — Explore, Plan, general-purpose helpers and
+  reviewers — per gh-issue's "Your subagents" section. Helpers inherit your
+  worktree (never give them worktree isolation) and must not spawn further
+  subagents.
 
   This is an ORCHESTRATED run — gh-issue's orchestrated-mode rules apply:
   - Plan confirmation is pre-approved. Stop only for genuine spec ambiguity
@@ -138,7 +139,9 @@ Per-issue guidance (retry context, scope limits, "do not edit X" lists) always g
 
 ### Step 4 — handle blocked / failed issues
 
-Read the agent's error message, then ask the user. Escalations, cheapest first:
+Read the agent's error message. **Try to resolve it yourself first** — you hold run-wide context the implementer lacks: the DAG, the other issues' status, freshly merged PRs, the whole repo. If the blocker is coordination or context (e.g. "dependency #X just merged — read its changes from the default branch", a question answerable from another issue's body or the code), write the answer to `$STATE_DIR/issue-N/guidance.md` and retry the implementer without involving the user.
+
+**Escalate to the user only** for decisions that change scope, product behavior, or accept risk: merging despite open findings, dropping or skipping an issue, picking between contradictory requirements, spending more budget. When escalating, present the blocker, the latest findings, and your recommendation. Escalations, cheapest first:
 
 - **Retry the implementer.** Write the user's guidance plus any finding text to `$STATE_DIR/issue-N/guidance.md` (append a `## Retry N` section). Re-dispatch per Step 3a, additionally passing: the existing worktree path (continue on the same branch — no new worktree isolation) and the existing PR number (push to the same PR). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree.
 - **Hand off to `/codex:rescue`** for a fresh investigation; pass the worktree path and the latest review log.

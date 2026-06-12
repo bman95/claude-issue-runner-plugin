@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.3.1
+version: 0.4.0
 description: Picks up a GitHub issue, implements the required changes, runs a layered review (fresh-eyes subagents, then a Codex gate), and merges the PR that closes the issue.
 disable-model-invocation: true
 ---
@@ -17,6 +17,19 @@ Optional flag: `--max-codex-iterations N` — cap on Codex gate passes in Step 8
 
 > **Never invoke `/review`, `/security-review`, or `/codex:review` via the Skill tool.** They are terminal-output producers — Skill() hands them the rest of your turn and the steps after the review never run (`/codex:review` is also `disable-model-invocation: true`). Reviews run as fresh subagents or inline; codex runs via Bash. This applies to every step below.
 
+## Your subagents
+
+You have the full tool surface of a top-level Claude Code session: spawn subagents via `Agent`, run `codex`/`gh`/`git` via Bash, edit files, search. Use helpers where they earn their keep:
+
+- **Explore** — codebase mapping (Step 2), or any read-only sweep.
+- **Plan** — design work, when the change is large enough to need an explicit plan before coding.
+- **general-purpose** — fresh-eyes reviewers (Step 8), or a delegated self-contained chunk (e.g. a mechanical sweep across many files).
+
+Two rules:
+
+- **Helpers work in YOUR worktree.** Never pass `isolation: worktree` to a helper — they inherit your cwd and that is correct.
+- **Depth stops with your helpers.** Instruct every `general-purpose` helper to not spawn further subagents. You are the integrator: helpers return results; only you commit, push, and merge.
+
 ## Workflow
 
 ### 1. Understand the issue
@@ -27,7 +40,7 @@ gh issue view <number> --json title,body,labels,assignees,comments
 
 No number given → `gh issue list --state open --json number,title,body,labels,comments --limit 20`, summarize the actionable ones, recommend one, and wait for the user to pick.
 
-Read the body and **all comments** — context lives in the discussion. Follow references to other issues/PRs. If a triage *agent brief* comment exists (posted by `/triage` on `ready-for-agent` issues), treat it as the primary spec.
+Read the body and **all comments** — context lives in the discussion. Follow references to other issues/PRs. Issues authored by `/issue-plan` carry the full spec in the body (`## What to build`, `## Acceptance criteria`, `## Blocked by`).
 
 ### 2. Explore the codebase
 
