@@ -2,7 +2,7 @@
 
 A Claude Code plugin that orchestrates multi-issue GitHub workflows end-to-end.
 
-The orchestrator reads the open-issue queue, builds a dependency DAG, and dispatches each issue through an Explore -> optional Plan -> Implement-in-worktree pipeline. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents. Implementer subagents follow the `gh-issue` procedure (branch -> implement -> PR -> review -> merge) inside isolated worktrees.
+The orchestrator reads the open-issue queue, builds a dependency DAG, and dispatches each issue to an **autonomous implementer subagent** in an isolated worktree. Implementers spawn their own subagents — an `Explore` agent to map the codebase, fresh-eyes reviewer agents for the review loop — then converge the PR through a Codex gate and merge it. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents.
 
 ## Status
 
@@ -18,9 +18,9 @@ ln -s ~/personal/claude-issue-runner-plugin/skills/issue-runner ~/.claude/skills
 ln -s ~/personal/claude-issue-runner-plugin/skills/gh-issue ~/.claude/skills/gh-issue
 ```
 
-Reload Claude Code (or run `/reload-plugins` if available) and invoke `/issue-runner`.
+Reload Claude Code and invoke `/issue-runner`.
 
-When this plugin is installed via a marketplace, the symlinks above are not needed — Claude Code discovers both bundled skills (`issue-runner` and `gh-issue`) inside the plugin's install directory and exposes `${CLAUDE_PLUGIN_ROOT}` so `issue-runner` can locate `gh-issue` portably (see Step 0 in `skills/issue-runner/SKILL.md`).
+When installed via a marketplace, the symlinks are not needed — Claude Code discovers both bundled skills and exposes `${CLAUDE_PLUGIN_ROOT}` so `issue-runner` can locate `gh-issue` portably (Step 0 in `skills/issue-runner/SKILL.md`).
 
 ## Usage
 
@@ -28,43 +28,40 @@ When this plugin is installed via a marketplace, the symlinks above are not need
 /issue-runner                              # all open issues (label-filtered)
 /issue-runner 42 43 44                     # specific issue numbers
 /issue-runner --plan                       # build the DAG and exit
-/issue-runner --max-parallel N             # concurrency cap (default 2)
-/issue-runner --max-codex-iterations N     # codex review loop cap (default 3)
+/issue-runner --max-parallel N             # concurrency cap (default 10)
+/issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
 /issue-runner --no-llm-refine              # skip LLM dependency refinement
 /issue-runner --sequential                 # equivalent to --max-parallel 1
 ```
 
-The full procedure is documented inside `skills/issue-runner/SKILL.md` (the orchestrator reads it at run time).
+A single-issue scope skips orchestration entirely and runs the `gh-issue` procedure inline. `/gh-issue N` also works standalone.
+
+## Architecture
+
+- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, optional `ready-for-agent` triage filter, dirty-tree audit) → dependency DAG (heuristic + LLM refinement) → parallel dispatch → blocker escalation → cleanup. The orchestrator never enters a worktree.
+- **Implementer** (`skills/gh-issue/SKILL.md`): understand → explore (Explore subagent) → plan → branch → implement → PR → layered review → merge. The review runs fresh-eyes reviewer subagents locally (no Codex spend) and uses `codex review` only as a final certification gate (1–2 passes per PR), with a credit/quota degradation path.
+- **Reference** (`skills/issue-runner/REFERENCE.md`): troubleshooting and the rationale behind the defensive recipes (worktree locks, branch deletion after squash merges, duplicate PRs on re-runs).
 
 ## Requirements
 
-- **Claude Code** with the Agent and Bash tools available.
-- **GitHub CLI (`gh`)** installed and authenticated against the target repository.
-- **`codex` CLI** if you want the Codex review loop to run inside implementers (`codex review --base $BASE_BRANCH`).
-- **`/codex:rescue` plugin command** for Step 5's "Hand off to /codex:rescue" escalation. Optional but referenced by the spec.
-- **Git worktree support** (any modern git, >= 2.5).
+- **Claude Code** with the Agent and Bash tools; subagents must be able to spawn subagents (current `general-purpose` agents do).
+- **GitHub CLI (`gh`)** authenticated against the target repository.
+- **`codex` CLI** for the review gate (degrades gracefully on credit/quota exhaustion).
+- **`/codex:rescue`** for the rescue escalation. Optional but referenced by the spec.
+- **Git >= 2.5** (worktrees).
 
-The `gh-issue` skill (the implementer procedure) is **bundled** in this plugin under `skills/gh-issue/` — no separate installation needed.
-
-## What it does well
-
-- Builds a real dependency graph from issue bodies + comments (heuristic + optional LLM refinement pass).
-- Runs implementers in worktree-isolated subagents so parallel work does not collide.
-- Cascade-skips failed dependents instead of trying everything serially.
-- Detects DAG cycles and surfaces them rather than deadlocking.
-- Persists state under `/tmp/issue-runner/state/` so a partial-failure run can be inspected (and partially resumed via re-invocation with the failed subset).
-- Pre-flight checks: parked-label filter, dirty-tree audit, scope-shaping addendum.
+The `gh-issue` implementer skill is bundled — no separate installation.
 
 ## Known limitations
 
-- **Single-host, single-user assumption.** Two concurrent `/issue-runner` runs on the same machine collide on `/tmp/issue-runner/state/`. See "Hard rules" in `SKILL.md`.
-- **Not auto-invocable** (`disable-model-invocation: true`). The skill only runs when the user types `/issue-runner` — it never auto-loads from descriptions. Same for `/gh-issue`.
-- **No automated tests yet.** Behavior is validated by production runs documented in `CHANGELOG.md`.
-- **`gh-issue` is forked into this plugin.** If the upstream `gh-issue` skill (if/when published independently) gains improvements, they have to be manually merged here. Trade-off accepted to keep the plugin self-contained on install.
+- **Single-host, single-user.** Concurrent `/issue-runner` runs collide on `/tmp/issue-runner/state/`.
+- **Not auto-invocable** (`disable-model-invocation: true` on both skills) — only the user can trigger them.
+- **Re-runs are fresh orchestrations.** A re-run does not reuse an existing PR; close a blocked run's PR before re-running its issue.
+- **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`.
 
 ## Versioning
 
-Semantic-ish. Pre-1.0 means the spec inside `SKILL.md` may still change in incompatible ways between minor versions (e.g. status names, escalation options). Once 1.0 ships, breaking changes will bump the major.
+Semantic-ish. Pre-1.0 means the spec may change incompatibly between minor versions.
 
 ## License
 

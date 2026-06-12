@@ -2,6 +2,29 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.5.0] - 2026-06-12
+
+### Redesign around nested subagents; spec cut roughly in half
+
+Subagents can now spawn their own subagents (`general-purpose` exposes the full tool surface, including `Agent`). The orchestrator no longer pre-chews context or enters worktrees — implementers are autonomous. `issue-runner` SKILL.md 534 → ~210 lines, `gh-issue` 219 → ~140 lines, with the audit-derived defensive knowledge preserved (compressed in place or moved to the new `skills/issue-runner/REFERENCE.md`).
+
+**issue-runner (spec restructured, Steps renumbered 0–5):**
+- **Removed the Explore/Plan pre-pass** (old Step 3) and its state files (`exploration.md`, `plan.md`), wave management, and `Files:`-block parsing. Implementers gather their own context by spawning an `Explore` subagent (gh-issue Step 2).
+- **Escalations 6 → 4** (retry / rescue / fail / bump-and-rerun). "Parent-side codex re-review" and "parent-applied inline fix" are gone: a retried implementer runs its own codex passes and helpers inside the worktree. Consequently the `pushd`/`popd` discipline, the Step 6 cwd-verification recipe, and the old "Parent stays in main repo" rule collapse into one hard rule: **the parent never enters a worktree**.
+- **Merge procedure moved into gh-issue Step 9** (single source of truth, shared by interactive and orchestrated runs). The dispatch prompt's converged/bouncing contract now just defers to gh-issue Step 8 instead of restating it.
+- Dispatch prompt rewritten: ~20 lines instead of ~150; per-issue guidance still travels via `guidance.md` file paths only.
+- **Optional triage integration:** when the repo's labels include `ready-for-agent` (the `/triage` state machine), Step 1 offers it as a positive scope filter. The triage agent brief reaches implementers for free via the issue comments in `details.json`.
+- New `REFERENCE.md` holds troubleshooting and recipe rationale (worktree locks, `-D` vs `-d` after squash, cosmetic merge failure, duplicate-PR-on-rerun, blocked-vs-failed semantics).
+
+**gh-issue 0.2.0 → 0.3.0:**
+- Step 8 Phase 1 is no longer self-review: each iteration dispatches **two fresh reviewer subagents in parallel** (adversarial + gate-prep framings) with no implementation bias. The bundled `adversarial-review.md` prompt lookup is dropped — the framings are inline.
+- Explicit interactive/orchestrated mode definitions up front; orchestrated-mode behavior (pre-approved plan, self-merge on convergence, blockers) lives here instead of being injected as dispatch-prompt overrides.
+- New Step 9 (merge) owns the squash + `## Review notes` body-stripping recipe and issue-closed verification.
+- The `Skill()` warning is stated once, at the top, instead of five times across both skills.
+- Four-way triage model, converged/bouncing definitions, credit/quota degradation, and PR-body discipline all preserved, compressed.
+
+**Docs:** README rewritten for the new architecture; stale defaults fixed (`--max-parallel` 2 → 10, `--max-codex-iterations` 3 → 2).
+
 ## [0.4.0] - 2026-06-10
 
 ### gh-issue Step 8b redesigned: local adversarial loop first, Codex as the final gate
