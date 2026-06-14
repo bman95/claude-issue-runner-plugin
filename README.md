@@ -13,33 +13,46 @@ Pre-1.0. The skill works on real-world runs but the spec is still tightening bas
 
 ## Installation
 
-This plugin is not yet published to a public marketplace. To install locally:
+Install from the marketplace, then reload plugins:
+
+```
+/plugin marketplace add bman95/claude-issue-runner-plugin
+/plugin install issue-runner@bman95-plugins
+/reload-plugins
+```
+
+Claude Code discovers all three bundled skills and exposes `${CLAUDE_PLUGIN_ROOT}`, so `issue-runner` locates `gh-issue` portably (Step 0 in `skills/issue-runner/SKILL.md`) — no symlinks needed.
+
+Plugin skills are namespaced by the plugin name, so the commands are `/issue-runner:issue-plan`, `/issue-runner:issue-runner`, and `/issue-runner:gh-issue` (the examples below use these forms).
+
+### Local development
+
+To run from a working copy without going through a hosted marketplace, point the marketplace at the cloned directory — same install path as above, just a local source:
 
 ```bash
 git clone <this-repo> ~/personal/claude-issue-runner-plugin
-ln -s ~/personal/claude-issue-runner-plugin/skills/issue-runner ~/.claude/skills/issue-runner
-ln -s ~/personal/claude-issue-runner-plugin/skills/gh-issue ~/.claude/skills/gh-issue
-ln -s ~/personal/claude-issue-runner-plugin/skills/issue-plan ~/.claude/skills/issue-plan
 ```
 
-Reload Claude Code and invoke `/issue-runner`.
-
-When installed via a marketplace, the symlinks are not needed — Claude Code discovers both bundled skills and exposes `${CLAUDE_PLUGIN_ROOT}` so `issue-runner` can locate `gh-issue` portably (Step 0 in `skills/issue-runner/SKILL.md`).
+```
+/plugin marketplace add ~/personal/claude-issue-runner-plugin
+/plugin install issue-runner@bman95-plugins
+/reload-plugins
+```
 
 ## Usage
 
 ```
-/issue-plan <idea | plan | file | issue#>  # idea -> published, runnable issues
-/issue-runner                              # all open issues (label-filtered)
-/issue-runner 42 43 44                     # specific issue numbers
-/issue-runner --plan                       # build the DAG and exit
-/issue-runner --max-parallel N             # concurrency cap (default 10)
-/issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
-/issue-runner --no-llm-refine              # skip LLM dependency refinement
-/issue-runner --sequential                 # equivalent to --max-parallel 1
+/issue-runner:issue-plan <idea | plan | file | issue#>  # idea -> published, runnable issues
+/issue-runner:issue-runner                              # all open issues (label-filtered)
+/issue-runner:issue-runner 42 43 44                     # specific issue numbers
+/issue-runner:issue-runner --plan                       # build the DAG and exit
+/issue-runner:issue-runner --max-parallel N             # concurrency cap (default 10)
+/issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
+/issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement
+/issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
 ```
 
-A single-issue scope skips orchestration entirely and runs the `gh-issue` procedure inline. `/gh-issue N` also works standalone.
+A single-issue scope skips orchestration entirely and runs the `gh-issue` procedure inline. `/issue-runner:gh-issue N` also works standalone.
 
 ## Architecture
 
