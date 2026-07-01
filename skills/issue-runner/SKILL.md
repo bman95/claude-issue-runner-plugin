@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.6.0
+version: 0.7.0
 disable-model-invocation: true
 description: "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue and dispatches each issue to an autonomous, worktree-isolated implementer subagent that follows the bundled gh-issue procedure end-to-end (explore → implement → PR → review → merge), parallelizing independent issues and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---

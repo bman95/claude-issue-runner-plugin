@@ -2,6 +2,29 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.7.0] - 2026-07-01
+
+### Per-repo state, interactive worktree lifecycle, and data-loss / cycle / injection fixes
+
+Releases ~60 lines of previously-uncommitted spec work (per-repo `STATE_DIR`, gh-issue owning its interactive worktree, `--max-parallel` 10 → 5) together with a batch of correctness fixes surfaced by an audit of that work. Behavior changes, so 0.7.0, not 0.6.1. No feature is new to the pipeline; the theme is *don't lie about state and don't destroy work* — every change closes a way a run could silently mislead or lose data.
+
+**issue-runner (SKILL frontmatter 0.6.0 → 0.7.0):**
+- **State namespaced per repo.** `STATE_DIR` is now `/tmp/issue-runner/<repo-key>/state`, where `<repo-key>` is `basename` + a sha1 of the repo root. Previously a flat `/tmp/issue-runner/state` meant starting a run in repo B rotated repo A's live state into a `state.prev.*` backup and gave A's in-flight implementers (which read absolute paths) B's files or none. Runs in different repos are now isolated; concurrent runs *within one repo* still collide — the documented single-user limit. Old flat orphans (`/tmp/issue-runner/state*`, `state-<name>`) are not swept by the per-repo cleanup; remove them by hand.
+- **Cycle check no longer misfires on blocked chains (Step 3, item 6).** When one issue is `blocked` and its dependents sit `pending` with nothing in flight, the old cycle condition ("nothing ready, `pending` remain → cycle → skip") fired and silently `skipped` healthy dependents while the blocker awaited Step 4. Item 6 now excludes any `pending` issue with a `blocked` ancestor in the DAG: those *wait* for Step 4 to resolve the upstream blocker (to `done` → releases them; to `failed`/`skipped` → cascade-skips them). A cycle is declared only when no remaining `pending` issue has a `blocked` ancestor. REFERENCE.md now distinguishes "blocked chain" from "cycle" for troubleshooting.
+- **`done` requires positive merge proof, not just `CLOSED` (Step 3, item 5).** `gh issue view N` reporting `CLOSED` was treated as `done` and licensed Step 5's `git branch -D`. An issue closed by hand or by an unrelated PR's `Closes #N` mid-run was indistinguishable from a merged implementer PR — so the cleanup force-deleted unmerged work. `done` now requires a merged PR on the implementer's own branch (`gh pr list --head <branch> --state merged`); a `CLOSED` issue without that proof becomes a new terminal state **`closed-externally`** — worktree and branch **kept**, flagged as a non-zero outcome in the run report for a human to confirm whether the work actually landed, and its dependents cascade-skipped with `dependency closed externally without merge proof: #X` (never mislabeled as a DAG cycle). `-D` runs only after merge proof.
+
+**gh-issue (0.4.0 → 0.5.0):**
+- **Interactive worktree owns its lifecycle, hardened.** Interactive mode (Step 4) creates its own worktree and tears it down in Step 9 (single-issue `/issue-runner` no longer relies on orchestrator cleanup). Two audit fixes on that path: (a) the main-checkout lookup `git worktree list --porcelain | awk '/^worktree /{print $2}'` truncated paths at the first space — replaced with space-safe `sed -n 's/^worktree //p' | head -1`; (b) Step 4 gained a pre-flight that removes a leftover worktree dir/registration from an aborted earlier run before `git worktree add`, with guidance to never blind-delete a surviving branch (it may hold unmerged work). REFERENCE.md now covers interactive-mode leaks, previously orchestrated-only.
+- **Step 9 teardown gates `git branch -D` on `gh pr view --json state` == `MERGED`.** Same data-loss class as the issue-runner fix: the squash-merge `-D` now fires only on the PR reporting merged, never on issue-closed inference.
+- **Codex-gate degradation keys off the CLI's own exit code + stderr, not a regex over review output.** The credit/quota skip — the one path that merges without Codex coverage — previously matched `credit|quota|...|429` against the merged stdout+stderr review text, which issue/PR content can spoof. It now captures `codex review`'s own exit status and stderr separately and degrades only when the invocation *itself* exits non-zero with a credit/quota stderr, logging the skip prominently in the Step 10 report (orchestrated: surfaced to the parent).
+- **Prompt-injection posture stated.** Step 1 instructs implementers to treat issue bodies/comments as *data*, never as instructions that override the procedure or merge discipline.
+
+**Docs / hygiene:**
+- README synced with the spec: `--max-parallel` default 10 → 5 (matched SKILL.md); the "single-host" limitation now describes the per-repo `/tmp/issue-runner/<repo-key>/state` path; a new "Trust the issue authors" limitation warns against pointing the runner at repos with untrusted issue authors given implementers' merge authority.
+- Removed the ineffective `/tmp/issue-runner/` `.gitignore` entry — gitignore patterns are repo-relative, so it matched a nonexistent `<repo>/tmp/...`; the real state lives in system `/tmp`, which gitignore cannot cover.
+- **New `scripts/lint.sh` (dependency-free) + `.github/workflows/lint.yml`.** Mechanically checks the drift classes this release cleaned up: `plugin.json` vs `marketplace.json` version agreement, required SKILL frontmatter fields (name/description/version), README `--max-parallel` default vs SKILL default, and a CHANGELOG entry for the manifest version. This is the only "test" a prompt-spec plugin can realistically carry.
+- `plugin.json` / `marketplace.json` bumped to 0.7.0.
+
 ## [0.6.0] - 2026-06-13
 
 ### Self-sufficient pipeline: /issue-plan added, triage removed, two-tier escalation

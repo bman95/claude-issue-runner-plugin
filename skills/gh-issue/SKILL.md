@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.4.0
+version: 0.5.0
 description: Picks up a GitHub issue, implements the required changes, runs a layered review (fresh-eyes subagents, then a Codex gate), and merges the PR that closes the issue.
 disable-model-invocation: true
 ---
