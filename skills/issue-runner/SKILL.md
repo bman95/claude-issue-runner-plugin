@@ -39,7 +39,7 @@ find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>
 mkdir -p "$STATE_DIR"
 ```
 
-Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`), `error`, optional `guidance.md`, `worktree` (recorded for failed/skipped only).
+Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `failed`/`skipped`/`closed-externally`).
 
 ## Workflow
 
@@ -89,18 +89,28 @@ Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title)
 
 ### Step 3 — execute
 
-Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`) or paused (`blocked`):
+Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`) or paused (`blocked`):
 
-1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
+1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Any `pending` issue with a `closed-externally` dep → `skipped`, error `"dependency closed externally without merge proof: #X"` — the dep is terminal but its work is unverified, so dependents must not build on it (and must not be mislabeled as a cycle). Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
 2. **Ready set** = `pending` ∧ all deps `done` ∧ not in flight.
 3. **Fill slots** up to `MAX_PARALLEL` with dispatches (Step 3a); mark `implementing`.
 4. **Wait** for any in-flight agent to complete.
-5. **Process the result.** Check `gh issue view N --json state`:
-   - `CLOSED` → `done`.
+5. **Process the result.** A `CLOSED` issue is `done` **only with positive merge proof** — the implementer's own PR actually merged. `CLOSED` alone is not proof: the issue may have been closed by hand or by an unrelated PR's `Closes #N` mid-run. Derive the branch from the returned worktree (read-only; never `cd` into it) and look for a merged PR on it:
+
+   ```bash
+   ISSUE_STATE=$(gh issue view "$N" --json state -q .state)
+   WT_BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)
+   MERGED_PR=$(gh pr list --head "$WT_BRANCH" --state merged --json number -q '.[0].number')
+   ```
+
+   - **`CLOSED` + `MERGED_PR` non-empty** → `done`. This is the only status that authorizes Step 5's `git branch -D` (positive proof of merge).
+   - **`CLOSED` + no merged PR on that branch** → `closed-externally`: closed out-of-band, **not** merge proof. Save an `error` note ("closed without a merged implementer PR"), **keep the worktree and branch**, and flag it in the Step 5 summary for human review. Never `-D` its branch.
    - Open + agent returned a blocker → `blocked`; save its message as `error`. Handle via Step 4 when convenient (other pipelines keep running).
    - Open + environmental failure (credentials, irresolvable conflict) → `failed`.
    - Agent crashed or emitted no `worktree:` line → `failed`.
-6. **Cycle check.** Nothing in flight, nothing ready, `pending` issues remain after the cascade → DAG cycle. Mark them `skipped` with `error="cycle: depends on #X"` (cite a real offending dep) and exit the loop.
+6. **Cycle check.** When nothing is in flight and nothing is ready but `pending` issues remain after the cascade, distinguish two cases before declaring a cycle:
+   - **Waiting on a blocked chain** — a remaining `pending` issue has a `blocked` ancestor in the DAG (a transitive dependency that is currently `blocked`). It is *paused*, not deadlocked: leave it `pending` and go resolve the upstream `blocked` issue(s) via Step 4. Resolving a blocker to `done` re-opens the ready set; resolving it to `failed`/`skipped` lets the cascade (item 1) skip its dependents on the next pass. Never mark a blocked-chain waiter `skipped` as a cycle.
+   - **True cycle** — *no* remaining `pending` issue has a `blocked` ancestor, yet none can ever become ready. That is a real DAG cycle: mark those issues `skipped` with `error="cycle: depends on #X"` (cite a real offending dep) and exit the loop.
 
 ### Step 3a — implementer dispatch
 
@@ -176,7 +186,7 @@ if [ -n "$WT_BRANCH" ] && [ "$WT_BRANCH" != HEAD ] && [ "$WT_BRANCH" != "$DEFAUL
 fi
 ```
 
-For `failed`/`skipped` issues, leave worktree and branch in place for forensics; record the path in `$STATE_DIR/issue-N/worktree`. Then `git worktree prune`, and sweep the Agent tool's leftover scratch branches with the safe flag:
+For `failed`/`skipped`/`closed-externally` issues, leave worktree and branch in place for forensics (a `closed-externally` branch may hold unmerged work the external close discarded); record the path in `$STATE_DIR/issue-N/worktree`. Then `git worktree prune`, and sweep the Agent tool's leftover scratch branches with the safe flag:
 
 ```bash
 git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-agent-' \
@@ -185,7 +195,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, and surface anything new — never auto-discard.
 
-**Summary table**: number, status, title, error. Group `blocked` (paused on user input) separately from `failed` (terminal). Treat any `failed` as a non-zero outcome in your closing message.
+**Summary table**: number, status, title, error. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
 
 ## Hard rules
 

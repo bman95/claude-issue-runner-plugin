@@ -46,7 +46,7 @@ git clone <this-repo> ~/personal/claude-issue-runner-plugin
 /issue-runner:issue-runner                              # all open issues (label-filtered)
 /issue-runner:issue-runner 42 43 44                     # specific issue numbers
 /issue-runner:issue-runner --plan                       # build the DAG and exit
-/issue-runner:issue-runner --max-parallel N             # concurrency cap (default 10)
+/issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement
 /issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
@@ -73,7 +73,8 @@ The `gh-issue` implementer skill is bundled — no separate installation.
 
 ## Known limitations
 
-- **Single-host, single-user.** Concurrent `/issue-runner` runs collide on `/tmp/issue-runner/state/`.
+- **Trust the issue authors.** Implementers consume issue bodies and comments verbatim as their task spec and, in orchestrated mode, hold merge authority (`gh pr merge` with no human gate). Do **not** point `/issue-runner` at a repo whose issues can be authored by untrusted parties — a malicious issue body is prompt-injection executed as instructions by an agent that can merge to your default branch. The pipeline is safe when you author the issues yourself (via `/issue-plan`); the spec instructs implementers to treat issue content as data, but that is a mitigation, not a sandbox.
+- **Single-host, single-user.** State lives at `/tmp/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated. Two concurrent `/issue-runner` runs *in the same repo* still collide on that path — don't run two at once in one repo.
 - **Not auto-invocable** (`disable-model-invocation: true` on both skills) — only the user can trigger them.
 - **Re-runs are fresh orchestrations.** A re-run does not reuse an existing PR; close a blocked run's PR before re-running its issue.
 - **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`.

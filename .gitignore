@@ -10,6 +10,3 @@ Thumbs.db
 # Claude Code session leftovers
 .claude/worktrees/
 .claude/sessions/
-
-# Local state from runs
-/tmp/issue-runner/
