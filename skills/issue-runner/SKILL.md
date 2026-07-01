@@ -16,7 +16,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner` — all open issues (label-filtered, Step 1)
 - `/issue-runner 42 43 44` — exactly these issues; label filters bypassed
 - `/issue-runner --plan` — build and print the DAG, then exit
-- `/issue-runner --max-parallel N` — concurrency cap (default 10); `--sequential` ≡ `--max-parallel 1`
+- `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass
 
@@ -24,12 +24,19 @@ Re-runs are fresh orchestrations, not resumes: re-invoke with **only** the faile
 
 ## State
 
-`STATE_DIR=/tmp/issue-runner/state` — initialized only for orchestrated runs (scope ≥ 2); the single-issue fast path and a `--plan` exit never touch it. Single-host, single-user: concurrent runs collide on this path.
+`STATE_DIR=/tmp/issue-runner/<repo-key>/state`, where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only for orchestrated runs (scope ≥ 2); the single-issue fast path and a `--plan` exit never touch it. Single-host, single-user: two concurrent runs *in the same repo* still collide on this path — runs in different repos are isolated.
 
 ```bash
-find /tmp/issue-runner -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
-[ -d /tmp/issue-runner/state ] && mv /tmp/issue-runner/state "/tmp/issue-runner/state.prev.$(date +%s)"
-mkdir -p /tmp/issue-runner/state
+# Namespace state by repo root so different repos never collide on a shared /tmp path.
+# The orchestrator never enters a worktree, so the toplevel is stable for the whole run.
+REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | sha1sum | cut -c1-8)
+RUN_ROOT=/tmp/issue-runner/$REPO_KEY
+STATE_DIR=$RUN_ROOT/state
+
+find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
+[ -d "$STATE_DIR" ] && mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)"
+mkdir -p "$STATE_DIR"
 ```
 
 Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`), `error`, optional `guidance.md`, `worktree` (recorded for failed/skipped only).
@@ -57,7 +64,7 @@ Always pass the resolved absolute path into dispatch prompts — subagents do no
 
 - **Parked labels.** Partition by parked labels — exact match, case/separator-insensitive: `on-hold`, `wontfix`, `parking-lot`, `blocked`, `discussion-only`, `needs-info`, `stale`, `duplicate`. If any are parked, ask via `AskUserQuestion`: skip parked *(recommended)* / include all / pick. Never auto-include a parked issue. No parked issues → no question. (`duplicate` usually wants `gh issue close`, not implementation — say so if the user includes one.)
 
-**Single-issue fast path.** If scope size == 1: do not initialize state. Read `$GH_ISSUE_SKILL` and follow the procedure inline as an interactive run (plan confirmation applies). Never `Skill("gh-issue")` — see Hard rules.
+**Single-issue fast path.** If scope size == 1: do not initialize state or build a DAG. Read `$GH_ISSUE_SKILL` and follow the procedure inline as an interactive run (plan confirmation applies). Isolation still happens — gh-issue's interactive mode creates its own worktree in Step 4 and tears it down in Step 9 — so the orchestrator's state and Step 5 cleanup are not needed here. Never `Skill("gh-issue")` — see Hard rules.
 
 **Dirty-tree audit.** `git status --porcelain=v1 -uall`. If anything is reported, show every line and ask: stash / commit / discard / proceed-as-is. Never start orchestration on a dirty tree without an explicit choice. Keep the output as a snapshot for Step 5's clean check.
 
@@ -82,7 +89,7 @@ Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title)
 
 ### Step 3 — execute
 
-Set `MAX_PARALLEL` (default 10). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`) or paused (`blocked`):
+Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`) or paused (`blocked`):
 
 1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
 2. **Ready set** = `pending` ∧ all deps `done` ∧ not in flight.
@@ -97,7 +104,7 @@ Set `MAX_PARALLEL` (default 10). Mark every issue `pending`, then loop until all
 
 ### Step 3a — implementer dispatch
 
-One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`:
+One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, and `<STATE_DIR>` (the resolved absolute path — subagents don't inherit it):
 
 ```
 subagent_type: general-purpose
@@ -109,8 +116,8 @@ prompt: |
   <GH_ISSUE_SKILL> (read that file first; the path is already absolute).
 
   Inputs (read before starting):
-  - /tmp/issue-runner/state/issue-<N>/details.json — the issue
-  - /tmp/issue-runner/state/issue-<N>/guidance.md — per-issue guidance, only if it exists
+  - <STATE_DIR>/issue-<N>/details.json — the issue
+  - <STATE_DIR>/issue-<N>/guidance.md — per-issue guidance, only if it exists
 
   You run in an isolated worktree; branch off the default branch. You can
   spawn your own subagents — Explore, Plan, general-purpose helpers and
@@ -185,7 +192,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 - **No Python orchestrator.** The runtime is you plus subagents.
 - **State goes through files.** Reference paths in prompts; don't paste file contents.
 - **Never `Skill()` for `gh-issue`, `/review`, or `/codex:review`.** `gh-issue` is `disable-model-invocation: true` (refused); the review skills are terminal-output producers (they take over the turn and the steps after them never run). Inline the procedures; run codex via Bash.
-- **Single-issue scope → inline fast path.** No state, no worktree, no DAG.
-- **Worktree isolation only via the Agent tool.** Don't hand-manage worktrees outside Step 5 cleanup.
-- **The parent never enters a worktree.** All in-worktree work (fixes, re-reviews, merges) belongs to implementer subagents. This keeps the parent's cwd and `git status` trustworthy and makes Step 5 cleanup safe.
-- **Single-host, single-user state.** Concurrent `/issue-runner` runs collide on `/tmp/issue-runner/state` — don't run two at once.
+- **Single-issue scope → inline fast path.** No orchestrator state, no DAG, no Step 5. The run still isolates in a worktree, but gh-issue's interactive mode owns it (creates it in Step 4, removes it in Step 9).
+- **The orchestrator never hand-manages worktrees.** In an orchestrated run, isolation comes only from dispatching implementers with the Agent tool; the parent touches worktrees solely in Step 5 cleanup. (The single-issue fast path is not orchestrated — gh-issue creates and removes its own worktree directly.)
+- **The orchestrator never enters a worktree.** In an orchestrated run all in-worktree work (fixes, re-reviews, merges) belongs to implementer subagents, so the parent's cwd and `git status` stay trustworthy and Step 5 cleanup is safe.
+- **Single-host, single-user state.** State is namespaced per repo (`/tmp/issue-runner/<repo-key>/state`), so runs in different repos are isolated. Two concurrent runs *in the same repo* still collide — don't run two at once in one repo.

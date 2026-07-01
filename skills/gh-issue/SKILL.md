@@ -60,9 +60,25 @@ Decide what changes, in what order, with what tests. **Interactive:** share a br
 
 ### 4. Branch
 
+**Orchestrated:** you are already in your worktree (the Agent tool created it). Branch off the default branch:
+
 ```bash
 git checkout -b <type>/issue-<number>-<short-slug>   # fix/ feat/ docs/ chore/
 ```
+
+**Interactive:** isolate the work in a dedicated worktree so a dirty or concurrently-used main checkout is never touched. Create it off the default branch and enter it — every later step (implement, test, review, merge) runs from here:
+
+```bash
+DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+ROOT=$(git rev-parse --show-toplevel)
+BRANCH=<type>/issue-<number>-<short-slug>            # fix/ feat/ docs/ chore/
+WT="$ROOT/../$(basename "$ROOT")-issue-<number>"
+git worktree add "$WT" -b "$BRANCH" "$DEFAULT_BRANCH"
+cd "$WT"
+```
+
+A manual `git worktree add` carries no Agent-tool lock, so the Step 9 teardown is a plain remove. Helpers you spawn from here inherit this cwd — that is correct (see "Your subagents").
 
 ### 5. Implement
 
@@ -139,7 +155,23 @@ gh pr merge --squash --delete-branch "$PR_NUM" \
   --body "$(gh pr view --json body -q .body | awk '/^## Review notes$/{exit} {print}')"
 ```
 
-Verify the issue closed: `gh issue view <number> --json state` must be `CLOSED`. A `fatal: '<branch>' is already used by worktree at ...` message after a successful server-side merge is cosmetic (the branch is checked out elsewhere); the orchestrator's cleanup reconciles it.
+Verify the issue closed: `gh issue view <number> --json state` must be `CLOSED`.
+
+**Interactive teardown** — you own the worktree, so tear it down yourself (a manual worktree has no Agent-tool lock; a plain remove suffices). Leave it first so you are not standing in the directory you remove:
+
+```bash
+WT=$(git rev-parse --show-toplevel)                                          # the worktree you are in
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+MAIN=$(git worktree list --porcelain | awk '/^worktree /{print $2; exit}')   # first entry = main checkout
+DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
+cd "$MAIN"                                                                    # leave before removing
+git worktree remove -f "$WT"
+# -D, not -d: the squash merge breaks -d's ancestry check; the merge above is positive proof
+[ -n "$BRANCH" ] && [ "$BRANCH" != "$DEFAULT_BRANCH" ] && [ "$BRANCH" != HEAD ] && git branch -D "$BRANCH" 2>/dev/null || true
+git fetch --prune                                                            # drop the now-stale origin/<branch> ref
+```
+
+**Orchestrated:** do not tear down — the parent's Step 5 removes your worktree and branch after you return. A `fatal: '<branch>' is already used by worktree at ...` message after a successful server-side merge is cosmetic; the orchestrator's cleanup reconciles it.
 
 ### 10. Report
 
