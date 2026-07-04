@@ -2,6 +2,30 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.8.0] - 2026-07-02
+
+### Resume open PRs, per-repo run lock, `--status`, and a spec-consistency pass
+
+Two long-standing manual chores become automatic (duplicate PRs on re-runs, the "don't run two at once" honor system), plus a read-only status view and a batch of consistency fixes from a full-system read. Behavior changes, so 0.8.0.
+
+**issue-runner (0.7.0 → 0.8.0):**
+- **Dispatch resumes open PRs (new Step 3a resume check).** Before every dispatch, an open PR whose head branch matches `/issue-<N>-` (the gh-issue branch contract) is detected and resumed — same branch, same PR, mirroring the Step 4 retry — instead of opening a duplicate. If a leftover worktree still holds the branch, the dispatch drops `isolation: worktree` and reuses it (git refuses one branch in two worktrees); otherwise a fresh worktree fetches the branch. Multiple matches (duplicates from earlier runs) ask the user which to resume. Replaces the old rule "close a blocked run's PR before re-running" — closing a PR is now only the from-scratch escape hatch.
+- **Per-repo run lock.** `$RUN_ROOT/lock` holds `$PPID` — the Claude Code process hosting the session, the one PID that lives exactly as long as the run can — so a second run in the same repo is refused while the first is live, and a crashed run's lock reads stale and is taken over. Previously same-repo concurrency was only a documented "don't". Never delete a live lock: the state rotation would yank a running orchestration's files from under its implementers. Released in Step 5 (and on `--plan` exit).
+- **New `--status`.** Read-only: resolves `REPO_KEY`, prints a per-issue table (number, status, error, title) from `$STATE_DIR`, exits. Never locks, rotates, or initializes — safe to run mid-orchestration or after the fact.
+- **`--plan`/state contradiction fixed.** The State section claimed `--plan` never touches state while Step 2 persisted `dag.json` there before the `--plan` exit. Now: state initializes whenever a DAG is built (`--plan` included — `dag.json` is its artifact); only the fast path and `--status` never initialize it.
+- **`blocked` issues now record their `worktree` path.** State listed `worktree` for `failed`/`skipped`/`closed-externally` only, but the Step 4 retry needs the blocked issue's worktree. Step 5 keeps `blocked` worktrees in place (retry material, not just forensics).
+- **Retry dispatch disambiguated.** "Re-dispatch per Step 3a" now says explicitly: **without** `isolation: worktree`, and the prompt tells the agent to `cd` into the existing worktree first.
+- **Truncation detection made actionable.** "More than 50 open issues ⇒ tell the user" gave no way to know — with `--limit 50` you see exactly 50 and nothing else. Now: exactly 50 back ⇒ likely truncated ⇒ confirm scope.
+- **Stale `/to-issues` references fixed** (Step 2; also gh-issue Step 5) — the planner has been `/issue-plan` since 0.6.0. Intra-file duplicates removed (single-host limit, STATE_DIR-substitution rule: each stated once).
+
+**gh-issue (0.5.0 → 0.6.0):**
+- **Resume mode.** Orchestrated: a dispatch prompt naming an existing branch/PR means fetch + check out that branch and skip Step 7, pushing to the named PR. Interactive: Step 4 first checks for an open PR matching `/issue-<number>-` and asks the user — resume its branch in the worktree, or close it and start fresh.
+
+**Docs / hygiene:**
+- **Token diet:** frontmatter `description` fields load into every session's skill list — the plugin's only recurring context cost — so all three were tightened without losing the trigger contract (issue-plan 0.1.0 → 0.1.1).
+- **lint.sh:** two new drift guards — (5) the issue-body contract strings (`## Blocked by`, `None - can start immediately`) must appear in both issue-plan and issue-runner; (6) no skill may reference the retired `/to-issues` command.
+- README: `--status` in usage; limitations updated (PID lock replaces the same-repo "don't run two at once"; re-runs resume open PRs). REFERENCE: resume + lock rationale, lock troubleshooting entry.
+
 ## [0.7.0] - 2026-07-01
 
 ### Per-repo state, interactive worktree lifecycle, and data-loss / cycle / injection fixes

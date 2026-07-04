@@ -1,7 +1,7 @@
 ---
 name: gh-issue
-version: 0.5.0
-description: Picks up a GitHub issue, implements the required changes, runs a layered review (fresh-eyes subagents, then a Codex gate), and merges the PR that closes the issue.
+version: 0.6.0
+description: Implements a GitHub issue end-to-end — explore, code, PR, layered review (fresh-eyes subagents, then a Codex gate), merge.
 disable-model-invocation: true
 ---
 
@@ -68,7 +68,11 @@ Decide what changes, in what order, with what tests. **Interactive:** share a br
 git checkout -b <type>/issue-<number>-<short-slug>   # fix/ feat/ docs/ chore/
 ```
 
-**Interactive:** isolate the work in a dedicated worktree so a dirty or concurrently-used main checkout is never touched. Create it off the default branch and enter it — every later step (implement, test, review, merge) runs from here:
+If your dispatch prompt names an existing branch and PR (**resume**), check that branch out instead — `git fetch origin <branch> && git checkout <branch>` — and skip Step 7: push to the named PR.
+
+**Interactive:** first check for in-flight work — an open PR whose head branch matches `/issue-<number>-` (`gh pr list --state open --json number,headRefName`). If one exists, ask the user: resume it (fetch the branch, add the worktree on it — no `-b` off the default branch — and skip Step 7, pushing to that PR) or close it and start fresh.
+
+Then isolate the work in a dedicated worktree so a dirty or concurrently-used main checkout is never touched. Create it off the default branch and enter it — every later step (implement, test, review, merge) runs from here:
 
 ```bash
 DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
@@ -93,7 +97,7 @@ A manual `git worktree add` carries no Agent-tool lock, so the Step 9 teardown i
 
 ### 5. Implement
 
-Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior. If the issue body has an `## Acceptance criteria` checklist (the `/to-issues` format), treat it as the definition of done and verify every item before opening the PR.
+Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior. If the issue body has an `## Acceptance criteria` checklist (the `/issue-plan` format), treat it as the definition of done and verify every item before opening the PR.
 
 ### 6. Commit and push
 
@@ -101,7 +105,7 @@ Stage explicitly (no `git add .`). Commit message: `<type>: <description>` with 
 
 ### 7. Open the PR
 
-`gh pr create` — title under 70 chars; body with `## Summary`, `Closes #<number>`, `## Changes`, `## Test plan`.
+`gh pr create` — title under 70 chars; body with `## Summary`, `Closes #<number>`, `## Changes`, `## Test plan`. **Resume runs skip this step**: the PR already exists — push to it and refresh its body per Step 8.
 
 ### 8. Review loop
 

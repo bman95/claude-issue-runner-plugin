@@ -1,8 +1,8 @@
 ---
 name: issue-plan
-version: 0.1.0
+version: 0.1.1
 disable-model-invocation: true
-description: "Turn an idea, plan, or spec into ready-to-run GitHub issues: asks only the questions the input actually needs, breaks the work into tracer-bullet vertical slices, and publishes issues in the exact format /issue-runner parses (What to build / Acceptance criteria / Blocked by). Trigger: the user types /issue-plan. Do not auto-invoke."
+description: "Turns an idea, plan, or spec into ready-to-run GitHub issues: interviews only where the input has gaps, slices the work into tracer-bullet vertical slices, and publishes in the format /issue-runner parses (What to build / Acceptance criteria / Blocked by). Trigger: the user types /issue-plan. Do not auto-invoke."
 ---
 
 # Issue Plan

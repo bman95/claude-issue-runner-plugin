@@ -10,6 +10,8 @@
 #   2. every skills/*/SKILL.md frontmatter has name + description + version
 #   3. README --max-parallel default == issue-runner SKILL default
 #   4. CHANGELOG has an entry for the manifest version
+#   5. the issue-body contract strings appear in both issue-plan and issue-runner
+#   6. no skill references retired command names (e.g. /to-issues)
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq). Exits non-zero on
 # the first-or-any failure, printing every problem it found.
@@ -88,6 +90,24 @@ if [ -n "$plugin_version" ]; then
   else
     err "CHANGELOG has no '## [$plugin_version]' entry"
   fi
+fi
+
+# 5. Issue-body contract strings shared by planner and runner ------------------
+SKILL_PLAN="$ROOT/skills/issue-plan/SKILL.md"
+for s in '## Blocked by' 'None - can start immediately'; do
+  for f in "$SKILL_PLAN" "$SKILL_RUNNER"; do
+    if ! grep -qF "$s" "$f"; then
+      err "contract string '$s' missing from ${f#"$ROOT"/}"
+    fi
+  done
+done
+ok "issue-body contract strings present in planner and runner"
+
+# 6. Retired command names ------------------------------------------------------
+if grep -rn 'to-issues' "$ROOT/skills" ; then
+  err "skills reference retired command /to-issues (use /issue-plan)"
+else
+  ok "no retired command references in skills/"
 fi
 
 if [ "$fail" -ne 0 ]; then

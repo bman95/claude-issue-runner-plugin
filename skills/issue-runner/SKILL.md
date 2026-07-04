@@ -1,8 +1,8 @@
 ---
 name: issue-runner
-version: 0.7.0
+version: 0.8.0
 disable-model-invocation: true
-description: "Multi-issue GitHub workflow orchestrator. Builds a dependency DAG over the open-issue queue and dispatches each issue to an autonomous, worktree-isolated implementer subagent that follows the bundled gh-issue procedure end-to-end (explore → implement → PR → review → merge), parallelizing independent issues and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
+description: "Orchestrates a queue of GitHub issues: builds a dependency DAG and dispatches each issue to an autonomous worktree-isolated implementer subagent (explore → implement → PR → review → merge), running independent issues in parallel and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
 
 # Issue Runner
@@ -15,16 +15,17 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 
 - `/issue-runner` — all open issues (label-filtered, Step 1)
 - `/issue-runner 42 43 44` — exactly these issues; label filters bypassed
-- `/issue-runner --plan` — build and print the DAG, then exit
+- `/issue-runner --plan` — build and print the DAG, then exit (releasing the run lock)
+- `/issue-runner --status` — read-only: resolve `REPO_KEY` (the State block's first four lines — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`), and exit. No state dir → say so.
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass
 
-Re-runs are fresh orchestrations, not resumes: re-invoke with **only** the failed issue numbers, and close a blocked run's leftover PR (`gh pr close`) before re-running its issue, or you get two PRs for the same issue.
+Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** for an issue instead of opening a duplicate (Step 3a resume check). Re-invoke with **only** the unfinished issue numbers — full scope would re-implement completed issues. Close the old PR first only when you want a from-scratch retry.
 
 ## State
 
-`STATE_DIR=/tmp/issue-runner/<repo-key>/state`, where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only for orchestrated runs (scope ≥ 2); the single-issue fast path and a `--plan` exit never touch it. Single-host, single-user: two concurrent runs *in the same repo* still collide on this path — runs in different repos are isolated.
+`STATE_DIR=/tmp/issue-runner/<repo-key>/state`, where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it.
 
 ```bash
 # Namespace state by repo root so different repos never collide on a shared /tmp path.
@@ -34,12 +35,23 @@ REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | sha1sum | cut -c1
 RUN_ROOT=/tmp/issue-runner/$REPO_KEY
 STATE_DIR=$RUN_ROOT/state
 
+# One run per repo. $PPID is the Claude Code process hosting this session — it
+# dies with the session, so a crashed run's lock reads stale and is taken over.
+# A live lock means another session is orchestrating this repo: stop and tell
+# the user; NEVER delete a live lock (the rotation below would yank a running
+# orchestration's state from under its implementers).
+mkdir -p "$RUN_ROOT"
+if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
+  echo "live issue-runner in this repo (lock: $RUN_ROOT/lock)" >&2; exit 1
+fi
+echo $PPID > "$RUN_ROOT/lock"
+
 find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
 [ -d "$STATE_DIR" ] && mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)"
 mkdir -p "$STATE_DIR"
 ```
 
-Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `failed`/`skipped`/`closed-externally`).
+Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one).
 
 ## Workflow
 
@@ -60,7 +72,7 @@ Always pass the resolved absolute path into dispatch prompts — subagents do no
 
 **Explicit numbers passed** → that is the scope verbatim; skip to the fast-path check.
 
-**No arguments** → `gh issue list --state open --json number,title,body,labels,assignees,comments --limit 50`. If the repo has more than 50 open issues, tell the user rather than silently truncating. Then filter:
+**No arguments** → `gh issue list --state open --json number,title,body,labels,assignees,comments --limit 50`. Exactly 50 results back means the list is likely truncated — tell the user and confirm scope rather than run a silently-partial queue. Then filter:
 
 - **Parked labels.** Partition by parked labels — exact match, case/separator-insensitive: `on-hold`, `wontfix`, `parking-lot`, `blocked`, `discussion-only`, `needs-info`, `stale`, `duplicate`. If any are parked, ask via `AskUserQuestion`: skip parked *(recommended)* / include all / pick. Never auto-include a parked issue. No parked issues → no question. (`duplicate` usually wants `gh issue close`, not implementation — say so if the user includes one.)
 
@@ -79,13 +91,13 @@ done
 
 ### Step 2 — build the DAG
 
-**Primary source — the `## Blocked by` section** emitted by `/to-issues`: every bullet referencing `#X` is an edge N→X; a literal "None - can start immediately" means no deps. **Fallback heuristic** for issues without that section — scan body + comments for inline phrases: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
+**Primary source — the `## Blocked by` section** emitted by `/issue-plan`: every bullet referencing `#X` is an edge N→X; a literal "None - can start immediately" means no deps. **Fallback heuristic** for issues without that section — scan body + comments for inline phrases: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
 
 **Out-of-scope edges are never dropped silently.** For each edge pointing outside `scope.txt`, ask the user: **extend** (pull the prerequisite into scope), **drop-issue** (remove the dependent), or **override** (prerequisite satisfied externally; record in `$STATE_DIR/overrides.txt`).
 
 **LLM refinement** (skip if `--no-llm-refine`): dispatch one `Plan` subagent with all issue bodies; it returns one JSON edge per line. When every in-scope issue carries a `## Blocked by` section, ask the agent for `conflict` edges only — the dependencies are already explicit — `{"kind":"depends","from":X,"on":Y,"reason":"…"}` or `{"kind":"conflict","a":X,"b":Y,"reason":"…"}`. Parsing is best-effort: log unparseable or out-of-scope lines to `$STATE_DIR/refinement-rejects.txt` and continue; never fail the run on bad refinement output. Serialize each conflict as a `depends` edge using scope.txt order (earlier runs first) and record it in `$STATE_DIR/conflicts.json`.
 
-Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title) plus a section for conflicts forced into serial order. To override an order, the user re-invokes with explicit numbers in the desired order. If `--plan`, exit here.
+Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title) plus a section for conflicts forced into serial order. To override an order, the user re-invokes with explicit numbers in the desired order. If `--plan`, release the lock (`rm -f "$RUN_ROOT/lock"`) and exit here.
 
 ### Step 3 — execute
 
@@ -114,7 +126,18 @@ Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all 
 
 ### Step 3a — implementer dispatch
 
-One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, and `<STATE_DIR>` (the resolved absolute path — subagents don't inherit it):
+**Resume check (before every dispatch).** The branch contract (`<type>/issue-<N>-<slug>`, gh-issue Step 4) makes an issue's in-flight work discoverable:
+
+```bash
+gh pr list --state open --json number,headRefName \
+  --jq ".[] | select(.headRefName | test(\"/issue-$N-\")) | \"#\(.number) \(.headRefName)\""
+```
+
+- **No match** → dispatch the template below as-is (fresh branch, new PR).
+- **One match** (`#P` on branch `B`) → resume, don't duplicate. If `git worktree list --porcelain` shows `B` checked out in a worktree, dispatch **without** `isolation: worktree` and tell the agent to `cd` there first (exactly like a Step 4 retry). Otherwise keep `isolation: worktree` and add to the prompt: check out `B` (fetch first, no new branch), skip PR creation, push to PR `#P`.
+- **Several matches** → duplicates from earlier runs: ask the user which PR to resume and close the rest.
+
+One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, and `<STATE_DIR>` (resolved absolute paths):
 
 ```
 subagent_type: general-purpose
@@ -160,10 +183,10 @@ Read the agent's error message. **Try to resolve it yourself first** — you hol
 
 **Escalate to the user only** for decisions that change scope, product behavior, or accept risk: merging despite open findings, dropping or skipping an issue, picking between contradictory requirements, spending more budget. When escalating, present the blocker, the latest findings, and your recommendation. Escalations, cheapest first:
 
-- **Retry the implementer.** Write the user's guidance plus any finding text to `$STATE_DIR/issue-N/guidance.md` (append a `## Retry N` section). Re-dispatch per Step 3a, additionally passing: the existing worktree path (continue on the same branch — no new worktree isolation) and the existing PR number (push to the same PR). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree.
+- **Retry the implementer.** Write the user's guidance plus any finding text to `$STATE_DIR/issue-N/guidance.md` (append a `## Retry N` section). Re-dispatch per Step 3a **without** `isolation: worktree`, adding to the prompt: the existing worktree path (`cd` there first; continue on the same branch) and the existing PR number (push to the same PR). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree.
 - **Hand off to `/codex:rescue`** for a fresh investigation; pass the worktree path and the latest review log.
 - **Mark `failed`** and let the cascade skip dependents.
-- **Bump the Codex cap and re-run** — only for a converged-but-unverified cap-stop: `/issue-runner <N> --max-codex-iterations M`. Fresh orchestration: close the existing PR first (see Arguments).
+- **Bump the Codex cap and re-run** — only for a converged-but-unverified cap-stop: `/issue-runner <N> --max-codex-iterations M`. The re-run's resume check picks up the existing PR and branch.
 
 ### Step 5 — cleanup and summary
 
@@ -186,14 +209,14 @@ if [ -n "$WT_BRANCH" ] && [ "$WT_BRANCH" != HEAD ] && [ "$WT_BRANCH" != "$DEFAUL
 fi
 ```
 
-For `failed`/`skipped`/`closed-externally` issues, leave worktree and branch in place for forensics (a `closed-externally` branch may hold unmerged work the external close discarded); record the path in `$STATE_DIR/issue-N/worktree`. Then `git worktree prune`, and sweep the Agent tool's leftover scratch branches with the safe flag:
+For `blocked`/`failed`/`skipped`/`closed-externally` issues, leave worktree and branch in place — `blocked` needs them for a Step 4 retry; the rest are forensics (a `closed-externally` branch may hold unmerged work the external close discarded). Record the path in `$STATE_DIR/issue-N/worktree`. Then `git worktree prune`, and sweep the Agent tool's leftover scratch branches with the safe flag:
 
 ```bash
 git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-agent-' \
   | while read -r b; do git branch -d "$b" 2>/dev/null || true; done
 ```
 
-**Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, and surface anything new — never auto-discard.
+**Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, and surface anything new — never auto-discard. Then release the run lock: `rm -f "$RUN_ROOT/lock"`.
 
 **Summary table**: number, status, title, error. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
 
@@ -205,4 +228,4 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 - **Single-issue scope → inline fast path.** No orchestrator state, no DAG, no Step 5. The run still isolates in a worktree, but gh-issue's interactive mode owns it (creates it in Step 4, removes it in Step 9).
 - **The orchestrator never hand-manages worktrees.** In an orchestrated run, isolation comes only from dispatching implementers with the Agent tool; the parent touches worktrees solely in Step 5 cleanup. (The single-issue fast path is not orchestrated — gh-issue creates and removes its own worktree directly.)
 - **The orchestrator never enters a worktree.** In an orchestrated run all in-worktree work (fixes, re-reviews, merges) belongs to implementer subagents, so the parent's cwd and `git status` stay trustworthy and Step 5 cleanup is safe.
-- **Single-host, single-user state.** State is namespaced per repo (`/tmp/issue-runner/<repo-key>/state`), so runs in different repos are isolated. Two concurrent runs *in the same repo* still collide — don't run two at once in one repo.
+- **Single-host state, one run per repo.** State is namespaced per repo (`/tmp/issue-runner/<repo-key>/state`), so runs in different repos are isolated; within a repo, the PID lock (`$RUN_ROOT/lock`) refuses a second concurrent run. Never delete a live lock to force one.
