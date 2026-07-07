@@ -1,6 +1,6 @@
 ---
 name: issue-plan
-version: 0.1.1
+version: 0.2.0
 disable-model-invocation: true
 description: "Turns an idea, plan, or spec into ready-to-run GitHub issues: interviews only where the input has gaps, slices the work into tracer-bullet vertical slices, and publishes in the format /issue-runner parses (What to build / Acceptance criteria / Blocked by). Trigger: the user types /issue-plan. Do not auto-invoke."
 ---
@@ -52,7 +52,16 @@ End-to-end behavior of this slice, described as outcome, not layer-by-layer impl
 - #N
 
 (or "None - can start immediately")
+
+## Interfaces
+
+- `parseConfig(path: string) -> Config` — provided by #N, consumed here
+- `POST /api/widgets` — request/response shape agreed across slices
+
+Files likely touched: `src/config.ts`, `src/api/widgets.ts`
 ```
+
+`## Interfaces` is **optional**: include it only when slices share a contract — function signatures, schemas, endpoints, or file boundaries agreed between slices — and optionally add a `Files likely touched:` line from your Step 1 exploration. `/issue-runner` ignores this section; it exists for the implementer, which seeds its codebase exploration with it (gh-issue Step 2).
 
 ## 5. Hand off
 

@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.8.0
+version: 0.9.0
 disable-model-invocation: true
 description: "Orchestrates a queue of GitHub issues: builds a dependency DAG and dispatches each issue to an autonomous worktree-isolated implementer subagent (explore → implement → PR → review → merge), running independent issues in parallel and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -19,19 +19,22 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner --status` — read-only: resolve `REPO_KEY` (the State block's first four lines — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`), and exit. No state dir → say so.
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
+- `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass
 
 Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** for an issue instead of opening a duplicate (Step 3a resume check). Re-invoke with **only** the unfinished issue numbers — full scope would re-implement completed issues. Close the old PR first only when you want a from-scratch retry.
 
 ## State
 
-`STATE_DIR=/tmp/issue-runner/<repo-key>/state`, where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it.
+`STATE_DIR=/tmp/issue-runner/<repo-key>/state`, where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it. GitHub is the cross-run source of truth (Step 3a's resume check rediscovers in-flight work from open PRs); `$STATE_DIR` is run-scoped scratch for in-run coordination, and `state.prev.*` rotations are forensics only.
 
 ```bash
 # Namespace state by repo root so different repos never collide on a shared /tmp path.
 # The orchestrator never enters a worktree, so the toplevel is stable for the whole run.
 REPO_ROOT=$(git rev-parse --show-toplevel)
-REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | sha1sum | cut -c1-8)
+# git hash-object, not sha1sum: sha1sum is absent on stock macOS, and the silent
+# pipeline failure would collapse the key to <basename>- — same-basename repos colliding.
+REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | git hash-object --stdin | cut -c1-8)
 RUN_ROOT=/tmp/issue-runner/$REPO_KEY
 STATE_DIR=$RUN_ROOT/state
 
@@ -68,6 +71,8 @@ done
 
 Always pass the resolved absolute path into dispatch prompts — subagents do not inherit `CLAUDE_PLUGIN_ROOT`.
 
+**Codex preflight**: `command -v codex >/dev/null`. Missing and `--no-codex-gate` not passed → tell the user codex is absent and ask via `AskUserQuestion`: abort *(recommended)* or proceed without the gate (equivalent to `--no-codex-gate`). Better to learn this before dispatch than have every implementer discover it mid-review.
+
 ### Step 1 — determine scope
 
 **Explicit numbers passed** → that is the scope verbatim; skip to the fast-path check.
@@ -101,19 +106,23 @@ Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title)
 
 ### Step 3 — execute
 
-Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`) or paused (`blocked`):
+Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`) or paused (`blocked`, plus any `pending` issue waiting on a `blocked` ancestor — item 6's blocked-chain case):
 
 1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Any `pending` issue with a `closed-externally` dep → `skipped`, error `"dependency closed externally without merge proof: #X"` — the dep is terminal but its work is unverified, so dependents must not build on it (and must not be mislabeled as a cycle). Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
 2. **Ready set** = `pending` ∧ all deps `done` ∧ not in flight.
 3. **Fill slots** up to `MAX_PARALLEL` with dispatches (Step 3a); mark `implementing`.
-4. **Wait** for any in-flight agent to complete.
+4. **Wait** for any in-flight agent to complete. An implementer that has produced nothing long after its siblings finished and well past the scale of its issue is hung: stop it, mark the issue `failed` with error `"implementer hung (no completion)"`, record its worktree path if known, and let the cascade handle dependents — a Step 4 retry is the recovery path.
 5. **Process the result.** A `CLOSED` issue is `done` **only with positive merge proof** — the implementer's own PR actually merged. `CLOSED` alone is not proof: the issue may have been closed by hand or by an unrelated PR's `Closes #N` mid-run. Derive the branch from the returned worktree (read-only; never `cd` into it) and look for a merged PR on it:
 
    ```bash
    ISSUE_STATE=$(gh issue view "$N" --json state -q .state)
    WT_BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)
-   MERGED_PR=$(gh pr list --head "$WT_BRANCH" --state merged --json number -q '.[0].number')
+   MERGED_PR=""   # --head "" applies NO filter and matches unrelated merged PRs → false done
+   [ -n "$WT_BRANCH" ] && [ "$WT_BRANCH" != HEAD ] && \
+     MERGED_PR=$(gh pr list --head "$WT_BRANCH" --state merged --json number -q '.[0].number')
    ```
+
+   An empty or unreadable `WT_BRANCH` (worktree gone) is **no** merge proof: `CLOSED` → `closed-externally`, open → `failed`.
 
    - **`CLOSED` + `MERGED_PR` non-empty** → `done`. This is the only status that authorizes Step 5's `git branch -D` (positive proof of merge).
    - **`CLOSED` + no merged PR on that branch** → `closed-externally`: closed out-of-band, **not** merge proof. Save an `error` note ("closed without a merged implementer PR"), **keep the worktree and branch**, and flag it in the Step 5 summary for human review. Never `-D` its branch.
@@ -173,6 +182,8 @@ prompt: |
   the Skill tool — inline the procedures; run codex via Bash.
 ```
 
+**Gateless runs** (`--no-codex-gate`, or the user chose to proceed at the Step 0 preflight): replace the Codex-cap line with — the Codex gate is waived for this run: skip gh-issue Step 8 Phase 2, record `Codex gate waived (--no-codex-gate)` under `## Review notes`, and merge only on Phase 1 convergence.
+
 `general-purpose` is required: it is the only built-in type with the full tool surface (Bash, Edit, Agent — typed `Explore`/`Plan` agents are read-only and cannot push or merge).
 
 Per-issue guidance (retry context, scope limits, "do not edit X" lists) always goes in `$STATE_DIR/issue-N/guidance.md` and is referenced by path — never pasted into the prompt body.
@@ -218,7 +229,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, and surface anything new — never auto-discard. Then release the run lock: `rm -f "$RUN_ROOT/lock"`.
 
-**Summary table**: number, status, title, error. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
+**Summary table**: number, status, title, error. Also aggregate, per issue and as totals, the Phase 1 iterations and Codex gate passes (0–2) each implementer reports (gh-issue Step 10), plus any gate degradations/waivers — so review-loop caps get tuned from data, not folklore. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
 
 ## Hard rules
 

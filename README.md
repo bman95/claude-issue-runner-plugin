@@ -49,6 +49,7 @@ git clone <this-repo> ~/personal/claude-issue-runner-plugin
 /issue-runner:issue-runner --status                     # print the last run's state table (read-only)
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
+/issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement
 /issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
 ```
@@ -66,7 +67,7 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 
 - **Claude Code** with the Agent and Bash tools; subagents must be able to spawn subagents (current `general-purpose` agents do).
 - **GitHub CLI (`gh`)** authenticated against the target repository.
-- **`codex` CLI** for the review gate (degrades gracefully on credit/quota exhaustion).
+- **`codex` CLI** for the review gate — required for unattended orchestrated runs: if `codex` is not installed the orchestrator asks up front (or pass `--no-codex-gate`); only credit/quota exhaustion degrades gracefully mid-run.
 - **`/codex:rescue`** for the rescue escalation. Optional but referenced by the spec.
 - **Git >= 2.5** (worktrees).
 
@@ -78,7 +79,7 @@ The `gh-issue` implementer skill is bundled — no separate installation.
 - **Single-host.** State lives at `/tmp/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated; within a repo, a PID lock refuses a second concurrent run (a crashed run's lock reads stale and is taken over).
 - **Not auto-invocable** (`disable-model-invocation: true` on both skills) — only the user can trigger them.
 - **Re-runs resume open PRs.** Dispatch detects an existing open PR for an issue (head branch matches `/issue-<N>-`) and continues on its branch instead of opening a duplicate. Close the PR first for a from-scratch retry.
-- **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`.
+- **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`; `scripts/lint.sh` additionally syntax-checks the embedded bash recipes (`bash -n`) and guards recipe drift across the skill files, but nothing exercises the workflows end-to-end.
 
 ## Versioning
 

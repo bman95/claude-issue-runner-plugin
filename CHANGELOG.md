@@ -2,6 +2,35 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.9.0] - 2026-07-06
+
+### CI gate before merge, codex-optional runs, portable state keys, and a verified-findings hardening pass
+
+A full adversarial re-audit of the specs (every finding independently verified — several empirically — before any edit) produced this batch. Theme: close the paths where an unattended run could merge or mislabel without proof, and make the plugin runnable without its cross-vendor dependency.
+
+**issue-runner (0.8.0 → 0.9.0):**
+- **Portable `REPO_KEY`.** The per-repo state key hashed with `sha1sum`, which stock macOS doesn't ship — the un-`pipefail`ed pipeline silently collapsed the key to `<basename>-`, so two same-basename repos on a Mac would share state: the exact clobbering the 0.7.0 namespacing exists to prevent. Now `git hash-object --stdin` (git is already a hard requirement, available wherever the plugin runs).
+- **Merge-proof check guards an empty branch.** Verified empirically: `gh pr list --head "" --state merged` applies **no** filter and returns unrelated merged PRs — so a `CLOSED` issue whose worktree had vanished could ride an arbitrary merged PR to a false `done`. The query now runs only with a non-empty `WT_BRANCH`; an unreadable branch is *no* merge proof (`CLOSED` → `closed-externally`, open → `failed`).
+- **Hung implementers handled.** Step 3 item 4 covered crashes but not a live-but-silent agent, which stalled the whole run with no recipe. Now: long-silent past the scale of its issue → stop it, `failed` with `implementer hung (no completion)`, cascade handles dependents, Step 4 retry is the recovery (the resume check picks up any PR it opened). REFERENCE gains the matching troubleshooting entry.
+- **Codex preflight + `--no-codex-gate`.** A missing `codex` CLI previously hard-blocked every orchestrated PR at the gate — discovered only mid-review, N implementers deep. Step 0 now preflights `command -v codex`; missing → ask up front (abort *recommended*, or proceed gateless). `--no-codex-gate` waives the gate explicitly: implementers merge on Phase 1 convergence alone, recorded in each PR body exactly like the credit/quota degradation. The waiver travels only via the dispatch prompt/user flag — never issue/PR content (REFERENCE rationale note).
+- **Run summary aggregates review telemetry.** Phase 1 iterations, gate passes, degradations/waivers — per issue and as totals — so the review-loop caps (2 reviewers × ≤4 iterations, gate cap 2) can be tuned from data instead of folklore.
+- **Wording/framing:** the Step 3 loop guard now names the blocked-chain pause (pending-on-a-blocked-ancestor) alongside `blocked`; the State section states the two-tier model explicitly (GitHub is the cross-run source of truth via the resume check; `$STATE_DIR` is run-scoped scratch; `state.prev.*` is forensics only); the `$PPID` lock rationale records that the assumption was validated empirically on Linux/WSL and what the failure mode would be elsewhere (stale-reading lock, not a wedge).
+
+**gh-issue (0.6.0 → 0.7.0):**
+- **Step 9 gates the merge on CI.** `gh pr merge` enforces only *required* branch protections; advisory checks — the common case on personal repos — never blocked it, so a squash merge could land over a red build. The merge now runs base-freshness first (a sibling PR merged into the base since the branch point + file overlap → merge the base in, re-test, push — the semantic-conflict window no textual check catches), then `gh pr checks --watch` (pass or no-CI → merge; fail → ask/blocker). Freshness runs *before* the gate so the watched commit is the one that merges. Never merge over a failing check without explicit user authorization.
+- **Phase 2 checks codex availability first** and supports the orchestrator's waiver (above); the Converged definition and Step 10 report cover the waived state as prominently as the credit/quota degradation.
+- **Step 2 consumes planner contracts.** An issue carrying `## Interfaces` or `Files likely touched:` seeds the Explore prompt — verified against current code, since the base may have moved since planning.
+
+**issue-plan (0.1.1 → 0.2.0):**
+- **Optional `## Interfaces` section** in the issue-body contract (shared function signatures, schemas, endpoints between slices) plus an optional `Files likely touched:` line from the planner's exploration — previously the interview and exploration were discarded entirely and every implementer re-derived them. The runner ignores the section; it exists for the implementer.
+
+**Docs / tooling:**
+- **lint.sh grew from 6 to 10 checks:** the `--max-parallel` default is now compared across all three sites (README, SKILL arguments, Step 3 runtime line — the third was invisible before); every ```` ```bash ```` block in the skills is extracted, placeholder-neutralized, and `bash -n`-checked; shellcheck runs advisorily when installed; the default-branch resolution one-liner must be byte-identical across its sites in both SKILL files; the branch contract (`/issue-<`) must be present in both (placeholder-spelling drift warns).
+- **New `docs/scenarios.md`:** the golden scheduler scenarios (blocked chain vs cycle, closed-externally cascade, resume paths, the new empty-branch guard, …) as a fixture table — the behavioral contract to re-dry-read after any Step 3 edit.
+- **New `docs/design-notes.md`:** five RFCs from the re-audit's surviving design questions — hybrid deterministic-scheduler helper script, full merge queue, pluggable review gate, structured planner artifact, spend-telemetry limits.
+- **FABLE5 audit docs archived** to `docs/archive/` with historical-snapshot headers — `source: "./"` ships the whole repo to every marketplace install, and the audit described long-fixed bugs as open.
+- README: precise codex requirement (absence blocks unattended runs unless waived; only credit/quota degrades mid-run), `--no-codex-gate` in usage, lint coverage noted in limitations.
+
 ## [0.8.0] - 2026-07-02
 
 ### Resume open PRs, per-repo run lock, `--status`, and a spec-consistency pass

@@ -1,0 +1,21 @@
+# Golden scheduler scenarios
+
+These fixtures are the behavioral contract of the orchestrator's scheduling loop (`skills/issue-runner/SKILL.md`, Step 3 and its satellites). Each row was verified by dry-reading the spec against the scenario; a spec edit that changes any **Expected behavior** cell is a **breaking change** and requires a version bump plus a CHANGELOG entry. After any edit to Step 3, Step 3a, or Step 5, re-dry-read every row below. Anchors cite step/item numbers, never line numbers — the file is edited too often for lines to hold.
+
+Notation: `A -> B` means B depends on A (edge B→A in `dag.json`). Statuses are the spec's own vocabulary: `pending` / `implementing` / `blocked` / `done` / `failed` / `skipped` / `closed-externally`.
+
+| # | Scenario (DAG + statuses) | Expected behavior | Spec anchor |
+|---|---------------------------|-------------------|-------------|
+| 1 | `A -> B`; A is `blocked`, nothing else in flight | B stays `pending` (paused). It is a blocked-chain waiter, **never** skipped as a cycle; resolution goes through Step 4 on A. | Step 3 item 1 (last sentence) + item 6, blocked-chain case |
+| 2 | `A -> B`; A ends `closed-externally` | B → `skipped` with error `"dependency closed externally without merge proof: #A"`. A is terminal but unverified; B must not build on it and must not be mislabeled a cycle. | Step 3 item 1 (closed-externally cascade) |
+| 3 | `A -> B`; A ends `failed` | B → `skipped` with error `"dependency failed: #A"`; cascade repeats until stable. | Step 3 item 1 (cascade skip) |
+| 4 | True 2-cycle: A depends on B, B depends on A; no `blocked` ancestor anywhere | Both → `skipped` with `error="cycle: depends on #X"` citing a real offending dep; loop exits. | Step 3 item 6, true-cycle case |
+| 5 | Issue reports `CLOSED` and a **merged PR exists on the implementer's branch** | Issue → `done`. This is the only status that authorizes Step 5's `git branch -D` (positive merge proof). | Step 3 item 5, first bullet; Step 5 done-issue teardown |
+| 6 | Issue reports `CLOSED` but **no merged PR** on that branch | Issue → `closed-externally`: error note saved, **worktree and branch kept**, flagged in the Step 5 summary as a non-zero outcome. Never `-D` its branch. | Step 3 item 5, second bullet; Step 5 summary rules |
+| 7 | Re-run; an open PR exists whose head branch matches `/issue-N-` | Resume: dispatch checks out the existing branch and pushes to the existing PR — no duplicate PR is ever opened. | Step 3a resume check, one-match case |
+| 8 | Re-run; the resume branch is still checked out in a leftover worktree | Dispatch **without** `isolation: worktree`; the agent `cd`s into the existing worktree and reuses it (git refuses one branch in two worktrees). | Step 3a resume check, one-match worktree sub-case |
+| 9 | Scope size == 1 | Fast path: no state init, no DAG, no Step 5. The gh-issue procedure runs inline as an interactive run; gh-issue owns worktree lifecycle. | Step 1 single-issue fast path; Hard rules (fast-path rule) |
+| 10 | `git status --porcelain=v1 -uall` reports anything at start | Show every line and ask: stash / commit / discard / proceed-as-is. Never start orchestration on a dirty tree silently. | Step 1 dirty-tree audit |
+| 11 | Issue reports `CLOSED` but `WT_BRANCH` is empty/unreadable (worktree gone) | `closed-externally`, **never** `done` — a missing worktree is no merge proof. (Open + gone worktree → `failed`.) | Step 3 item 5, empty-`WT_BRANCH` guard |
+
+Two rows (1 vs 4) together pin the 0.7.0 cycle-check fix: a cycle is declared only when **no** remaining `pending` issue has a `blocked` ancestor. Rows 5, 6 and 11 together pin the merge-proof invariant: `CLOSED` alone never authorizes branch deletion.
