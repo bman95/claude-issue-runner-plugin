@@ -2,6 +2,16 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.9.1] - 2026-07-10
+
+### Codex gate model: `gpt-5.4` → `gpt-5.6-terra`
+
+The GPT-5.6 family (Sol / Terra / Luna) reached general availability on 2026-07-09. The Phase 2 Codex gate now pins **`gpt-5.6-terra`** in place of `gpt-5.4`.
+
+**gh-issue (0.7.0 → 0.7.1):**
+- **Same spend, newer generation.** Terra lists at the same `$2.50 / $15` per-1M input/output as the former `gpt-5.4` pin, but sits on the 5.6 Pareto frontier (above 5.5 across reasoning efforts) — a quality bump at identical cost. The design intent is unchanged: the gate runs on a diff Phase 1 already pre-cleaned, so it wants a solid final reviewer at controlled cost, not frontier depth (`reasoning=medium` retained). Sol/Luna remain the escalation/economy alternatives documented for the pluggable-gate note.
+- **Explicit `-terra` id required.** The bare `gpt-5.6` alias routes to Sol (`$5 / $30`, 2×); the pin uses the full `gpt-5.6-terra` id to avoid the silent upcharge. The `docs/design-notes.md` pluggable-gate default was updated to match.
+
 ## [0.9.0] - 2026-07-06
 
 ### CI gate before merge, codex-optional runs, portable state keys, and a verified-findings hardening pass

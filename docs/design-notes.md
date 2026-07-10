@@ -41,7 +41,7 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 **Options.**
 1. Status quo: `codex review` hardcoded.
-2. Configurable gate command, default `codex review -c model=gpt-5.4`. Alternatives: `claude -p` at high effort with the gate-review framing (same-vendor, but fresh context — weaker diversity, zero extra tooling); `none` + rely on CI checks (for repos with strong pipelines).
+2. Configurable gate command, default `codex review -c model=gpt-5.6-terra`. Alternatives: `claude -p` at high effort with the gate-review framing (same-vendor, but fresh context — weaker diversity, zero extra tooling); `none` + rely on CI checks (for repos with strong pipelines).
 3. Multiple gates in sequence. Rejected: cost multiplies, convergence semantics get murky.
 
 **Recommendation.** Option 2, as a `--gate-cmd` flag (or per-repo config) that must preserve the contract: the command's own exit status and stderr drive the degradation decision, never its stdout text (the 0.7.0 injection fix). `--no-codex-gate` (0.8.0) is already the `none` case; this generalizes it. Keep the default as-is — the pinned Codex gate has earned its keep in production.
