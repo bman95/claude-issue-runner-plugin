@@ -79,7 +79,7 @@ The `gh-issue` implementer skill is bundled — no separate installation.
 - **Single-host.** State lives at `/tmp/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated; within a repo, a PID lock refuses a second concurrent run (a crashed run's lock reads stale and is taken over).
 - **Not auto-invocable** (`disable-model-invocation: true` on both skills) — only the user can trigger them.
 - **Re-runs resume open PRs.** Dispatch detects an existing open PR for an issue (head branch matches `/issue-<N>-`) and continues on its branch instead of opening a duplicate. Close the PR first for a from-scratch retry.
-- **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`; `scripts/lint.sh` additionally syntax-checks the embedded bash recipes (`bash -n`) and guards recipe drift across the skill files, but nothing exercises the workflows end-to-end.
+- **No automated end-to-end tests.** Behavior is validated by production runs documented in `CHANGELOG.md`; `scripts/lint.sh` additionally syntax-checks the embedded bash recipes (`bash -n`) and guards recipe drift across the skill files. Each skill also ships agent-gradeable dry-run evals under `skills/<name>/evals/` (see `docs/evals.md`), but nothing exercises the workflows against a live repository.
 
 ## Versioning
 

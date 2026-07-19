@@ -1,0 +1,85 @@
+{
+  "skill_name": "issue-runner",
+  "notes": "Dry-run evals: each fixture records the gh/git command outputs the orchestrator would see, so runs never touch a real repository, GitHub, or the codex CLI. Rows derive from docs/scenarios.md (the golden scheduler scenarios) — if a spec edit changes an expected behavior here, that is a breaking change per that document's contract.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "cascade-skip",
+      "prompt": "Read the fixture scenario-cascade.md (provided as an input file) and, following the issue-runner skill, run one scheduling pass: apply the cascade (Step 3 item 1) and compute the ready set (item 2). Do not dispatch anything. Write two files to your output directory: statuses.json — an object mapping each issue number to {\"status\": ..., \"error\": ...} as it stands after the cascade (error null where none) — and ready.json — a JSON array of the issue numbers that are ready to dispatch. Also write decision.md with a short rationale citing the spec steps you applied.",
+      "expected_output": "Issue 12 cascade-skipped for its failed dep, issue 13 cascade-skipped with the closed-externally wording, issue 14 ready; terminal statuses untouched.",
+      "files": ["evals/files/scenario-cascade.md"],
+      "expectations": [
+        "statuses.json marks issue 12 as skipped with an error containing the exact phrase 'dependency failed: #10'",
+        "statuses.json marks issue 13 as skipped with an error containing the exact phrase 'dependency closed externally without merge proof: #11'",
+        "statuses.json leaves issue 10 as failed and issue 11 as closed-externally (unchanged)",
+        "statuses.json leaves issue 14 as pending and ready.json contains exactly [14] (issues 12 and 13 are not ready, they are skipped)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "blocked-chain-vs-true-cycle",
+      "prompt": "Read the fixture scenario-blocked-vs-cycle.md (provided as an input file) and, following the issue-runner skill, resolve the Step 3 item 6 situation it describes: nothing in flight, nothing ready, pending issues remain. Write to your output directory: statuses.json — an object mapping each issue number to {\"status\": ..., \"error\": ...} after your pass — and decision.md explaining, for each pending issue, whether it is paused or a cycle victim and what happens next in the run.",
+      "expected_output": "21 and 24 stay pending (paused on blocked ancestor 20, resolved via Step 4); 22 and 23 are a true cycle and get skipped with a cycle error citing a real dep.",
+      "files": ["evals/files/scenario-blocked-vs-cycle.md"],
+      "expectations": [
+        "statuses.json keeps issues 21 and 24 as pending — neither is marked skipped or treated as a cycle victim",
+        "statuses.json marks issues 22 and 23 as skipped, each with an error matching 'cycle: depends on #22' or 'cycle: depends on #23' (citing a real offending dependency)",
+        "statuses.json keeps issue 20 as blocked, and decision.md says its resolution goes through Step 4 (escalation/guidance/retry), not through skipping it",
+        "decision.md distinguishes the two cases explicitly: a pending issue with a blocked ancestor is paused, and a cycle is declared only for issues with no blocked ancestor"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "merge-proof",
+      "prompt": "Read the fixture scenario-merge-proof.md (provided as an input file) and, following the issue-runner skill, process the three completed implementer results (Step 3 item 5). Write to your output directory: statuses.json — an object mapping each issue number (30, 31, 32) to {\"status\": ..., \"error\": ...} — and cleanup.json — an object with two arrays: \"branches_deleted\" (branch names Step 5 may force-delete) and \"worktrees_kept\" (worktree paths that must be left in place). Also write decision.md with your reasoning per issue.",
+      "expected_output": "30 is done (merged PR #90 is positive proof); 31 and 32 are closed-externally (no merge proof); only 30's branch is deletable; 31's and 32's worktrees/branches are kept and flagged for human review.",
+      "files": ["evals/files/scenario-merge-proof.md"],
+      "expectations": [
+        "statuses.json marks issue 30 as done",
+        "statuses.json marks issue 31 as closed-externally (not done and not failed) with an error noting it closed without a merged implementer PR",
+        "statuses.json marks issue 32 as closed-externally — the missing worktree is treated as no merge proof, never as done",
+        "cleanup.json lists only feat/issue-30-export-csv under branches_deleted; fix/issue-31-null-crash is not deleted",
+        "decision.md states that CLOSED alone is not merge proof and that issues 31 and 32 count as a non-zero outcome needing human review"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "resume-open-pr",
+      "prompt": "Read the fixture scenario-resume-check.md (provided as an input file) and, following the issue-runner skill, perform the Step 3a resume check for issues 42 and 43 and describe the dispatch you would make for each. Do not dispatch anything. Write to your output directory: dispatch.json — an object with keys \"42\" and \"43\", each mapping to {\"resumes_pr\": <PR number or null>, \"isolation_worktree\": <true|false>, \"opens_new_pr\": <true|false>, \"reuses_worktree_path\": <path or null>} — and decision.md explaining each choice.",
+      "expected_output": "42 resumes PR #77 inside the leftover worktree (no worktree isolation, no new PR); PR #78 (issue-421) is not mistaken for issue 42; 43 gets a fresh isolated dispatch with a new PR.",
+      "files": ["evals/files/scenario-resume-check.md"],
+      "expectations": [
+        "dispatch.json for issue 42 has resumes_pr = 77, isolation_worktree = false, opens_new_pr = false, and reuses_worktree_path = /repos/acme-api-issue-42",
+        "PR #78 (head feat/issue-421-metrics-dashboard) is not treated as a match for issue 42 anywhere in the output — the trailing dash in the /issue-42- pattern excludes issue-421",
+        "dispatch.json for issue 43 has resumes_pr = null, isolation_worktree = true, opens_new_pr = true",
+        "decision.md notes that the dispatched agent for 42 must cd into the existing worktree first because git refuses one branch checked out in two worktrees"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "single-issue-fast-path",
+      "prompt": "Read the fixture scenario-fast-path.md (provided as an input file). The user typed /issue-runner 55. Following the issue-runner skill, explain how this run proceeds. Do not implement anything. Write to your output directory: answers.json — {\"initializes_state_dir\": <bool>, \"builds_dag\": <bool>, \"invokes_gh_issue_via_skill_tool\": <bool>, \"run_mode\": \"interactive\"|\"orchestrated\", \"who_creates_and_removes_the_worktree\": \"orchestrator\"|\"gh-issue\", \"runs_step5_cleanup\": <bool>} — and decision.md citing the spec rules that apply.",
+      "expected_output": "Fast path: no state init, no DAG, no Step 5; the gh-issue procedure is read and followed inline as an interactive run; gh-issue owns the worktree lifecycle; the Skill tool is never used for gh-issue.",
+      "files": ["evals/files/scenario-fast-path.md"],
+      "expectations": [
+        "answers.json has initializes_state_dir = false and builds_dag = false",
+        "answers.json has invokes_gh_issue_via_skill_tool = false, and decision.md says the gh-issue SKILL.md file is read and its procedure followed inline",
+        "answers.json has run_mode = interactive (plan confirmation applies)",
+        "answers.json has who_creates_and_removes_the_worktree = gh-issue and runs_step5_cleanup = false"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "scope-hygiene",
+      "prompt": "Read the fixture scenario-scope-hygiene.md (provided as an input file). The user typed /issue-runner with no arguments. Following the issue-runner skill, work through Step 1 scope determination on the recorded outputs. Do not dispatch anything. Write to your output directory: answers.json — {\"warns_issue_list_may_be_truncated\": <bool>, \"parked_issues\": [<numbers>], \"parked_handling\": \"ask_user\"|\"auto_include\"|\"auto_exclude_silently\", \"dirty_tree_handling\": \"show_lines_and_ask\"|\"proceed_silently\"|\"auto_stash\", \"note_about_duplicate_label\": <string>} — and plan.md describing every interaction you must have with the user before any dispatch.",
+      "expected_output": "Warns that exactly 50 results means likely truncation and confirms scope; partitions #3/#7/#9 as parked and asks (never auto-includes); shows the dirty-tree lines and asks stash/commit/discard/proceed; notes duplicate usually wants gh issue close.",
+      "files": ["evals/files/scenario-scope-hygiene.md"],
+      "expectations": [
+        "answers.json has warns_issue_list_may_be_truncated = true and plan.md says scope must be confirmed with the user because exactly 50 results back means the list is likely truncated",
+        "answers.json lists parked_issues = [3, 7, 9] and parked_handling = ask_user; plan.md offers skip-parked as the recommended option and never auto-includes a parked issue",
+        "answers.json has dirty_tree_handling = show_lines_and_ask, plan.md shows both lines ( M src/server.ts and ?? notes.txt) and offers stash / commit / discard / proceed-as-is",
+        "note_about_duplicate_label mentions that a duplicate-labeled issue usually wants closing rather than implementation"
+      ]
+    }
+  ]
+}

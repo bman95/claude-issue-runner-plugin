@@ -1,0 +1,46 @@
+{
+  "skill_name": "issue-plan",
+  "notes": "Dry-run evals: publishing is simulated by writing each issue body to a file instead of running gh issue create, and each fixture ships a codebase map that stands in for the Explore pass. They pin the issue-body contract (## What to build / ## Acceptance criteria / ## Blocked by) that /issue-runner and gh-issue parse, dependency-order publishing, minimal coupling, and the optional ## Interfaces section.",
+  "evals": [
+    {
+      "id": 1,
+      "name": "vertical-slices-contract",
+      "prompt": "Read the fixture spec-url-shortener.md (provided as an input file) and, following the issue-plan skill, break the request into tracer-bullet vertical slices and publish them. Simulate publishing: assign issue numbers sequentially starting at #101 in the order you would run gh issue create (blockers first), and write each issue body to your output directory as issue-101.md, issue-102.md, ... using the exact body format the skill defines. Also write plan.md with the numbered breakdown (title, blocked-by, one-line scope per slice). The spec is complete, so do not ask interview questions.",
+      "expected_output": "2-5 vertical slices, each demoable end-to-end (route + persistence + tests together, never a layer alone), published blockers-first in the exact contract format.",
+      "files": ["evals/files/spec-url-shortener.md"],
+      "expectations": [
+        "between 2 and 5 issue-NNN.md files exist, and every one contains all three section headings '## What to build', '## Acceptance criteria', and '## Blocked by'",
+        "every '## Blocked by' section contains either bullet(s) referencing '#<number>' or the exact phrase 'None - can start immediately'",
+        "publishing order is dependency order: issue-101.md has no blockers, and every '#N' referenced in any '## Blocked by' section points to a lower-numbered issue in the set",
+        "every '## Acceptance criteria' section uses '- [ ]' checklist items, and at least one criterion per slice mentions a test",
+        "no slice is a pure horizontal layer (e.g. an issue that only creates the DB migration/schema with no reachable behavior or test of its own)"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "minimal-coupling",
+      "prompt": "Read the fixture spec-independent-chores.md (provided as an input file) and, following the issue-plan skill, break the request into issues and publish them. Simulate publishing: assign issue numbers sequentially starting at #201 and write each issue body to your output directory as issue-201.md, issue-202.md, ... using the exact body format the skill defines. Also write plan.md with the numbered breakdown. The spec is complete, so do not ask interview questions.",
+      "expected_output": "Four fully independent issues, every one publishable immediately with zero Blocked-by edges — no artificial serialization.",
+      "files": ["evals/files/spec-independent-chores.md"],
+      "expectations": [
+        "exactly 4 issue-NNN.md files exist (one per chore), each with the '## What to build', '## Acceptance criteria', and '## Blocked by' sections",
+        "every '## Blocked by' section is exactly 'None - can start immediately' — no issue depends on any other",
+        "no '#<number>' dependency reference appears in any '## Blocked by' section, and plan.md declares no dependencies between the slices",
+        "the four chores are not merged into a single catch-all issue"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "shared-interface-section",
+      "prompt": "Read the fixture spec-csv-import.md (provided as an input file) and, following the issue-plan skill, break the request into tracer-bullet slices and publish them. Simulate publishing: assign issue numbers sequentially starting at #301 in the order you would run gh issue create (blockers first), and write each issue body to your output directory as issue-301.md, issue-302.md, ... using the exact body format the skill defines. Also write plan.md with the numbered breakdown. The spec is complete, so do not ask interview questions.",
+      "expected_output": "The parser slice publishes first; the endpoint slice is blocked by it and carries an '## Interfaces' section stating the parser function contract it consumes (and optionally a 'Files likely touched:' line seeded from the codebase map).",
+      "files": ["evals/files/spec-csv-import.md"],
+      "expectations": [
+        "a parser slice exists with '## Blocked by' = 'None - can start immediately', and an endpoint slice exists whose '## Blocked by' references the parser slice's issue number",
+        "the endpoint slice contains an '## Interfaces' section that states the parser's function contract (a signature or equivalent, e.g. a parse function taking CSV input and returning valid rows plus per-row errors) and attributes it to the parser issue",
+        "every issue body contains '## What to build', '## Acceptance criteria' (with '- [ ]' items), and '## Blocked by' in the contract format",
+        "the parser slice is independently verifiable (its acceptance criteria include unit tests on fixture CSVs rather than requiring the endpoint to exist)"
+      ]
+    }
+  ]
+}
