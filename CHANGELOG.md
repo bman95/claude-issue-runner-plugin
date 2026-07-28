@@ -2,6 +2,22 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.10.0] - 2026-07-12
+
+### Portable context: carry the whole plugin in one environment variable
+
+New way to install the plugin anywhere — a brand-new project, an existing one, local or on Claude Code on the web — without the marketplace, a clone, or anything committed to the target repo. The plugin's three skills pack into a single base64 line you park in an environment variable; a bootstrap step decodes it into a Claude Code skills directory so `/issue-plan`, `/issue-runner`, and `/gh-issue` appear.
+
+The skill specs are unchanged (no frontmatter version bumps); this is tooling + docs only.
+
+**New `scripts/context-env/`:**
+- **`pack-context.sh`** — serializes `skills/` + `plugin.json` to `base64(gzip(tar))` (~29 KB, one line, no shell-hostile bytes). Prints an `export ISSUE_RUNNER_CONTEXT=…` line by default; `--raw` prints the bare value (for a `.env` or the cloud environment's variable list), `--file` writes it, `--var` renames the variable. Dependency-free (`base64 | tr -d '\n'`, not GNU-only `base64 -w0`).
+- **`bootstrap-context.sh`** — the decode+install half: reads `$ISSUE_RUNNER_CONTEXT` (or `$ISSUE_RUNNER_CONTEXT_FILE`), extracts the skill folders into `$HOME/.claude/skills` (override with `--dest` / `$ISSUE_RUNNER_SKILLS_DIR`). Idempotent. `--hook` emits the SessionStart JSON with `reloadSkills:true` and stays a clean no-op when the variable is unset, so it never blocks a session.
+
+**Why it works without `CLAUDE_PLUGIN_ROOT`:** installing into `~/.claude/skills/` exposes the skills as user-level commands *and* satisfies `issue-runner` Step 0's existing fallback lookup of `gh-issue` at `$HOME/.claude/skills/gh-issue/SKILL.md`, so the orchestrator still resolves its implementer. The only behavioral difference from the marketplace install is unnamespaced command names (`/issue-runner`, not `/issue-runner:issue-runner`).
+
+**Docs:** new `docs/portable-context.md` walks the three wiring routes (one-shot, local SessionStart hook, and a self-contained cloud setup-script snippet that needs nothing checked out); README gains a pointer under Installation.
+
 ## [0.9.1] - 2026-07-10
 
 ### Codex gate model: `gpt-5.4` → `gpt-5.6-terra`

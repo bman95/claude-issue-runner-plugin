@@ -39,6 +39,17 @@ git clone <this-repo> ~/personal/claude-issue-runner-plugin
 /reload-plugins
 ```
 
+### Portable context via one environment variable
+
+Prefer to carry the plugin everywhere without a per-project marketplace install — including on Claude Code on the web and in brand-new projects? Pack the whole plugin into a single environment variable and decode it into `~/.claude/skills/` on demand:
+
+```bash
+scripts/context-env/pack-context.sh --raw            # -> the value for ISSUE_RUNNER_CONTEXT
+scripts/context-env/bootstrap-context.sh             # decode $ISSUE_RUNNER_CONTEXT -> ~/.claude/skills/
+```
+
+This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runner`, `/gh-issue` — unnamespaced) and works as a local SessionStart hook or as a Claude Code on the web environment setup script. Full guide: **[`docs/portable-context.md`](docs/portable-context.md)**.
+
 ## Usage
 
 ```
