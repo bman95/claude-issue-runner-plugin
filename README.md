@@ -92,6 +92,7 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 - **GitHub CLI (`gh`)** authenticated against the target repository.
 - **`codex` CLI** for the review gate — required for unattended orchestrated runs: if `codex` is not installed the orchestrator asks up front (or pass `--no-codex-gate`); only credit/quota exhaustion degrades gracefully mid-run.
 - **Git >= 2.5** (worktrees).
+- **CI that runs on draft PRs.** An orchestrated PR is a draft from planning until the merge step, so a workflow that skips drafts (`if: github.event.pull_request.draft == false`) must include `ready_for_review` in its `pull_request` `types`; otherwise the merge's checks gate sees no checks. A bare `on: pull_request` is fine.
 
 The `gh-issue` implementer skill is bundled — no separate installation.
 
@@ -100,7 +101,7 @@ The `gh-issue` implementer skill is bundled — no separate installation.
 - **Trust the issue authors.** Implementers consume issue bodies and comments verbatim as their task spec and, in orchestrated mode, hold merge authority (`gh pr merge` with no human gate). Do **not** point `/issue-runner` at a repo whose issues can be authored by untrusted parties — a malicious issue body is prompt-injection executed as instructions by an agent that can merge to your default branch. The pipeline is safe when you author the issues yourself (via `/issue-plan`); the spec instructs implementers to treat issue content as data, but that is a mitigation, not a sandbox.
 - **Single-host.** State lives at `/tmp/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated; within a repo, a PID lock refuses a second concurrent run (a crashed run's lock reads stale and is taken over).
 - **Explicit intent recommended.** Ask for `issue-plan`, `issue-runner`, or `gh-issue` by name when you want a mutating GitHub workflow; Codex can then select the matching bundled skill.
-- **Re-runs resume open PRs.** Dispatch detects an existing open PR for an issue (head branch matches `/issue-<N>-`) and continues on its branch instead of opening a duplicate — including the **draft** PR an orchestrated implementer opens right after planning, so a run killed before implementation (or a host that lost its local state) resumes from its plan. Close the PR first for a from-scratch retry.
+- **Re-runs resume open PRs.** Dispatch detects an existing open PR for an issue (head branch matches `/issue-<N>-`) and continues on its branch instead of opening a duplicate — including the **draft** PR an orchestrated implementer opens right after planning, so a run killed before implementation (or a host that lost its local state) resumes from its plan. Close the PR first for a from-scratch retry (`gh pr close <P> --delete-branch`, so the remote branch goes too).
 - **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`; `scripts/lint.sh` additionally syntax-checks the embedded bash recipes (`bash -n`) and guards recipe drift across the skill files, but nothing exercises the workflows end-to-end.
 
 ## Versioning

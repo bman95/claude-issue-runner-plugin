@@ -20,6 +20,8 @@
 #   9. the default-branch resolution one-liner is byte-identical at every site
 #  10. both SKILL files carry the /issue-< branch-contract match (placeholder
 #      spelling drift <N> vs <number> is a warning)
+#  11. the Codex edition's canonical copies (codex/issue-runner/canonical/) are
+#      byte-identical to skills/ — its stubs say "follow the canonical procedure"
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -217,6 +219,18 @@ if [ "$contract_ok" -eq 1 ]; then
     warn "branch-contract placeholder spelling differs: issue-runner uses '$sp_runner', gh-issue uses '$sp_gh'"
   fi
 fi
+
+# 11. Codex edition canonical copies byte-identical to skills/ ------------------
+CANON="$ROOT/codex/issue-runner/canonical"
+canon_ok=1
+for src in "$ROOT"/skills/*/SKILL.md "$ROOT"/skills/issue-runner/REFERENCE.md; do
+  rel="${src#"$ROOT"/skills/}"
+  if ! cmp -s "$src" "$CANON/$rel"; then
+    err "codex canonical copy drifted: codex/issue-runner/canonical/$rel != skills/$rel"
+    canon_ok=0
+  fi
+done
+[ "$canon_ok" -eq 1 ] && ok "codex canonical copies byte-identical to skills/"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
