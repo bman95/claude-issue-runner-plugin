@@ -64,7 +64,7 @@ Files likely touched: `src/config.ts`, `src/api/widgets.ts`
 
 `Files likely touched:` is **mandatory** and always the last line of the body: the repo-relative paths this slice edits or creates, comma-separated, from your Step 1 exploration; a directory scope ends with `/` (`src/api/`). `/issue-runner` Step 2 intersects these lines pairwise to derive conflict edges deterministically — two slices naming the same path, or one naming a directory that contains the other's path, are serialized. The line's cost model is asymmetric: any in-scope issue **without** it sends the whole run through the LLM refinement pass, while a path **omitted** from it lets two implementers merge over each other — so list every path the slice will touch. `gh-issue` Step 2 also seeds the implementer's codebase exploration with it.
 
-`## Interfaces` is **optional**: include it only when slices share a contract — function signatures, schemas, endpoints, or file boundaries agreed between slices. `/issue-runner` ignores this section; it exists for the implementer, which seeds its codebase exploration with it (gh-issue Step 2). When it is absent, `Files likely touched:` follows `## Blocked by` directly.
+`## Interfaces` is **optional**: include it only when slices share a contract — function signatures, schemas, endpoints, or file boundaries agreed between slices. `/issue-runner` reads nothing from its bullets; they exist for the implementer, which seeds its codebase exploration with them (gh-issue Step 2). When the section is absent, `Files likely touched:` follows `## Blocked by` directly.
 
 ## 5. Hand off
 
