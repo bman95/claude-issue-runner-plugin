@@ -58,7 +58,7 @@ area. End with a `Files:` block, one repo-relative path per line.
 
 If the issue body carries an `## Interfaces` section or a `Files likely touched:` hint (the `/issue-plan` format), seed the Explore prompt with them — but verify against current code rather than trusting them: the default branch may have moved since planning (dependency PRs merged).
 
-If the Agent tool is unavailable, explore inline.
+If the Agent tool is unavailable, explore inline — but an orchestrated run whose dispatch prompt does not authorize inline review returns the Step 8 Phase 1 blocker now instead (see "Your subagents").
 
 ### 3. Plan
 
