@@ -5,7 +5,7 @@ A self-sufficient Codex and Claude Code plugin for the full agentic issue pipeli
 - **`/issue-plan`** turns an idea, plan, or spec into ready-to-run issues: it asks only the questions the input needs, slices the work into tracer-bullet vertical slices, and publishes issues in the format the runner parses.
 - **`/issue-runner`** reads the issue queue, builds a dependency DAG, and dispatches each issue to an **autonomous implementer subagent** in an isolated worktree. Implementers spawn their own subagents — `Explore`/`Plan` helpers, fresh-eyes reviewers, delegated `general-purpose` chunks (helpers don't nest further) — then converge the PR through a Codex gate and merge it. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents.
 
-Run-time doubts escalate up the chain: implementer → parent (resolves coordination/context blockers from run-wide knowledge) → human (only for scope, product-behavior, or risk decisions).
+Run-time doubts escalate up the chain: implementer → parent (resolves coordination/context blockers from run-wide knowledge, retrying at most `--max-retries` times per issue on its own) → human (scope, product-behavior, or risk decisions — and every blocker once an issue's retry cap is reached).
 
 ## Status
 
@@ -72,6 +72,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress (read-only)
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
+/issue-runner:issue-runner --max-retries N              # self-authorized retries per issue before every blocker escalates to you (default 2)
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement
 /issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
