@@ -44,16 +44,27 @@ RUN_ROOT=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/$REPO_KEY
 case $RUN_ROOT in /*) ;; *) echo "run root is not absolute: $RUN_ROOT" >&2; exit 1;; esac
 STATE_DIR=$RUN_ROOT/state
 
+# Hard precondition, checked before the lock and the rotation: this session must be able to
+# create the root and write inside it. There is no fallback root. An unwritable root (HOME
+# unset or read-only, a root left behind by a session with wider permissions) is fixed in
+# place; a sandbox that denies the path (Codex workspace-write allows only the workspace,
+# /tmp and $TMPDIR by default) needs a relaunch, because writable roots are launch-time
+# options a running session cannot widen. A real write probe, not -w: sandboxes deny at
+# open(), not in the mode bits. Side-effect-free on failure — nothing is locked or rotated.
+mkdir -p "$RUN_ROOT" && : > "$RUN_ROOT/.write-probe" && rm -f "$RUN_ROOT/.write-probe" || {
+  echo "run root is not writable: $RUN_ROOT" >&2
+  echo "issue-runner keeps its state there and has no fallback root. Fix the permissions, or relaunch with that path writable: create ${RUN_ROOT%/*} from an unsandboxed shell, then \`codex --add-dir \"${RUN_ROOT%/*}\"\` (or list it under sandbox_workspace_write.writable_roots in config.toml); in other sandboxes allow-list the same path. Then retry." >&2
+  exit 1
+}
+
 # One run per repo. $PPID is the Claude Code process hosting this session — it
 # dies with the session, so a crashed run's lock reads stale and is taken over.
 # A live lock means another session is orchestrating this repo: stop and tell
 # the user; NEVER delete a live lock (the rotation below would yank a running
 # orchestration's state from under its implementers).
-# Never proceed without the lock and a fresh state dir. Every write below is fatal on failure:
-# an uncreatable root (HOME unset, read-only, outside a sandbox's writable roots) or an
-# existing one left unwritable by a session with wider permissions must stop the run here
-# rather than let it continue lockless on stale state.
-mkdir -p "$RUN_ROOT" || { echo "cannot create run root: $RUN_ROOT" >&2; exit 1; }
+# Never proceed without the lock and a fresh state dir. Every write below is fatal on
+# failure — a root that turned unwritable after the probe, or a state dir this session
+# cannot move — rather than let the run continue lockless on stale state.
 if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
   echo "live issue-runner in this repo (lock: $RUN_ROOT/lock)" >&2; exit 1
 fi
