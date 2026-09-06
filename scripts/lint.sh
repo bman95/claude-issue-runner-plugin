@@ -6,7 +6,7 @@
 # drift against each other in mechanically-checkable ways. This script guards the
 # drift classes that have actually bitten releases:
 #
-#   1. plugin.json version == marketplace.json version
+#   1. plugin.json version == marketplace.json version == codex plugin.json version
 #   2. every skills/*/SKILL.md frontmatter has name + description + version
 #   3. --max-parallel default agrees across README, SKILL arg line, and the
 #      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line
@@ -21,7 +21,8 @@
 #  10. both SKILL files carry the /issue-< branch-contract match (placeholder
 #      spelling drift <N> vs <number> is a warning)
 #  11. the Codex edition's canonical copies (codex/issue-runner/canonical/) are
-#      byte-identical to skills/ — its stubs say "follow the canonical procedure"
+#      byte-identical to skills/ — its stubs say "follow the canonical procedure" —
+#      and each stub's frontmatter version matches the skill it wraps
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -63,14 +64,18 @@ SKILL_RUNNER="$ROOT/skills/issue-runner/SKILL.md"
 SKILL_GH="$ROOT/skills/gh-issue/SKILL.md"
 
 # 1. Manifest version agreement -------------------------------------------------
+CODEX_JSON="$ROOT/codex/issue-runner/.codex-plugin/plugin.json"
 plugin_version="$(json_version "$PLUGIN_JSON")"
 market_version="$(json_version "$MARKET_JSON")"
+codex_version="$(json_version "$CODEX_JSON")"
 if [ -z "$plugin_version" ]; then
   err "could not read version from $PLUGIN_JSON"
 elif [ -z "$market_version" ]; then
   err "could not read version from $MARKET_JSON"
-elif [ "$plugin_version" != "$market_version" ]; then
-  err "version mismatch: plugin.json=$plugin_version marketplace.json=$market_version"
+elif [ -z "$codex_version" ]; then
+  err "could not read version from $CODEX_JSON"
+elif [ "$plugin_version" != "$market_version" ] || [ "$plugin_version" != "$codex_version" ]; then
+  err "version mismatch: plugin.json=$plugin_version marketplace.json=$market_version codex plugin.json=$codex_version"
 else
   ok "manifest versions agree ($plugin_version)"
 fi
@@ -230,7 +235,17 @@ for src in "$ROOT"/skills/*/SKILL.md "$ROOT"/skills/issue-runner/REFERENCE.md; d
     canon_ok=0
   fi
 done
-[ "$canon_ok" -eq 1 ] && ok "codex canonical copies byte-identical to skills/"
+for stub in "$ROOT"/codex/issue-runner/skills/*/SKILL.md; do
+  [ -f "$stub" ] || continue
+  name="$(basename "$(dirname "$stub")")"
+  stub_v="$(frontmatter "$stub" | sed -nE 's/^version:[[:space:]]*//p' | head -1)"
+  skill_v="$(frontmatter "$ROOT/skills/$name/SKILL.md" | sed -nE 's/^version:[[:space:]]*//p' | head -1)"
+  if [ -z "$skill_v" ] || [ "$stub_v" != "$skill_v" ]; then
+    err "codex stub version drift: codex/issue-runner/skills/$name ($stub_v) != skills/$name ($skill_v)"
+    canon_ok=0
+  fi
+done
+[ "$canon_ok" -eq 1 ] && ok "codex canonical copies byte-identical to skills/, stub versions match"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
