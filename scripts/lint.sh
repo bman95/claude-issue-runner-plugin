@@ -24,8 +24,8 @@
 #      byte-identical to skills/ — its stubs say "follow the canonical procedure" —
 #      and each stub's frontmatter version matches the skill it wraps
 #
-# Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
-# optional and advisory). Exits non-zero on the first-or-any failure, printing
+# Dependency-free: bash + coreutils/diffutils/grep/sed/awk only (no jq; shellcheck
+# is optional and advisory). Exits non-zero on the first-or-any failure, printing
 # every problem it found.
 
 set -u
