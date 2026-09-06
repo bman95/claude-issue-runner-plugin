@@ -121,8 +121,14 @@ for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:';
 done
 ok "issue-body contract strings present in planner and runner"
 # The runner parses the LAST body line beginning with `Files likely touched:`
-# (issue-runner Step 2), so the planner's ```markdown body template must end with it.
-tmpl_last="$(awk '/^```markdown[[:space:]]*$/ {inb=1; next} inb && /^```[[:space:]]*$/ {exit} inb && NF {l=$0} END {print l}' "$SKILL_PLAN")"
+# (issue-runner Step 2), so the planner's body template — the ```markdown block
+# containing `## What to build` — must end with it.
+tmpl_last="$(awk '
+  /^```markdown[[:space:]]*$/ { inb=1; hit=0; l=""; next }
+  inb && /^```[[:space:]]*$/  { inb=0; if (hit) { print l; exit }; next }
+  inb && /^## What to build/  { hit=1 }
+  inb && NF                   { l=$0 }
+' "$SKILL_PLAN")"
 case "$tmpl_last" in
   'Files likely touched:'*) ok "issue-plan body template ends with 'Files likely touched:'" ;;
   *) err "issue-plan body template's last line is not 'Files likely touched:' (got: '$tmpl_last')" ;;
