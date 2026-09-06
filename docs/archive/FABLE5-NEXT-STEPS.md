@@ -1,3 +1,5 @@
+*Historical snapshot (2026-07-01). Describes the pre-0.7.0 tree; every finding and step herein was addressed in the 0.7.0/0.8.0 releases — see CHANGELOG.md. Kept as process history.*
+
 # FABLE5 Next Steps — claude-issue-runner-plugin
 
 Plan date: 2026-07-01. Based on `FABLE5-AUDIT.md` (same date). Repo is 10 tracked Markdown/JSON files at v0.6.0 with substantive uncommitted spec changes in three files.

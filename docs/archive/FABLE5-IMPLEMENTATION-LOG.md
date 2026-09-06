@@ -1,3 +1,5 @@
+*Historical snapshot (2026-07-01). Describes the pre-0.7.0 tree; every finding and step herein was addressed in the 0.7.0/0.8.0 releases — see CHANGELOG.md. Kept as process history.*
+
 # FABLE5 Implementation Log — claude-issue-runner-plugin
 
 Date: 2026-07-01. Implements the overnight-SAFE steps from `FABLE5-NEXT-STEPS.md`.

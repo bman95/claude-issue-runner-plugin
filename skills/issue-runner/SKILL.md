@@ -135,16 +135,27 @@ Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all 
 
 ### Step 3a — implementer dispatch
 
-**Resume check (before every dispatch).** The branch contract (`<type>/issue-<N>-<slug>`, gh-issue Step 4) makes an issue's in-flight work discoverable:
+**Resume check (before every dispatch).** The branch contract (`<type>/issue-<N>-<slug>`, gh-issue Step 4) makes an issue's in-flight work discoverable — but only for PRs that follow it. **Branch-name matching alone is not sufficient**: a PR opened outside this skill (by a human, or by another agent) can close an in-scope issue from an arbitrarily-named branch, and dispatching over it means an implementer rebuilds work that is already written and reviewed. Run **both** checks and union the results:
 
 ```bash
+# 1. Branch contract — PRs this skill opened.
 gh pr list --state open --json number,headRefName \
   --jq ".[] | select(.headRefName | test(\"/issue-$N-\")) | \"#\(.number) \(.headRefName)\""
+
+# 2. Closing keywords — PRs from anywhere that claim this issue. Catches branch
+#    names that ignore the contract; one PR may close several issues at once.
+#    --search matches the body, so confirm the hit really targets #N before trusting it.
+gh pr list --state open --search "closes #$N OR fixes #$N OR resolves #$N" \
+  --json number,headRefName,title \
+  --jq ".[] | \"#\(.number) \(.headRefName) — \(.title)\""
 ```
 
-- **No match** → dispatch the template below as-is (fresh branch, new PR).
+- **No match in either** → dispatch the template below as-is (fresh branch, new PR).
 - **One match** (`#P` on branch `B`) → resume, don't duplicate. If `git worktree list --porcelain` shows `B` checked out in a worktree, dispatch **without** `isolation: worktree` and tell the agent to `cd` there first (exactly like a Step 4 retry). Otherwise keep `isolation: worktree` and add to the prompt: check out `B` (fetch first, no new branch), skip PR creation, push to PR `#P`.
 - **Several matches** → duplicates from earlier runs: ask the user which PR to resume and close the rest.
+- **Matched only by closing keyword** (check 2, not check 1) → the PR was authored outside this skill, so assume nothing about its state. Read it before deciding: `gh pr view <P> --json state,mergeable,mergeStateStatus,isDraft,files,body` and `gh pr checks <P>`. If it already implements the issue, do **not** dispatch an implementer — surface it to the user with its check status and ask whether to review-and-merge it, or to close it and rebuild. A PR closing **several** in-scope issues collapses all of them into one decision: resolve it once, then mark every issue it covers, rather than asking per issue.
+
+**If a dispatch has already gone out when you discover a duplicate, stop the implementer immediately** (`TaskStop`) rather than letting it finish. A converged implementer merges itself, and two independent rewrites of the same files conflict hard. An agent stopped before it opens a PR leaves nothing behind but its worktree, which Step 5 cleans up.
 
 One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, and `<STATE_DIR>` (resolved absolute paths):
 
@@ -201,12 +212,18 @@ Read the agent's error message. **Try to resolve it yourself first** — you hol
 
 ### Step 5 — cleanup and summary
 
-Resolve the default branch first; deletions below must never target it:
+Resolve the default branch first; deletions below must never target it. `refs/remotes/origin/HEAD` is a **local** symref that git does not keep in sync — it goes stale when a repo renames its default branch (`master` → `main`), and it can point at a branch that no longer exists on the remote. A stale symref resolves `DEFAULT_BRANCH` to the *wrong* name, so the guard below fails to protect the real default branch and `git branch -D` can delete it. Repair it from the remote before trusting it:
 
 ```bash
+git remote set-head origin --auto >/dev/null 2>&1 || true   # re-resolve from the remote
 DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@')
-[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+# Cross-check against the API, and verify the branch actually exists on the remote.
+[ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=$(gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null)
+git ls-remote --exit-code --heads origin "$DEFAULT_BRANCH" >/dev/null 2>&1 \
+  || DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)   # last resort: never delete what we're on
 ```
+
+An implementer that merged its PR may leave its worktree checked out **on the default branch** rather than on its feature branch, so this guard is load-bearing on the common path, not just an edge case.
 
 For each `done` issue (worktree path comes from the agent's `worktree:` line):
 

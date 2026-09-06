@@ -138,12 +138,12 @@ Union the findings, dedup by `file:line + claim`, triage (below), apply Apply-cl
 Capture the Codex CLI's **own** exit status and stderr separately from the review text — the degradation decision keys off the invocation itself, never a regex over the review output (issue/PR content is attacker-influenceable and could spoof a "429"/"quota" string):
 
 ```bash
-codex review -c model=gpt-5.6-terra --base "$BASE_BRANCH" \
+codex review -c model=gpt-5.6-sol --base "$BASE_BRANCH" \
   >"/tmp/codex-review-$PR_NUM.log" 2>"/tmp/codex-review-$PR_NUM.err"
 CODEX_EXIT=$?
 ```
 
-(`gpt-5.6-terra` pinned: Phase 1 already pre-cleaned the diff, so the gate wants a solid reviewer at controlled cost, not frontier depth. Terra is the same price as the former `gpt-5.4` pin but a newer generation — a free quality bump at identical spend. Use the explicit `-terra` id: the bare `gpt-5.6` alias routes to Sol, which costs 2×.) Review output (the log) is text, not JSON. Branch on `CODEX_EXIT` **first**, then the findings:
+(`gpt-5.6-sol` pinned: the gate is the last independent check before an unattended merge, so it runs on the frontier reviewer rather than the cheaper `gpt-5.6-terra`. Use the explicit `-sol` id so the pin does not drift with the `gpt-5.6` alias.) Review output (the log) is text, not JSON. Branch on `CODEX_EXIT` **first**, then the findings:
 
 - **`CODEX_EXIT` == 0, zero actionable findings** → converged; go to Step 9.
 - **`CODEX_EXIT` == 0, findings** → triage, apply Apply-class fixes, commit `fix: address codex gate findings`, push, refresh the PR body, then run **one** verification pass (the second and final gate pass). Clean → Step 9. Still producing Apply-class findings → cap-stop. Never leave a P1/P2 fix unverified by a subsequent pass.

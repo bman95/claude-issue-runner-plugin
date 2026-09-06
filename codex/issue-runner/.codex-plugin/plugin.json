@@ -1,0 +1,41 @@
+{
+  "name": "issue-runner",
+  "version": "0.9.0",
+  "description": "Plan GitHub work as dependency-aware issues, then implement, review, and merge them with isolated Codex subagents.",
+  "author": {
+    "name": "Bryan Frias",
+    "email": "bfrias@sicma21.com",
+    "url": "https://github.com/bman95"
+  },
+  "homepage": "https://github.com/bman95/claude-issue-runner-plugin",
+  "repository": "https://github.com/bman95/claude-issue-runner-plugin",
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "issues",
+    "workflow",
+    "orchestration",
+    "subagents",
+    "worktree",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Issue Runner",
+    "shortDescription": "Plan and deliver GitHub issue queues",
+    "longDescription": "Turn a feature idea into dependency-aware GitHub issues, or execute existing issues through isolated implementation, review, CI, and merge workflows.",
+    "developerName": "Bryan Frias",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/bman95/claude-issue-runner-plugin",
+    "defaultPrompt": [
+      "Plan this feature as runnable GitHub issues.",
+      "Run the open GitHub issue queue.",
+      "Implement GitHub issue #42 end to end."
+    ],
+    "brandColor": "#24292F"
+  }
+}
