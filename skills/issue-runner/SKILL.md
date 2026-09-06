@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.10.0
+version: 0.9.0
 disable-model-invocation: true
 description: "Orchestrates a queue of GitHub issues: builds a dependency DAG and dispatches each issue to an autonomous worktree-isolated implementer subagent (explore → implement → PR → review → merge), running independent issues in parallel and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -113,7 +113,7 @@ Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all 
 1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Any `pending` issue with a `closed-externally` dep → `skipped`, error `"dependency closed externally without merge proof: #X"` — the dep is terminal but its work is unverified, so dependents must not build on it (and must not be mislabeled as a cycle). Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
 2. **Ready set** = `pending` ∧ all deps `done` ∧ not in flight.
 3. **Fill slots** up to `MAX_PARALLEL` with dispatches (Step 3a); mark `implementing`.
-4. **Wait** for any in-flight agent to complete. An implementer that has produced nothing long after its siblings finished and well past the scale of its issue is hung: stop it, mark the issue `failed` with error `"implementer hung (no completion)"`, record its worktree path if known, and let the cascade handle dependents — a Step 4 retry is the recovery path (its `progress` file says where to look — e.g. whether a PR exists; the retry still runs every step).
+4. **Wait** for any in-flight agent to complete. An implementer that has produced nothing long after its siblings finished and well past the scale of its issue is hung: stop it, mark the issue `failed` with error `"implementer hung (no completion)"`, record its worktree path if known, and let the cascade handle dependents — a Step 4 retry is the recovery path (its `progress` file says how far it got — e.g. that it reached the PR step; the PR itself is rediscovered by Step 3a's resume check, never taken from `pr=#P`, and the retry still runs every step).
 5. **Process the result.** A `CLOSED` issue is `done` **only with positive merge proof** — the implementer's own PR actually merged. `CLOSED` alone is not proof: the issue may have been closed by hand or by an unrelated PR's `Closes #N` mid-run. Derive the branch from the returned worktree (read-only; never `cd` into it) and look for a merged PR on it:
 
    ```bash

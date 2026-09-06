@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.8.0
+version: 0.7.1
 description: Implements a GitHub issue end-to-end — explore, code, PR, layered review (fresh-eyes subagents, then a Codex gate), merge.
 disable-model-invocation: true
 ---
@@ -202,7 +202,7 @@ fi
 
 Base advanced but no file overlap with this PR → proceed directly. Overlap → merge `origin/$BASE_BRANCH` in, re-run the tests, push, then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
 
-**Checks gate.** `gh pr merge` enforces only *required* branch protections server-side — advisory checks (the common case on personal repos) would not stop it, so gate on CI yourself (orchestrated: write `step=9.2 pr=#P` first — `--watch` is the procedure's longest silent wait, and the marker is what separates "waiting on CI" from "stuck"):
+**Checks gate.** `gh pr merge` enforces only *required* branch protections server-side — advisory checks (the common case on personal repos) would not stop it, so gate on CI yourself (orchestrated: write `step=9.2 pr=#P` first — `--watch` is the procedure's longest silent wait, and the marker lets whoever reads `--status` tell "waiting on CI" from an unexplained silence):
 
 ```bash
 if gh pr checks "$PR_NUM" --watch; then CHECKS=pass
