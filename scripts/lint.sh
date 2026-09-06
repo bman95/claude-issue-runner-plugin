@@ -11,7 +11,8 @@
 #   3. --max-parallel default agrees across README, SKILL arg line, and the
 #      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line
 #   4. CHANGELOG has an entry for the manifest version
-#   5. the issue-body contract strings appear in both issue-plan and issue-runner
+#   5. the issue-body contract strings appear in both issue-plan and issue-runner,
+#      and the planner's body template ends with the `Files likely touched:` line
 #   6. no skill references retired command names (e.g. /to-issues)
 #   7. every ```bash block embedded in skills/*/SKILL.md parses (bash -n,
 #      after neutralizing <placeholder> tokens)
@@ -119,6 +120,13 @@ for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:';
   done
 done
 ok "issue-body contract strings present in planner and runner"
+# The runner parses the LAST body line beginning with `Files likely touched:`
+# (issue-runner Step 2), so the planner's ```markdown body template must end with it.
+tmpl_last="$(awk '/^```markdown[[:space:]]*$/ {inb=1; next} inb && /^```[[:space:]]*$/ {exit} inb && NF {l=$0} END {print l}' "$SKILL_PLAN")"
+case "$tmpl_last" in
+  'Files likely touched:'*) ok "issue-plan body template ends with 'Files likely touched:'" ;;
+  *) err "issue-plan body template's last line is not 'Files likely touched:' (got: '$tmpl_last')" ;;
+esac
 
 # 6. Retired command names ------------------------------------------------------
 if grep -rn 'to-issues' "$ROOT/skills" ; then
