@@ -111,7 +111,7 @@ fi
 
 # 5. Issue-body contract strings shared by planner and runner ------------------
 SKILL_PLAN="$ROOT/skills/issue-plan/SKILL.md"
-for s in '## Blocked by' 'None - can start immediately'; do
+for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:'; do
   for f in "$SKILL_PLAN" "$SKILL_RUNNER"; do
     if ! grep -qF "$s" "$f"; then
       err "contract string '$s' missing from ${f#"$ROOT"/}"

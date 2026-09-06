@@ -30,6 +30,7 @@ Break the work into **tracer-bullet vertical slices**:
 - A finished slice is demoable or verifiable by itself.
 - Prefer many thin slices over few thick ones.
 - Minimize coupling: every `Blocked by` edge serializes the run, so only declare real dependencies — fewer edges, more parallelism.
+- Keep file scopes disjoint where you can: two slices that touch the same files are serialized by `/issue-runner` exactly like a `Blocked by` edge (conflict edges from `Files likely touched:`, Step 4).
 
 Present the breakdown as a numbered list — title, blocked-by, one-line scope — and ask: granularity right? dependencies right? merge or split anything? Iterate until the user approves.
 
@@ -61,7 +62,9 @@ End-to-end behavior of this slice, described as outcome, not layer-by-layer impl
 Files likely touched: `src/config.ts`, `src/api/widgets.ts`
 ```
 
-`## Interfaces` is **optional**: include it only when slices share a contract — function signatures, schemas, endpoints, or file boundaries agreed between slices — and optionally add a `Files likely touched:` line from your Step 1 exploration. `/issue-runner` ignores this section; it exists for the implementer, which seeds its codebase exploration with it (gh-issue Step 2).
+`Files likely touched:` is **mandatory** and always the last line of the body: the repo-relative paths this slice edits or creates, comma-separated, from your Step 1 exploration; a directory scope ends with `/` (`src/api/`). `/issue-runner` Step 2 intersects these lines pairwise to derive conflict edges deterministically — two slices naming the same path, or one naming a directory that contains the other's path, are serialized. The line's cost model is asymmetric: any in-scope issue **without** it sends the whole run through the LLM refinement pass, while a path **omitted** from it lets two implementers merge over each other — so list every path the slice will touch. `gh-issue` Step 2 also seeds the implementer's codebase exploration with it.
+
+`## Interfaces` is **optional**: include it only when slices share a contract — function signatures, schemas, endpoints, or file boundaries agreed between slices. `/issue-runner` ignores this section; it exists for the implementer, which seeds its codebase exploration with it (gh-issue Step 2). When it is absent, `Files likely touched:` follows `## Blocked by` directly.
 
 ## 5. Hand off
 

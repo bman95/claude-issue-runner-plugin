@@ -20,7 +20,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
-- `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass
+- `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass; conflict edges from `Files likely touched:` intersection are still computed (Step 2)
 
 Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** for an issue instead of opening a duplicate (Step 3a resume check). Re-invoke with **only** the unfinished issue numbers — full scope would re-implement completed issues. Close the old PR first only when you want a from-scratch retry.
 
@@ -100,9 +100,14 @@ done
 
 **Out-of-scope edges are never dropped silently.** For each edge pointing outside `scope.txt`, ask the user: **extend** (pull the prerequisite into scope), **drop-issue** (remove the dependent), or **override** (prerequisite satisfied externally; record in `$STATE_DIR/overrides.txt`).
 
-**LLM refinement** (skip if `--no-llm-refine`): dispatch one `Plan` subagent with all issue bodies; it returns one JSON edge per line. When every in-scope issue carries a `## Blocked by` section, ask the agent for `conflict` edges only — the dependencies are already explicit — `{"kind":"depends","from":X,"on":Y,"reason":"…"}` or `{"kind":"conflict","a":X,"b":Y,"reason":"…"}`. Parsing is best-effort: log unparseable or out-of-scope lines to `$STATE_DIR/refinement-rejects.txt` and continue; never fail the run on bad refinement output. Serialize each conflict as a `depends` edge using scope.txt order (earlier runs first) and record it in `$STATE_DIR/conflicts.json`.
+**Conflict edges.** Two in-scope issues that touch the same files must not run in parallel — each merges to the default branch independently. Derive them from the first source that covers the scope:
 
-Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title) plus a section for conflicts forced into serial order. To override an order, the user re-invokes with explicit numbers in the desired order. If `--plan`, release the lock (`rm -f "$RUN_ROOT/lock"`) and exit here.
+- **Deterministic — `Files likely touched:` intersection.** When **every** in-scope issue carries a `Files likely touched:` line (issue-plan Step 4; first such line in the body of `details.json`), parse each into a path set: split on commas, trim whitespace and surrounding backticks (a line with no paths is an empty set). Two issues conflict when they share an exact path, or when a directory scope in one (a path ending with `/`) is a prefix of a path in the other. Check every pair. No LLM pass runs — whether or not `--no-llm-refine` was passed — and the plan printout says so. The recorded reason lists the overlapping paths: `"reason":"files: a.ts, b.ts"`.
+- **Fallback — LLM refinement** (skip if `--no-llm-refine`), only when some in-scope issue lacks the line: dispatch one `Plan` subagent with all issue bodies; it returns one JSON edge per line. When every in-scope issue carries a `## Blocked by` section, ask the agent for `conflict` edges only — the dependencies are already explicit — `{"kind":"depends","from":X,"on":Y,"reason":"…"}` or `{"kind":"conflict","a":X,"b":Y,"reason":"…"}`. Parsing is best-effort: log unparseable or out-of-scope lines to `$STATE_DIR/refinement-rejects.txt` and continue; never fail the run on bad refinement output.
+
+**Serializing conflicts (both sources).** Serialize each conflict as a `depends` edge in `scope.txt` order (the later issue depends on the earlier) — unless one of the pair already depends on the other, directly or transitively, in which case the pair is serialized already and the extra edge would only manufacture a cycle (scope order and `## Blocked by` order routinely disagree: `gh issue list` returns newest first). Record every conflict, edge or not, in `$STATE_DIR/conflicts.json` — a JSON array of `{"a":X,"b":Y,"reason":"…"}`.
+
+Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title) plus a section for conflicts forced into serial order, headed by their source — `Conflicts (Files likely touched intersection; LLM refinement skipped)`, `Conflicts (LLM refinement)`, or `Conflicts: none computed (--no-llm-refine; #X, #Y lack Files likely touched:)`. To override an order, the user re-invokes with explicit numbers in the desired order. If `--plan`, release the lock (`rm -f "$RUN_ROOT/lock"`) and exit here.
 
 ### Step 3 — execute
 

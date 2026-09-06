@@ -23,7 +23,7 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 **Status:** parked (revisit above ~6 parallel slices)
 
-**Context.** Parallel implementers merge to the default branch independently. Today's mitigations: conflict edges from LLM refinement serialize likely-colliding issues, and resumed PRs get a freshness check. What's missing is the classic two-trains problem: A and B both pass review against the main they branched from; A merges; B's tests were never run against main+A.
+**Context.** Parallel implementers merge to the default branch independently. Today's mitigations: conflict edges (`Files likely touched:` intersection, LLM refinement as fallback — note 4) serialize likely-colliding issues, and resumed PRs get a freshness check. What's missing is the classic two-trains problem: A and B both pass review against the main they branched from; A merges; B's tests were never run against main+A.
 
 **Options.**
 1. Status quo. Cheap; squash merges surface textual conflicts, but semantic conflicts land silently.
@@ -50,7 +50,7 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 ## 4. Structured planner artifact
 
-**Status:** proposed
+**Status:** proposed — first step implemented (see below)
 
 **Context.** `/issue-plan` does expensive work — codebase exploration, an adaptive interview, slice design — and then discards everything except the issue bodies. Only `## Blocked by` (and the optional `## Interfaces`) survive as machine-readable signal. The runner then re-derives what the planner already knew: conflict edges come from a second LLM pass guessing at file-scope overlap the planner had explicitly decided.
 
@@ -60,6 +60,8 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 3. Encode file-scopes into each issue body as another `##` contract section. Lighter, but per-issue scopes without the cross-issue view still need assembly.
 
 **Recommendation.** Option 2, attached to a tracking issue (committing planner output pollutes repo history for what is run metadata). Deterministic overlap detection removes the least reliable LLM pass in the pipeline and gives entry point for the hybrid scheduler (note 1) to consume the same file. Requires a versioned schema — keep it minimal: `{issues: [{n, blocked_by: [], files: []}]}`.
+
+**Implemented — first step (issue #17).** The cheap half of option 3 shipped without a plan file or schema: `/issue-plan` Step 4 always emits `Files likely touched:` (repo-relative paths, comma-separated, `dir/` for a directory scope), and `/issue-runner` Step 2 intersects the lines pairwise when every in-scope issue carries one — exact path match plus directory-prefix match — recording each conflict in `conflicts.json` with `reason: "files: …"` and skipping the LLM refinement pass entirely. Any in-scope issue without the line falls back to the LLM pass (or none under `--no-llm-refine`). Conflict edges from either source are skipped for pairs already connected by a dependency, so scope order disagreeing with `## Blocked by` order cannot manufacture a cycle. Still open from option 2: the cross-issue artifact itself — the DAG-plus-scopes file the hybrid scheduler (note 1) would consume.
 
 ---
 
