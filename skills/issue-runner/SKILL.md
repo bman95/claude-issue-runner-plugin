@@ -60,10 +60,14 @@ fi
 echo $PPID > "$RUN_ROOT/lock" || { echo "cannot write lock: $RUN_ROOT/lock" >&2; exit 1; }
 
 find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
+# Failures past this point release the lock just taken (truncate, which works even where the
+# directory is read-only; an empty lock reads stale): it holds this session's live PPID, so
+# leaving it behind would make a same-session retry read as a concurrent run.
 if [ -d "$STATE_DIR" ]; then
-  mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)" || { echo "cannot rotate state: $STATE_DIR" >&2; exit 1; }
+  mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)" \
+    || { echo "cannot rotate state: $STATE_DIR" >&2; : > "$RUN_ROOT/lock"; exit 1; }
 fi
-mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; exit 1; }
+mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; : > "$RUN_ROOT/lock"; exit 1; }
 ```
 
 Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one).
