@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.7.1
+version: 0.8.0
 description: Implements a GitHub issue end-to-end — explore, code, PR, layered review (fresh-eyes subagents, then a Codex gate), merge.
 disable-model-invocation: true
 ---
@@ -62,6 +62,8 @@ If the Agent tool is unavailable, explore inline.
 
 Decide what changes, in what order, with what tests. **Interactive:** share a brief plan and get confirmation (skip for trivial fixes). **Orchestrated:** pre-approved — proceed. Stop only for genuine spec ambiguity (missing or contradictory requirements): return a blocker rather than guessing.
 
+**Resume runs:** read the existing PR first (`gh pr view <PR> --json isDraft,body`). A draft whose body carries a `## Plan` section is the Step 4 checkpoint of a run that died before implementing — start from that plan rather than re-deriving it, re-verifying it against the current code (the base may have moved).
+
 ### 4. Branch
 
 **Orchestrated:** you are already in your worktree (the Agent tool created it). Branch off the default branch:
@@ -70,7 +72,17 @@ Decide what changes, in what order, with what tests. **Interactive:** share a br
 git checkout -b <type>/issue-<number>-<short-slug>   # fix/ feat/ docs/ chore/
 ```
 
-If your dispatch prompt names an existing branch and PR (**resume**), check that branch out instead — `git fetch origin <branch> && git checkout <branch>` — and skip Step 7: push to the named PR.
+If your dispatch prompt names an existing branch and PR (**resume**), check that branch out instead — `git fetch origin <branch> && git checkout <branch>` — and skip Step 7: push to the named PR. Skip the checkpoint below too; the plan you took from its body in Step 3 is the checkpoint.
+
+On a fresh branch, **checkpoint the plan before writing any code.** Everything up to here — the exploration and the plan — lives only in this worktree and in a transcript store that some hosts throw away (Claude Code on the web, CI containers: the whole `~/.claude` tree goes with the container). Push the branch and open a **draft** PR carrying the plan, so a run that dies before Step 7 leaves its distilled context exactly where the orchestrator's resume check looks:
+
+```bash
+git commit --allow-empty -m "chore: checkpoint plan for #<number>"   # GitHub refuses a PR with no commits; the squash merge drops it
+git push -u origin HEAD
+gh pr create --draft --title "<title under 70 chars>" --body "<body>"
+```
+
+Title: the one the final PR will carry. Body: `## Summary` (one line — draft checkpoint, implementation pending), `Closes #<number>`, `## Plan` (the Step 3 plan verbatim: what changes, in what order, with what tests). Draft is load-bearing: GitHub refuses to merge a draft, so the checkpoint can never land by accident — only Step 9 marks it ready, on the merge path. Step 7 treats this PR as already existing.
 
 **Interactive:** first check for in-flight work — an open PR whose head branch matches `/issue-<number>-` (`gh pr list --state open --json number,headRefName`). If one exists, ask the user: resume it (fetch the branch, add the worktree on it — no `-b` off the default branch — and skip Step 7, pushing to that PR) or close it and start fresh.
 
@@ -99,7 +111,7 @@ A manual `git worktree add` carries no Agent-tool lock, so the Step 9 teardown i
 
 ### 5. Implement
 
-Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior. If the issue body has an `## Acceptance criteria` checklist (the `/issue-plan` format), treat it as the definition of done and verify every item before opening the PR.
+Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior. If the issue body has an `## Acceptance criteria` checklist (the `/issue-plan` format), treat it as the definition of done and verify every item before Step 7.
 
 ### 6. Commit and push
 
@@ -107,7 +119,7 @@ Stage explicitly (no `git add .`). Commit message: `<type>: <description>` with 
 
 ### 7. Open the PR
 
-`gh pr create` — title under 70 chars; body with `## Summary`, `Closes #<number>`, `## Changes`, `## Test plan`. **Resume runs skip this step**: the PR already exists — push to it and refresh its body per Step 8.
+`gh pr create` — title under 70 chars; body with `## Summary`, `Closes #<number>`, `## Changes`, `## Test plan`. **Orchestrated and resume runs skip creation**: the PR already exists (the Step 4 draft checkpoint, or the PR named in the dispatch) — push to it and replace its body with the shape above (`gh pr edit --body "<body>"`; `## Changes` supersedes the checkpoint's `## Plan`), then refresh it on every later push per Step 8. Leave it a draft: Step 9 marks it ready.
 
 ### 8. Review loop
 
@@ -170,9 +182,15 @@ The PR body becomes the squash-commit message (Step 9), so refresh Summary / Cha
 
 ### 9. Merge
 
-**Interactive:** present the converged state and confirm with the user before merging. **Orchestrated:** converged → merge yourself; bouncing → push your fixes, refresh the PR body so the unresolved state is visible, and return a blocker citing the findings.
+**Interactive:** present the converged state and confirm with the user before merging. **Orchestrated:** converged → merge yourself; bouncing → push your fixes, refresh the PR body so the unresolved state is visible, and return a blocker citing the findings — a PR bounced out of the review loop is still a draft (it is marked ready only below, on the merge path), so it is never mistaken for mergeable work.
 
-**Base freshness first.** The review judged this diff against its branch point; a sibling PR may have merged into `$BASE_BRANCH` since — a semantic-conflict window no textual merge check catches:
+**Mark the PR ready first.** The Step 4 checkpoint opened it as a draft, and GitHub refuses to merge a draft. This is the only place the draft flag comes off, so everything below the review loop — base freshness, the checks gate, the merge — runs unchanged:
+
+```bash
+if [ "$(gh pr view "$PR_NUM" --json isDraft -q .isDraft)" = true ]; then gh pr ready "$PR_NUM"; fi
+```
+
+**Base freshness next.** The review judged this diff against its branch point; a sibling PR may have merged into `$BASE_BRANCH` since — a semantic-conflict window no textual merge check catches:
 
 ```bash
 git fetch origin "$BASE_BRANCH"

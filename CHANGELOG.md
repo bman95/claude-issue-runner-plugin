@@ -2,6 +2,24 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.11.0] - 2026-09-06
+
+### Draft PR right after the plan: pre-implementation work survives a crash
+
+An implementer's PR used to appear only at gh-issue Step 7, after implementing. Everything before it — exploration, plan, early commits — lived solely in a local worktree and the session transcript, so a run that died before Step 7 left nothing on GitHub for the resume check to find, and on a host whose transcript store is ephemeral (Claude Code on the web, CI containers) nothing recoverable at all. Now the plan is checkpointed to GitHub the moment it exists. Behavior changes, so 0.11.0.
+
+**gh-issue (0.7.1 → 0.8.0):**
+- **Step 4 checkpoints the plan (orchestrated).** Right after branching: an empty `chore: checkpoint plan for #N` commit (a PR needs a commit; the squash merge drops it), push, and `gh pr create --draft` with `## Summary`, `Closes #N`, and `## Plan` — the Step 3 plan verbatim. Draft is load-bearing: GitHub refuses to merge a draft, so a checkpoint can never land by accident.
+- **Step 7 recognises the existing PR.** Orchestrated runs, like resume runs, skip `gh pr create`: they replace the body with the standard Summary / Changes / Test plan shape via `gh pr edit --body` and refresh it on every push exactly as before. `## Review notes` discipline is unchanged. The PR stays a draft through the review loop, so a bounced PR is visibly not mergeable.
+- **Step 9 marks the PR ready** (`gh pr ready`, guarded on `isDraft`) immediately before the base-freshness check and the checks gate — the merge path below it is untouched.
+- **Resume reads the plan from the PR body.** Step 3: a draft whose body carries `## Plan` is a checkpoint from a run that died before implementing; the resumed implementer starts from that plan (re-verified against current code) instead of re-deriving it, and Step 4 never opens a second checkpoint.
+
+**issue-runner (0.9.0 → 0.10.0):**
+- **Step 3a resume check finds the drafts.** A draft is an open PR, so the branch-contract check already matched it; it now carries `isDraft` in its output and the one-match rule states that a `draft=true` match is the normal shape of a run killed before implementation — resume it on its branch, never rebuild from scratch.
+- **Step 5 summary never counts a draft as ready-to-merge.** `blocked`/`failed` issues that left an open PR are listed with the PR number and draft state; a draft is reported as `draft (checkpoint)`.
+
+**Docs:** REFERENCE gains the rationale (this is the only recovery path that does not depend on the local transcript store — `$STATE_DIR`, the worktree and the transcript are all local; only GitHub survives the machine) and a troubleshooting entry for a leftover checkpoint draft; `docs/scenarios.md` row 12 pins the draft-resume behavior; README architecture and limitations updated.
+
 ## [0.10.0] - 2026-07-12
 
 ### Portable context: carry the whole plugin in one environment variable
