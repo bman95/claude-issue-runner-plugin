@@ -16,7 +16,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner` — all open issues (label-filtered, Step 1)
 - `/issue-runner 42 43 44` — exactly these issues; label filters bypassed
 - `/issue-runner --plan` — build and print the DAG, then exit (releasing the run lock)
-- `/issue-runner --status` — read-only: resolve `STATE_DIR` (the State block's first four assignments, `REPO_ROOT` through `STATE_DIR` — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`), and exit. No state dir → say so, naming the resolved path it looked at.
+- `/issue-runner --status` — read-only: resolve `STATE_DIR` (the State block through its `STATE_DIR=` line: the four assignments plus the absolute-path check on `RUN_ROOT` — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`), and exit. No state dir → say so, naming the resolved path it looked at.
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
@@ -38,6 +38,10 @@ REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | git hash-object -
 # Durable per-user run root (XDG state dir), not /tmp: it survives reboots and macOS's
 # periodic /tmp purge, so run state — and resume pointers, once recorded — outlives the session.
 RUN_ROOT=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/$REPO_KEY
+# A relative root (the XDG spec calls a relative XDG_STATE_HOME invalid; refuse it rather than
+# silently fall back, since dispatch prompts carry this path literally) would resolve against
+# whatever cwd reads it — --status included — so fail here, before any path is used.
+case $RUN_ROOT in /*) ;; *) echo "run root is not absolute: $RUN_ROOT" >&2; exit 1;; esac
 STATE_DIR=$RUN_ROOT/state
 
 # One run per repo. $PPID is the Claude Code process hosting this session — it
@@ -45,20 +49,21 @@ STATE_DIR=$RUN_ROOT/state
 # A live lock means another session is orchestrating this repo: stop and tell
 # the user; NEVER delete a live lock (the rotation below would yank a running
 # orchestration's state from under its implementers).
-# Never proceed without the lock and state dir. A relative root (the XDG spec calls a
-# relative XDG_STATE_HOME invalid; refuse it rather than silently fall back, since dispatch
-# prompts carry this path literally) or an uncreatable one (HOME unset, read-only, outside
-# a sandbox's writable roots) must fail loudly here rather than yield a lockless, stateless run.
-case $RUN_ROOT in /*) ;; *) echo "run root is not absolute: $RUN_ROOT" >&2; exit 1;; esac
+# Never proceed without the lock and a fresh state dir. Every write below is fatal on failure:
+# an uncreatable root (HOME unset, read-only, outside a sandbox's writable roots) or an
+# existing one left unwritable by a session with wider permissions must stop the run here
+# rather than let it continue lockless on stale state.
 mkdir -p "$RUN_ROOT" || { echo "cannot create run root: $RUN_ROOT" >&2; exit 1; }
 if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
   echo "live issue-runner in this repo (lock: $RUN_ROOT/lock)" >&2; exit 1
 fi
-echo $PPID > "$RUN_ROOT/lock"
+echo $PPID > "$RUN_ROOT/lock" || { echo "cannot write lock: $RUN_ROOT/lock" >&2; exit 1; }
 
 find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
-[ -d "$STATE_DIR" ] && mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)"
-mkdir -p "$STATE_DIR"
+if [ -d "$STATE_DIR" ]; then
+  mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)" || { echo "cannot rotate state: $STATE_DIR" >&2; exit 1; }
+fi
+mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; exit 1; }
 ```
 
 Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one).
