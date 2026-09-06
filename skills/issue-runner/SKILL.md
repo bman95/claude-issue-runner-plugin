@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.9.0
+version: 0.10.0
 disable-model-invocation: true
 description: "Orchestrates a queue of GitHub issues: builds a dependency DAG and dispatches each issue to an autonomous worktree-isolated implementer subagent (explore → implement → PR → review → merge), running independent issues in parallel and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -16,7 +16,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner` — all open issues (label-filtered, Step 1)
 - `/issue-runner 42 43 44` — exactly these issues; label filters bypassed
 - `/issue-runner --plan` — build and print the DAG, then exit (releasing the run lock)
-- `/issue-runner --status` — read-only: resolve `REPO_KEY` (the State block's first four lines — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`), and exit. No state dir → say so.
+- `/issue-runner --status` — read-only: resolve `REPO_KEY` (the State block's first four lines — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`; for `implementing` issues also the `progress` line, or `no progress recorded` when the file is absent), and exit. No state dir → say so.
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
@@ -54,7 +54,9 @@ find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>
 mkdir -p "$STATE_DIR"
 ```
 
-Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one).
+Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker").
+
+`progress` is **best-effort and informational only**: the implementer writes it with a single local `printf` (no API calls, nothing in the PR or commits), and a crashed or hung implementer leaves it at the last step it entered. A missing or stale file never changes a status decision — statuses come from the agent's result and item 5's merge proof — and it is never evidence of merge or convergence. `--status` prints it and the Step 5 summary cites it for `failed` issues; that is its whole job.
 
 ## Workflow
 
@@ -111,7 +113,7 @@ Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all 
 1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Any `pending` issue with a `closed-externally` dep → `skipped`, error `"dependency closed externally without merge proof: #X"` — the dep is terminal but its work is unverified, so dependents must not build on it (and must not be mislabeled as a cycle). Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
 2. **Ready set** = `pending` ∧ all deps `done` ∧ not in flight.
 3. **Fill slots** up to `MAX_PARALLEL` with dispatches (Step 3a); mark `implementing`.
-4. **Wait** for any in-flight agent to complete. An implementer that has produced nothing long after its siblings finished and well past the scale of its issue is hung: stop it, mark the issue `failed` with error `"implementer hung (no completion)"`, record its worktree path if known, and let the cascade handle dependents — a Step 4 retry is the recovery path.
+4. **Wait** for any in-flight agent to complete. An implementer that has produced nothing long after its siblings finished and well past the scale of its issue is hung: stop it, mark the issue `failed` with error `"implementer hung (no completion)"`, record its worktree path if known, and let the cascade handle dependents — a Step 4 retry is the recovery path (its `progress` file says which step it reached; Step 5 cites it).
 5. **Process the result.** A `CLOSED` issue is `done` **only with positive merge proof** — the implementer's own PR actually merged. `CLOSED` alone is not proof: the issue may have been closed by hand or by an unrelated PR's `Closes #N` mid-run. Derive the branch from the returned worktree (read-only; never `cd` into it) and look for a merged PR on it:
 
    ```bash
@@ -188,6 +190,9 @@ prompt: |
     blocker citing the findings. Never merge if uncertain.
   - Your final message must include one line: `worktree: <absolute path>`
     (from `git rev-parse --show-toplevel`) — even when returning a blocker.
+  - Progress marker: on entering each gh-issue step, overwrite
+    <STATE_DIR>/issue-<N>/progress with one line (gh-issue "Progress
+    marker" section). Best-effort; never mention it in the PR or commits.
 
   Never invoke gh-issue, /review, /security-review, or /codex:review via
   the Skill tool — inline the procedures; run codex via Bash.
@@ -246,7 +251,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, and surface anything new — never auto-discard. Then release the run lock: `rm -f "$RUN_ROOT/lock"`.
 
-**Summary table**: number, status, title, error. Also aggregate, per issue and as totals, the Phase 1 iterations and Codex gate passes (0–2) each implementer reports (gh-issue Step 10), plus any gate degradations/waivers — so review-loop caps get tuned from data, not folklore. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
+**Summary table**: number, status, title, error — and for every `failed` issue (hung ones included) the last `progress` line, e.g. `last progress: step=8.1 iter=2 pr=#123`, or `no progress recorded`. It says where the implementer stopped, not what it finished. Also aggregate, per issue and as totals, the Phase 1 iterations and Codex gate passes (0–2) each implementer reports (gh-issue Step 10), plus any gate degradations/waivers — so review-loop caps get tuned from data, not folklore. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
 
 ## Hard rules
 

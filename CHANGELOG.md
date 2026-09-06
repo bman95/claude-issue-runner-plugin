@@ -2,6 +2,23 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.11.0] - 2026-09-06
+
+### Step-boundary progress file: in-flight issues are no longer opaque
+
+`$STATE_DIR/issue-N/status` said `implementing` and nothing else, so `--status` could not say where an implementer actually was, the run summary could not say where a hung or failed one stopped, and a crashed implementer left no record of the step it reached (#5).
+
+**gh-issue (0.7.1 → 0.8.0):**
+- **New "Progress marker (orchestrated only)" section.** When the dispatch prompt supplied a state path, the implementer overwrites `<STATE_DIR>/issue-<N>/progress` with one line on entering every step — `step=<id>` plus the salient counters (`8.1 iter=K` per Phase 1 iteration, `8.2 pass=K` per Codex gate pass, `pr=#P` once the PR exists). One local `printf` with `2>/dev/null || true`: no API calls, nothing in the PR body / `## Review notes` / commit messages, nothing staged. Interactive runs write nothing.
+
+**issue-runner (0.9.0 → 0.10.0):**
+- **`progress` joins the per-issue state files**, documented as best-effort and informational only: a missing or stale file never changes a status decision (those come from the agent's result and the item 5 merge proof) and is never evidence of merge or convergence.
+- **`--status` prints the progress line** for `implementing` issues (`no progress recorded` when absent).
+- **Step 5 summary cites the last progress line** for every `failed` issue, hung ones included; Step 3 item 4 points at it when sizing a retry.
+- Dispatch template tells the implementer where to write it. REFERENCE: hung-implementer entry and a rationale note on why the file is deliberately not an input to any status decision.
+
+**Docs:** `docs/scenarios.md` row 12 pins the "progress is never proof" invariant; README `--status` line updated.
+
 ## [0.10.0] - 2026-07-12
 
 ### Portable context: carry the whole plugin in one environment variable
