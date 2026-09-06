@@ -45,10 +45,10 @@ STATE_DIR=$RUN_ROOT/state
 # A live lock means another session is orchestrating this repo: stop and tell
 # the user; NEVER delete a live lock (the rotation below would yank a running
 # orchestration's state from under its implementers).
-# Never proceed without the lock and state dir. A relative root (a relative XDG_STATE_HOME
-# is invalid per the XDG spec, and dispatch prompts carry this path literally) or an
-# uncreatable one (HOME unset, read-only, outside a sandbox's writable roots) must fail
-# loudly here rather than yield a lockless, stateless run.
+# Never proceed without the lock and state dir. A relative root (the XDG spec calls a
+# relative XDG_STATE_HOME invalid; refuse it rather than silently fall back, since dispatch
+# prompts carry this path literally) or an uncreatable one (HOME unset, read-only, outside
+# a sandbox's writable roots) must fail loudly here rather than yield a lockless, stateless run.
 case $RUN_ROOT in /*) ;; *) echo "run root is not absolute: $RUN_ROOT" >&2; exit 1;; esac
 mkdir -p "$RUN_ROOT" || { echo "cannot create run root: $RUN_ROOT" >&2; exit 1; }
 if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
