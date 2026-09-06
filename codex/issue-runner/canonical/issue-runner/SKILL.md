@@ -16,7 +16,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner` — all open issues (label-filtered, Step 1)
 - `/issue-runner 42 43 44` — exactly these issues; label filters bypassed
 - `/issue-runner --plan` — build and print the DAG, then exit (releasing the run lock)
-- `/issue-runner --status` — read-only: resolve `STATE_DIR` (the State block's first four assignments, `REPO_ROOT` through `STATE_DIR` — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`), and exit. No state dir → say so.
+- `/issue-runner --status` — read-only: resolve `STATE_DIR` (the State block's first four assignments, `REPO_ROOT` through `STATE_DIR` — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`), and exit. No state dir → say so, naming the resolved path it looked at.
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
@@ -26,7 +26,7 @@ Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** f
 
 ## State
 
-`STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state` — durable per-user state that survives reboots — where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it. GitHub is the cross-run source of truth (Step 3a's resume check rediscovers in-flight work from open PRs); `$STATE_DIR` is run-scoped scratch for in-run coordination, and `state.prev.*` rotations are forensics only.
+`STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state` — a durable per-user location rather than `/tmp`, so state outlives a reboot (groundwork for resume pointers; the rotation and cross-run rules below are unchanged) — where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it. GitHub is the cross-run source of truth (Step 3a's resume check rediscovers in-flight work from open PRs); `$STATE_DIR` is run-scoped scratch for in-run coordination, and `state.prev.*` rotations are forensics only.
 
 ```bash
 # Namespace state by repo root so different repos never collide on a shared run root.
@@ -36,7 +36,7 @@ REPO_ROOT=$(git rev-parse --show-toplevel)
 # pipeline failure would collapse the key to <basename>- — same-basename repos colliding.
 REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | git hash-object --stdin | cut -c1-8)
 # Durable per-user run root (XDG state dir), not /tmp: it survives reboots and macOS's
-# periodic /tmp purge, so run state and resume pointers outlive the session.
+# periodic /tmp purge, so run state — and resume pointers, once recorded — outlives the session.
 RUN_ROOT=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/$REPO_KEY
 STATE_DIR=$RUN_ROOT/state
 
@@ -45,7 +45,12 @@ STATE_DIR=$RUN_ROOT/state
 # A live lock means another session is orchestrating this repo: stop and tell
 # the user; NEVER delete a live lock (the rotation below would yank a running
 # orchestration's state from under its implementers).
-mkdir -p "$RUN_ROOT"
+# Never proceed without the lock and state dir. A relative root (a relative XDG_STATE_HOME
+# is invalid per the XDG spec, and dispatch prompts carry this path literally) or an
+# uncreatable one (HOME unset, read-only, outside a sandbox's writable roots) must fail
+# loudly here rather than yield a lockless, stateless run.
+case $RUN_ROOT in /*) ;; *) echo "run root is not absolute: $RUN_ROOT" >&2; exit 1;; esac
+mkdir -p "$RUN_ROOT" || { echo "cannot create run root: $RUN_ROOT" >&2; exit 1; }
 if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
   echo "live issue-runner in this repo (lock: $RUN_ROOT/lock)" >&2; exit 1
 fi
