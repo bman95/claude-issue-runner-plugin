@@ -164,7 +164,7 @@ CODEX_EXIT=$?
 
 #### Converged vs bouncing (merge authority — issue-runner defers to this)
 
-**Converged** (mergeable) — any of: the last iteration produced zero actionable findings; OR only findings that are skip-and-documented or P3-cosmetic and orthogonal to earlier fixes; OR the user explicitly authorized merging; OR the gate degraded on credit/quota or was waived (`--no-codex-gate`, dispatch prompt only) after Phase 1 convergence (verify the corresponding `## Review notes` line exists in the PR body). An inline Phase 1 (Agent tool unavailable) converges by the same criteria, likewise only with its `## Review notes` line present — and never in combination with a credit/quota gate degradation (Phase 2 blocks that pairing).
+**Converged** (mergeable) — any of: the last iteration produced zero actionable findings; OR only findings that are skip-and-documented or P3-cosmetic and orthogonal to earlier fixes; OR the user explicitly authorized merging; OR the gate degraded on credit/quota or was waived (`--no-codex-gate`, dispatch prompt only) after Phase 1 convergence (verify the corresponding `## Review notes` line exists in the PR body). An inline Phase 1 (Agent tool unavailable) converges by the same criteria, likewise only with its `## Review notes` line present — and never in combination with a credit/quota gate degradation (orchestrated: Phase 2 blocks that pairing; interactive: only with the user's explicit proceed).
 
 **Bouncing** (not mergeable) — any of: a fixed finding re-appeared; a fix introduced equal-or-worse findings; the cap was reached with an unverified P1/P2 fix; `codex review` exited non-zero for a non-credit/quota reason.
 
