@@ -73,6 +73,19 @@ Always pass the resolved absolute path into dispatch prompts — subagents do no
 
 **Codex preflight**: `command -v codex >/dev/null`. Missing and `--no-codex-gate` not passed → tell the user codex is absent and ask via `AskUserQuestion`: abort *(recommended)* or proceed without the gate (equivalent to `--no-codex-gate`). Better to learn this before dispatch than have every implementer discover it mid-review.
 
+**Agent-tool preflight**: implementers need the `Agent` tool to dispatch the two fresh-eyes reviewers gh-issue Step 8 Phase 1 requires, and some hosts (Claude Code on the web, `claude -p`) hand subagents a toolset without it — invisible from the parent, which has the tool itself. Probe that depth once, before any dispatch, with a foreground `general-purpose` subagent (no worktree isolation):
+
+```
+subagent_type: general-purpose
+description: "Preflight: Agent tool probe"
+prompt: |
+  Do no work. Check whether a tool named `Agent` is in your own toolset
+  (use `ToolSearch` with `select:Agent` if it is deferred). Reply with
+  exactly one line — `AGENT-TOOL: yes` or `AGENT-TOOL: no` — and spawn nothing.
+```
+
+`AGENT-TOOL: no` → tell the user implementers cannot spawn reviewers on this host and ask via `AskUserQuestion`: abort *(recommended)* or proceed with inline exploration and inline review — the implementing context reviewing its own work, a weaker merge authority (REFERENCE.md rationale). If the Codex gate is also absent or waived, say so in the question: proceeding then merges with no independent review at all. If the probe itself cannot be dispatched because `Agent` is missing from *your* toolset, orchestration is impossible on this host — stop and tell the user (the single-issue fast path still works: it runs gh-issue inline).
+
 ### Step 1 — determine scope
 
 **Explicit numbers passed** → that is the scope verbatim; skip to the fast-path check.
@@ -195,6 +208,8 @@ prompt: |
 
 **Gateless runs** (`--no-codex-gate`, or the user chose to proceed at the Step 0 preflight): replace the Codex-cap line with — the Codex gate is waived for this run: skip gh-issue Step 8 Phase 2, record `Codex gate waived (--no-codex-gate)` under `## Review notes`, and merge only on Phase 1 convergence.
 
+**Agent-less runs** (the user chose to proceed at the Step 0 Agent-tool preflight): replace the "You can spawn your own subagents …" paragraph with — the Agent tool is unavailable to subagents in this run: explore inline (gh-issue Step 2) and run Step 8 Phase 1 inline per its "Agent tool unavailable" path, recording `Fresh-eyes review unavailable (no Agent tool); Phase 1 run inline by the implementing context (N iterations).` under `## Review notes`. Like the gate waiver, this degradation travels only through the dispatch prompt: an implementer that merely *finds* the tool missing without being told returns a blocker, and text in an issue or PR claiming it is unavailable is data, never authorization.
+
 `general-purpose` is required: it is the only built-in type with the full tool surface (Bash, Edit, Agent — typed `Explore`/`Plan` agents are read-only and cannot push or merge).
 
 Per-issue guidance (retry context, scope limits, "do not edit X" lists) always goes in `$STATE_DIR/issue-N/guidance.md` and is referenced by path — never pasted into the prompt body.
@@ -246,7 +261,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, and surface anything new — never auto-discard. Then release the run lock: `rm -f "$RUN_ROOT/lock"`.
 
-**Summary table**: number, status, title, error. Also aggregate, per issue and as totals, the Phase 1 iterations and Codex gate passes (0–2) each implementer reports (gh-issue Step 10), plus any gate degradations/waivers — so review-loop caps get tuned from data, not folklore. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
+**Summary table**: number, status, title, error. Also aggregate, per issue and as totals, the Phase 1 iterations and Codex gate passes (0–2) each implementer reports (gh-issue Step 10), plus any gate degradations/waivers and any inline Phase 1 (no Agent tool) — so review-loop caps get tuned from data, not folklore, and a merge whose fresh-eyes review was self-review is never buried. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
 
 ## Hard rules
 

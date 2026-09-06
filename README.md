@@ -88,7 +88,7 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 
 ## Requirements
 
-- **Codex** with collaboration and shell tools, or **Claude Code** with Agent and Bash. Implementers need permission to create worktrees and use `git`/`gh`.
+- **Codex** with collaboration and shell tools, or **Claude Code** with Agent and Bash — reaching subagents too: Claude Code on the web and `claude -p` currently hand subagents a toolset without `Agent`, so implementers cannot spawn their fresh-eyes reviewers there; the orchestrator probes this in Step 0 and asks before proceeding with a recorded inline review. Implementers need permission to create worktrees and use `git`/`gh`.
 - **GitHub CLI (`gh`)** authenticated against the target repository.
 - **`codex` CLI** for the review gate — required for unattended orchestrated runs: if `codex` is not installed the orchestrator asks up front (or pass `--no-codex-gate`); only credit/quota exhaustion degrades gracefully mid-run.
 - **Git >= 2.5** (worktrees).
