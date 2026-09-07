@@ -116,7 +116,7 @@ SKILL_PLAN="$ROOT/skills/issue-plan/SKILL.md"
 # The Codex edition's wrappers read these canonical copies, not skills/.
 CANON_PLAN="$ROOT/codex/issue-runner/canonical/issue-plan/SKILL.md"
 CANON_RUNNER="$ROOT/codex/issue-runner/canonical/issue-runner/SKILL.md"
-for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:'; do
+for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:' 'Part of #' '## Slices'; do
   for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
     if ! grep -qF "$s" "$f"; then
       err "contract string '$s' missing from ${f#"$ROOT"/}"
