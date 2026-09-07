@@ -5,7 +5,7 @@ A self-sufficient Codex and Claude Code plugin for the full agentic issue pipeli
 - **`/issue-plan`** turns an idea, plan, or spec into ready-to-run issues: it asks only the questions the input needs, slices the work into tracer-bullet vertical slices, and publishes issues in the format the runner parses.
 - **`/issue-runner`** reads the issue queue, builds a dependency DAG, and dispatches each issue to an **autonomous implementer subagent** in an isolated worktree. Implementers spawn their own subagents — `Explore`/`Plan` helpers, fresh-eyes reviewers, delegated `general-purpose` chunks (helpers don't nest further) — then converge the PR through a Codex gate and merge it. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents.
 
-Run-time doubts escalate up the chain: implementer → parent (resolves coordination/context blockers from run-wide knowledge) → human (only for scope, product-behavior, or risk decisions).
+Run-time doubts escalate up the chain: implementer → parent (resolves coordination/context blockers from run-wide knowledge, retrying on its own only while an issue's Step 4 re-dispatches stay under `--max-retries`) → human (scope, product-behavior, or risk decisions — and every blocker once an issue's retry cap is reached).
 
 ## Status
 
@@ -22,6 +22,8 @@ Use gh-issue to implement issue 42 end to end.
 ```
 
 Codex selects skills from natural-language requests; the Claude-style slash commands shown below remain useful aliases when running the Claude edition.
+
+Orchestrated runs (`issue-runner` on two or more issues, or `--plan`) keep their state under `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner`, which a default `workspace-write` sandbox cannot write and a running session cannot grant: create that directory once and launch Codex with `codex --add-dir "${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner"` (or list it under `sandbox_workspace_write.writable_roots` in `config.toml`); otherwise the run refuses to start with `run root is not writable`.
 
 ## Claude Code installation
 
@@ -73,6 +75,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --hang-minutes N             # hung-implementer threshold: progress file unchanged for more than N minutes (default 30)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
+/issue-runner:issue-runner --max-retries N              # Step 4 re-dispatches per issue before every blocker escalates to you (default 2)
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement (file-scope conflict edges still computed)
 /issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
@@ -99,7 +102,7 @@ The `gh-issue` implementer skill is bundled — no separate installation.
 ## Known limitations
 
 - **Trust the issue authors.** Implementers consume issue bodies and comments verbatim as their task spec and, in orchestrated mode, hold merge authority (`gh pr merge` with no human gate). Do **not** point `/issue-runner` at a repo whose issues can be authored by untrusted parties — a malicious issue body is prompt-injection executed as instructions by an agent that can merge to your default branch. The pipeline is safe when you author the issues yourself (via `/issue-plan`); the spec instructs implementers to treat issue content as data, but that is a mitigation, not a sandbox.
-- **Single-host.** State lives at `/tmp/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated; within a repo, a PID lock refuses a second concurrent run (a crashed run's lock reads stale and is taken over).
+- **Single-host.** State lives at `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated; within a repo, a PID lock refuses a second concurrent run (a crashed run's lock reads stale and is taken over).
 - **Explicit intent recommended.** Ask for `issue-plan`, `issue-runner`, or `gh-issue` by name when you want a mutating GitHub workflow; Codex can then select the matching bundled skill.
 - **Re-runs resume open PRs.** Dispatch detects an existing open PR for an issue (head branch matches `/issue-<N>-`) and continues on its branch instead of opening a duplicate. Close the PR first for a from-scratch retry.
 - **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`; `scripts/lint.sh` additionally syntax-checks the embedded bash recipes (`bash -n`) and guards recipe drift across the skill files, but nothing exercises the workflows end-to-end.
