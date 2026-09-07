@@ -70,7 +70,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-plan <idea | plan | file | issue#>  # idea -> published, runnable issues
 /issue-runner:issue-runner                              # all open issues (label-filtered)
 /issue-runner:issue-runner 42 43 44                     # specific issue numbers
-/issue-runner:issue-runner --plan                       # build the DAG and exit
+/issue-runner:issue-runner --plan                       # build the DAG, print an agent-count estimate, and exit
 /issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress and per-issue outcomes (read-only)
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --hang-minutes N             # hung-implementer threshold: progress file unchanged for more than N minutes (default 30)
@@ -86,7 +86,7 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 ## Architecture
 
 - **Planner** (`skills/issue-plan/SKILL.md`): absorb the idea → adaptive interrogation (human decisions settled up front) → tracer-bullet vertical slices → publish a tracking issue (the input, the interview's decision log, the slice list) and one issue per slice with `## What to build` / `## Acceptance criteria` / `## Blocked by` / `Files likely touched:` — the contract the runner and implementer parse — plus a `Part of #<tracking>` line outside it.
-- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, tracking issues excluded, dirty-tree audit) → dependency DAG (`## Blocked by` primary, heuristics as fallback; conflict edges from `Files likely touched:` intersection, LLM refinement as fallback) → parallel dispatch → two-tier blocker escalation (parent first, human last) → cleanup and summary, posted as a comment on the plan's tracking issue when the scope shares one. The orchestrator never enters a worktree.
+- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, tracking issues excluded, dirty-tree audit) → dependency DAG (`## Blocked by` primary, heuristics as fallback; conflict edges from `Files likely touched:` intersection, LLM refinement as fallback) → an agent-count estimate printed with the plan (also available via `--plan` alone) → parallel dispatch → two-tier blocker escalation (parent first, human last) → cleanup and summary — actual agent counts next to the estimate — posted as a comment on the plan's tracking issue when the scope shares one. The orchestrator never enters a worktree.
 - **Implementer** (`skills/gh-issue/SKILL.md`): understand → explore (Explore subagent) → plan → branch + draft PR carrying the plan (orchestrated: the checkpoint that survives a crash) → implement → PR body → layered review → mark ready → merge. The review runs fresh-eyes reviewer subagents locally (no Codex spend) and uses `codex review` only as a final certification gate (1–2 passes per PR), with a credit/quota degradation path.
 - **Reference** (`skills/issue-runner/REFERENCE.md`): troubleshooting and the rationale behind the defensive recipes (worktree locks, branch deletion after squash merges, duplicate PRs on re-runs).
 
