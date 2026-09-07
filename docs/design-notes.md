@@ -69,13 +69,13 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 ## 5. Spend telemetry and budget limits
 
-**Status:** blocked-upstream (partial: proposed)
+**Status:** blocked-upstream (partial: implemented)
 
 **Context.** Token budgets cannot be enforced from a skill spec — the harness meters tokens, and neither the orchestrator nor the implementers can observe their own consumption. "Stop when you've spent X" is not implementable as prose.
 
 **Options.**
 1. Do nothing; cost control stays with the caps that exist (`--max-parallel`, `--max-codex-iterations`, `--max-retries`, Phase 1 iteration cap).
-2. What's feasible today: agent-count *estimates* at `--plan` time (issues × expected agents per issue: implementer + Explore + 2 reviewers × iterations + gate passes), and per-run aggregation of actuals — iteration counts and gate passes are already in every implementer's Step 10 report, and Step 4 retries in `$STATE_DIR/issue-N/retries`; the orchestrator can sum them into the Step 5 summary.
+2. **Implemented.** Agent-count *estimates* at `--plan` time (issues × expected agents per issue: implementer + Explore + 2 reviewers × 1–4 iterations + Codex gate passes), and per-run aggregation of actuals — iteration counts, gate passes and Step 4 retries are already in `$STATE_DIR`; the orchestrator sums them into the Step 5 summary next to the Step 2 estimate, so the estimate's constants get tuned from data (`skills/issue-runner/SKILL.md`, Step 2 and Step 5). The actual is a best-effort estimate, not an exact ledger: it can undercount a retried issue (`result.json` is cleared before every retry, so only the implementer and Explore-helper counts scale with `retries` exactly — an earlier attempt's own reviewer/gate-pass spend is gone by the time Step 5 reads the file) or a crashed/hung one (no readable `result.json` to sum from), and it can overcount an issue that explored inline but never reached Phase 1 (`phase1_inline` describes only how Phase 1 ran once entered, so it can't record "Explore ran inline, Phase 1 never started").
 3. Real budget enforcement — requires harness support (a per-Agent-call token ceiling or a session meter readable from the session). Track upstream; not buildable here.
 
-**Recommendation.** Option 2 now (the per-run aggregation half is added as of this pass; the `--plan` estimate is cheap to add), option 3 when the harness grows a meter. The estimate's value is pre-flight sticker shock — "this run will dispatch ~40 agents" before dispatching any — which is the decision point a budget would have guarded anyway.
+**Recommendation.** Option 2 is done — pre-flight sticker shock ("this run will dispatch ~40 agents" before dispatching any) plus the actual-vs-estimate comparison at Step 5, which is the decision point a real budget would have guarded anyway. Option 3 stays blocked-upstream until the harness grows a meter.
