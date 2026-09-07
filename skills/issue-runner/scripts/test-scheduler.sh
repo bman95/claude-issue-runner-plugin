@@ -161,6 +161,14 @@ fixture "dangling dependency reference does not crash the ancestor search" \
   $'1: 2\n2: 4' "1=pending 2=pending" "" \
   $'cycle 1 2\ncycle 2 4'
 
+# A CRLF dag.txt (git core.autocrlf, an editor default -- an easy accident on
+# Windows/WSL) must not leave a trailing \r glued onto the last field of a
+# line: a no-deps issue must still read as having zero deps, not one phantom
+# dependency that can never resolve.
+fixture "CRLF dag.txt does not wedge a zero-dep issue" \
+  $'1:\r\n2: 1\r' "1=pending 2=pending" "" \
+  "dispatch 1"
+
 fixture "paused: a lone blocked issue with no dependent still needs Step 4" \
   "1:" "1=blocked" "" \
   "paused"
@@ -171,6 +179,29 @@ if bash "$SCHEDULER" "$TMP/does-not-exist" >/dev/null 2>&1; then
   err "unreadable state dir: expected non-zero exit"
 else
   ok "unreadable state dir: exits non-zero"
+fi
+
+# --- Glob safety: a literal `*` in dag.txt must never expand against the ----
+# --- caller's cwd (the script's whitespace-normalizing `echo $var` calls   --
+# --- would otherwise glob-expand, making the result depend on unrelated    --
+# --- files that happen to exist wherever scheduler.sh was invoked from).   --
+glob_run="$TMP/globcwd"
+rm -rf "$glob_run"
+mkdir -p "$glob_run/state/issue-1" "$glob_run/state/issue-2" "$glob_run/state/issue-3" "$glob_run/state/issue-5"
+printf 'pending\n' > "$glob_run/state/issue-1/status"
+printf 'pending\n' > "$glob_run/state/issue-2/status"
+printf 'pending\n' > "$glob_run/state/issue-3/status"
+printf 'failed\n' > "$glob_run/state/issue-5/status"
+printf '1:\n2:\n3: 1 *\n' > "$glob_run/state/dag.txt"
+: > "$glob_run/5"   # a file named "5" that a glob expansion of "*" would match
+glob_actual="$(cd "$glob_run" && bash "$SCHEDULER" ./state)"
+glob_expected=$'dispatch 1\ndispatch 2'
+if [ "$glob_actual" = "$glob_expected" ]; then
+  ok "literal * in dag.txt does not glob-expand against the caller's cwd"
+else
+  err "literal * in dag.txt glob-expanded: expected:"
+  printf '%s\n' "$glob_expected" | sed 's/^/  expected> /' >&2
+  printf '%s\n' "$glob_actual" | sed 's/^/  actual  > /' >&2
 fi
 
 # --- Accounting against docs/scenarios.md -----------------------------------

@@ -55,20 +55,40 @@
 # Dependency-free: bash + coreutils only (no jq, no python, no associative
 # arrays — bash 3.2, stock on macOS, has neither).
 
-set -u
+# -f (noglob): several helpers below normalize whitespace with an unquoted
+# `echo $var` — word-splitting is wanted there, but bash performs pathname
+# expansion on the same unquoted expansion, so a stray `*` in dag.txt (or a
+# dependency chain that bottoms out empty, see has_blocked_ancestor) would
+# otherwise glob-expand against whatever files happen to exist in the
+# *caller's* cwd — nondeterministic and a direct violation of "pure
+# deterministic state machine". noglob removes that risk script-wide; nothing
+# here ever wants a real glob.
+set -uf
 
 STATE_DIR=${1:?usage: scheduler.sh STATE_DIR}
-DAG="$STATE_DIR/dag.txt"
+DAG_SRC="$STATE_DIR/dag.txt"
 RUN_ROOT=$(dirname "$STATE_DIR")
 
 if [ ! -d "$STATE_DIR" ] || [ ! -r "$STATE_DIR" ]; then
   echo "scheduler.sh: cannot read state dir: $STATE_DIR" >&2
   exit 1
 fi
-if [ ! -r "$DAG" ]; then
-  echo "scheduler.sh: cannot read dag file: $DAG" >&2
+if [ ! -r "$DAG_SRC" ]; then
+  echo "scheduler.sh: cannot read dag file: $DAG_SRC" >&2
   exit 1
 fi
+
+# Work from a CR-stripped copy, never the file directly: a CRLF dag.txt (git
+# core.autocrlf, an editor default — an easy accident on Windows/WSL, this
+# project's own dev environment) would otherwise leave a trailing \r glued
+# onto the last field of every line. awk's field split on `:` doesn't touch
+# it, so a no-deps line like `1:\r\n` reads as one phantom dependency (the
+# literal \r) that can never resolve to `done` — wedging every such issue as
+# an apparent cycle. OVERLAY shares this trap; both are removed together.
+DAG=$(mktemp)
+OVERLAY=$(mktemp)
+trap 'rm -f "$DAG" "$OVERLAY"' EXIT
+tr -d '\r' < "$DAG_SRC" > "$DAG"
 
 # All issue numbers in dag.txt, in file order, deduped: a duplicate line (an
 # unsanitized scope with a repeated number reaching Step 2's dag.txt write)
@@ -102,9 +122,8 @@ status_of() {
 # with "dependency closed externally without merge proof: #X". Repeat until
 # stable so a multi-level chain fully cascades in one call. Recorded as an
 # overlay (never written to disk here) so eff_status() below can see a
-# same-pass cascade without a second script invocation.
-OVERLAY=$(mktemp)
-trap 'rm -f "$OVERLAY"' EXIT
+# same-pass cascade without a second script invocation. (OVERLAY itself was
+# created above, alongside DAG, so both share one cleanup trap.)
 
 eff_status() {
   local n="$1" line
