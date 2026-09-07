@@ -86,6 +86,15 @@ fixture "scenario row 4: true cycle cites a real offending dep" \
   $'1: 2\n2: 1' "1=pending 2=pending" "" \
   $'cycle 1 2\ncycle 2 1'
 
+# --- Row 34: the --no-merge / ready-ancestor fixture (issue #14) -----------
+
+# Row 34: A -> B; A is ready (--no-merge converged and stopped there), nothing
+# else in flight -> B stays pending (paused), exactly like row 1's blocked
+# ancestor -- never a cycle, and no Step 4 escalation is implied.
+fixture "scenario row 34: ready-ancestor wait, not a cycle" \
+  $'1:\n2: 1' "1=ready 2=pending" "" \
+  "paused"
+
 # --- Rows 29 & 32: the credit/usage-limit run-pause fixtures ----------------
 
 # Row 29 (narrowed to the scheduler's own contribution): RUN_ROOT/paused
@@ -113,6 +122,13 @@ fixture "wait: nothing ready, an implementer is in flight" \
 
 fixture "done: every issue terminal" \
   $'1:\n2: 1' "1=done 2=done" "" \
+  "done"
+
+# A lone `ready` issue (no dependent waiting on it) is terminal for the run
+# with no Step 4 escalation of its own, unlike `blocked` -- the scheduler
+# reports the run finished (`done`), not `paused`.
+fixture "done: a lone ready issue needs no escalation, unlike blocked" \
+  $'1:\n2: 1' "1=done 2=ready" "" \
   "done"
 
 # --- Edge cases (review findings) -------------------------------------------
@@ -274,8 +290,8 @@ fi
 # live-repo work outside a pure status-files-and-dag.txt state machine, so
 # there is nothing here to fixture. Pin the total row count so a scenarios.md
 # edit that adds or removes a row is caught here for review, not silently.
-IN_SCOPE_ROWS="1 2 3 4 29 32"
-EXPECTED_ROW_COUNT=33
+IN_SCOPE_ROWS="1 2 3 4 29 32 34"
+EXPECTED_ROW_COUNT=38
 
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
