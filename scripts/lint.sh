@@ -32,6 +32,9 @@
 #      Codex edition's canonical copies alike; compared per line, not per file,
 #      with the contract-line count pinned per file and the shape line (enum
 #      values included) byte-identical across the four files
+#  12. skills/issue-runner/scripts/test-scheduler.sh passes — the golden
+#      fixtures for scripts/scheduler.sh, the extracted Step 3 cascade-skip /
+#      ready-set / blocked-chain-vs-cycle state machine
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -259,14 +262,18 @@ for skill in "$ROOT"/skills/*/SKILL.md; do
   fi
 done
 
-# 8. shellcheck over this script itself (advisory only) --------------------------
+# 8. shellcheck over this script and the bundled scheduler scripts (advisory) ----
 if [ "$have_shellcheck" -eq 1 ]; then
-  if shellcheck "$ROOT/scripts/lint.sh" >"$TMP/lint.sc" 2>&1; then
-    ok "shellcheck clean: scripts/lint.sh"
-  else
-    warn "shellcheck findings in scripts/lint.sh (advisory):"
-    cat "$TMP/lint.sc"
-  fi
+  for f in "$ROOT/scripts/lint.sh" "$ROOT/skills/issue-runner/scripts/scheduler.sh" \
+           "$ROOT/skills/issue-runner/scripts/test-scheduler.sh"; do
+    rel="${f#"$ROOT"/}"
+    if shellcheck "$f" >"$TMP/lint.sc" 2>&1; then
+      ok "shellcheck clean: $rel"
+    else
+      warn "shellcheck findings in $rel (advisory):"
+      cat "$TMP/lint.sc"
+    fi
+  done
 else
   ok "shellcheck not installed - skipped (advisory check only)"
 fi
@@ -362,6 +369,19 @@ EOF_KEYS
     keys_ok=0
   fi
   [ "$keys_ok" -eq 1 ] && ok "result.json key set identical on every contract line and shape line byte-identical (both editions): $keys_ref"
+fi
+
+# 12. Scheduler golden fixtures --------------------------------------------------
+TEST_SCHEDULER="$ROOT/skills/issue-runner/scripts/test-scheduler.sh"
+if [ -f "$TEST_SCHEDULER" ]; then
+  if bash "$TEST_SCHEDULER" >"$TMP/test-scheduler.out" 2>&1; then
+    ok "scheduler golden fixtures pass (skills/issue-runner/scripts/test-scheduler.sh)"
+  else
+    err "scheduler golden fixtures failed:"
+    cat "$TMP/test-scheduler.out" >&2
+  fi
+else
+  err "$TEST_SCHEDULER not found"
 fi
 
 if [ "$fail" -ne 0 ]; then

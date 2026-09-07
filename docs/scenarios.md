@@ -4,6 +4,8 @@ These fixtures are the behavioral contract of the orchestrator's scheduling loop
 
 Notation: `A -> B` means B depends on A (edge B→A in `dag.json`). Statuses are the spec's own vocabulary: `pending` / `implementing` / `blocked` / `done` / `failed` / `skipped` / `closed-externally`.
 
+Rows 1, 2, 3, 4, 29 and 32 are the pure state machine — cascade skip, the ready set, and the blocked-chain-vs-run-paused-vs-cycle distinction (Step 3 items 1, 2 and 6) — and have an **executable** form: `skills/issue-runner/scripts/scheduler.sh` implements the transitions (its own comments are the one statement of the rules) and `skills/issue-runner/scripts/test-scheduler.sh` encodes each of those rows as a fixture, run from `scripts/lint.sh` and so from CI. The remaining rows exercise Step 3 items 3–5 (dispatch, hang detection, result.json processing), Step 3a, Step 4, Step 5, or Step 1/2/State — judgement or live-GitHub work outside a pure status-files-and-`dag.txt` state machine — and stay verified by dry-reading, as this whole table always has been.
+
 | # | Scenario (DAG + statuses) | Expected behavior | Spec anchor |
 |---|---------------------------|-------------------|-------------|
 | 1 | `A -> B`; A is `blocked`, nothing else in flight | B stays `pending` (paused). It is a blocked-chain waiter, **never** skipped as a cycle; resolution goes through Step 4 on A. | Step 3 item 1 (last sentence) + item 6, blocked-chain case |
