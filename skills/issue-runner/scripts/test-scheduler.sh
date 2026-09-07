@@ -181,6 +181,21 @@ else
   ok "unreadable state dir: exits non-zero"
 fi
 
+# --- Temp-file failure: fail loudly, never a false "done" -------------------
+# A starved TMPDIR (disk full, an unwritable temp dir) must exit non-zero,
+# never fall through to evaluating an empty/unopened dag.txt and reporting
+# every issue terminal when nothing was actually evaluated.
+mktemp_fail_run="$TMP/mktempfail"
+rm -rf "$mktemp_fail_run"
+mkdir -p "$mktemp_fail_run/state/issue-1"
+printf '1:\n' > "$mktemp_fail_run/state/dag.txt"
+printf 'pending\n' > "$mktemp_fail_run/state/issue-1/status"
+if TMPDIR="$TMP/no-such-tmpdir" bash "$SCHEDULER" "$mktemp_fail_run/state" >/dev/null 2>&1; then
+  err "mktemp failure: expected non-zero exit, got 0 (a false 'done' would tell the orchestrator the run finished)"
+else
+  ok "mktemp failure exits non-zero rather than reporting a false 'done'"
+fi
+
 # --- Glob safety: a literal `*` in dag.txt must never expand against the ----
 # --- caller's cwd (the script's whitespace-normalizing `echo $var` calls   --
 # --- would otherwise glob-expand, making the result depend on unrelated    --

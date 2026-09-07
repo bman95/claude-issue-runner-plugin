@@ -85,10 +85,20 @@ fi
 # it, so a no-deps line like `1:\r\n` reads as one phantom dependency (the
 # literal \r) that can never resolve to `done` — wedging every such issue as
 # an apparent cycle. OVERLAY shares this trap; both are removed together.
-DAG=$(mktemp)
-OVERLAY=$(mktemp)
+#
+# Every step here is checked explicitly (never assumed): a starved TMPDIR
+# (disk full, an unwritable temp dir) must fail loudly here, the same as an
+# unreadable STATE_DIR/dag.txt above — never fall through silently. Without
+# these checks, a failed mktemp leaves $DAG empty, the `tr` redirect into it
+# errors but is ignored, and awk given an empty filename silently reads
+# stdin instead — the worst possible outcome, an unevaluated dag.txt read
+# straight through to a false `done` (exit 0), telling the orchestrator the
+# whole run finished when nothing here was actually evaluated.
+DAG=$(mktemp) || { echo "scheduler.sh: cannot create temp file" >&2; exit 1; }
+OVERLAY=$(mktemp) || { echo "scheduler.sh: cannot create temp file" >&2; rm -f "$DAG"; exit 1; }
 trap 'rm -f "$DAG" "$OVERLAY"' EXIT
-tr -d '\r' < "$DAG_SRC" > "$DAG"
+tr -d '\r' < "$DAG_SRC" > "$DAG" \
+  || { echo "scheduler.sh: cannot normalize dag file: $DAG_SRC" >&2; exit 1; }
 
 # All issue numbers in dag.txt, in file order, deduped: a duplicate line (an
 # unsanitized scope with a repeated number reaching Step 2's dag.txt write)
