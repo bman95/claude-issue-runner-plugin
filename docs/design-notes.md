@@ -50,7 +50,7 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 ## 4. Structured planner artifact
 
-**Status:** proposed — first step implemented (see below)
+**Status:** proposed — first two steps implemented (see below)
 
 **Context (before #17).** `/issue-plan` does expensive work — codebase exploration, an adaptive interview, slice design — and then discards everything except the issue bodies. Only `## Blocked by` (and the optional `## Interfaces`) survive as machine-readable signal. The runner then re-derives what the planner already knew: conflict edges come from a second LLM pass guessing at file-scope overlap the planner had explicitly decided.
 
@@ -62,6 +62,8 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 **Recommendation.** Option 2, attached to a tracking issue (committing planner output pollutes repo history for what is run metadata). Deterministic overlap detection removes the least reliable LLM pass in the pipeline and gives entry point for the hybrid scheduler (note 1) to consume the same file. Requires a versioned schema — keep it minimal: `{issues: [{n, blocked_by: [], files: []}]}`.
 
 **Implemented — first step (issue #17).** The cheap half of option 3 shipped without a plan file or schema: `/issue-plan` Step 4 always emits `Files likely touched:` (repo-relative paths, comma-separated, `dir/` for a directory scope), and `/issue-runner` Step 2 intersects the lines pairwise when every in-scope issue carries one — exact path match plus directory-prefix match — recording each conflict in `conflicts.json` with `reason: "files: …"` and skipping the LLM refinement pass entirely. Any in-scope issue without the line (or with an empty one) falls back to the LLM pass (or none under `--no-llm-refine`). Conflict edges from either source are oriented backward along one topological order of the dependency DAG (scope order wherever dependencies allow; a pre-existing dependency cycle is left for Step 3 to report), so scope order disagreeing with `## Blocked by` order cannot manufacture a cycle and the result does not depend on pair-processing order. Still open from option 2: the cross-issue artifact itself — the DAG-plus-scopes file the hybrid scheduler (note 1) would consume.
+
+**Implemented — second step (issue #18).** The tracking issue option 2 wanted to attach the plan file to now exists: `/issue-plan` Step 4 publishes it before the slices (the original input, the Step 2 decision log — question, chosen answer, the planner's recommendation when it differed — and the slice list filled in with real numbers), every slice carries `Part of #<tracking>` as its first body line, outside the contract sections, and `/issue-runner` keeps the tracking issue out of scope (`## Slices` without `## What to build`, Step 1) and posts the Step 5 summary and telemetry on it when the whole scope names the same one. That makes it the natural attachment point for the machine-readable plan file: the runner already reaches the tracking issue through the slices' `Part of #P` lines, so a plan file attached there — a fenced block in the body or a comment — is discoverable with the same lookup, needs no path convention, and keeps run metadata out of repo history. Still open: the file itself and its schema; nothing here builds it.
 
 ---
 
