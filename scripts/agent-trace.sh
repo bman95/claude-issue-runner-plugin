@@ -116,6 +116,17 @@ fi
 # more than one block would only have its first block matched here, with
 # the rest of that line silently skipped rather than erroring. ---
 AWK_PROG='
+# jsonstr() re-emits a real \uXXXX escape as the literal 6-character text
+# "\uXXXX" for bash (below) to decode. Known, accepted ambiguity: JSON text
+# that instead encodes an escaped backslash directly followed by literal
+# characters u/0-9/a-f (i.e. the source string itself contains the literal
+# 6 characters \uXXXX, written by the implementer as prose about escapes,
+# not as an escape) decodes here to the identical 6-character output — the
+# two are indistinguishable once jsonstr returns, so the bash-side decoder
+# below will "decode" both alike. This can only misfire on prose that
+# quotes a literal \uXXXX-shaped sequence (e.g. discussing JSON escaping),
+# and only cosmetically (an em dash in place of literal escape text) — no
+# tool_result or command data is affected.
 function jsonstr(rest,    i, n, c, c2, out) {
   n = length(rest); out = ""; i = 1
   while (i <= n) {
@@ -256,7 +267,30 @@ decode_unicode_escapes() {
   done
   printf '%s%s' "$out" "$s"
 }
-DIGEST_BODY="$(decode_unicode_escapes "$DIGEST_BODY")"
+# decode_unicode_escapes' prefix/suffix slicing is O(remaining length) per
+# match — fine for ordinary prose, where escapes are sparse, but quadratic
+# on a single line dense with them (measured: several seconds at a few
+# thousand matches in one string). A \uXXXX escape, or an adjacent
+# surrogate pair, never spans a newline (the only way a newline enters
+# DIGEST_BODY is between separate field values, or from an already-
+# converted \n escape — never mid-escape), so decoding line by line bounds
+# each call to one line's length; a pathologically long line is left
+# undecoded entirely (escapes literal) rather than risking a multi-second
+# hang on this synchronous recovery path. Each line is streamed straight
+# to the subshell's stdout rather than accumulated in a bash variable, so
+# reassembly itself stays linear instead of trading one quadratic loop for
+# another.
+MAX_DECODE_LINE_LEN=4000
+DIGEST_BODY="$(
+  while IFS= read -r dline || [ -n "$dline" ]; do
+    if [ "${#dline}" -gt "$MAX_DECODE_LINE_LEN" ]; then
+      printf '%s\n' "$dline"
+    else
+      decode_unicode_escapes "$dline"
+      printf '\n'
+    fi
+  done <<< "$DIGEST_BODY"
+)"
 
 # Branch and PR references: best-effort grep over the digest body just
 # built (dispatch prompt + assistant text + tool commands already cover the
