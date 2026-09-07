@@ -305,19 +305,28 @@ decode_unicode_escapes() {
 # this script itself never emits, so the three literal section headers
 # below are exempted by exact match) rather than trusting verbatim text to
 # never collide with a heading this file's other readers parse structurally.
+# Decode BEFORE checking for a leading `#`, not after: decoding can itself
+# manufacture a newline a plain per-input-line check would never see — a
+# JSON escape for the newline character, spelled with a "u" instead of the
+# short "n" form, decodes to a real line break here just like any other
+# escape — splitting what was one input line into several. Check every
+# line the decode step actually produces, not just the one it started
+# from, or a heading introduced this way sails through unescaped.
 MAX_DECODE_LINE_LEN=4000
 DIGEST_BODY="$(
   while IFS= read -r dline || [ -n "$dline" ]; do
-    case "$dline" in
-      "### Dispatch prompt"|"### Assistant activity"|"### Final messages (last 3, in full)") ;;
-      "#"*) dline="\\$dline" ;;
-    esac
     if [ "${#dline}" -gt "$MAX_DECODE_LINE_LEN" ]; then
-      printf '%s\n' "$dline"
+      decoded="$dline"
     else
-      decode_unicode_escapes "$dline"
-      printf '\n'
+      decoded="$(decode_unicode_escapes "$dline")"
     fi
+    while IFS= read -r outline || [ -n "$outline" ]; do
+      case "$outline" in
+        "### Dispatch prompt"|"### Assistant activity"|"### Final messages (last 3, in full)") ;;
+        "#"*) outline="\\$outline" ;;
+      esac
+      printf '%s\n' "$outline"
+    done <<< "$decoded"
   done <<< "$DIGEST_BODY"
 )"
 
