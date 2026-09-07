@@ -42,7 +42,7 @@ Fields: `step=<id>` always (`1`–`10`; `8.1 iter=K` per Phase 1 iteration, `8.2
 
 - **Best-effort and free.** One local write, no API calls; `2>/dev/null` comes *before* the file redirect so even the redirect's own error is silenced, and `|| true` means a missing directory or unwritable path never fails a step. Interactive runs (no state path in play) write nothing.
 - **Never surfaces in the deliverable.** It is not mentioned in the PR body, `## Review notes`, or any commit message, and it lives outside the repository so nothing is ever staged.
-- **Informational only.** The orchestrator reads it for `--status` and post-mortems; it never treats it as evidence of merge or convergence — those come from GitHub (`gh pr view --json state`) and the review loop's own verdict, and a crashed implementer leaves the file at whatever step it last entered.
+- **Informational only.** The orchestrator reads it for `--status` and post-mortems; it never treats it as evidence of merge or convergence — those come from GitHub (`gh pr view --json state`) and the review loop's own verdict, and a crashed implementer leaves the file at whatever step it last entered. The one thing it does act on is the file's **mtime**: an implementer whose marker has not moved for longer than the runner's `--hang-minutes` (default 30) is stopped as hung, so keep writing it at every boundary — and during a long Step 5, refresh it per commit.
 
 ## Workflow
 
@@ -113,7 +113,7 @@ A manual `git worktree add` carries no Agent-tool lock, so the Step 9 teardown i
 
 ### 5. Implement
 
-Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior. If the issue body has an `## Acceptance criteria` checklist (the `/issue-plan` format), treat it as the definition of done and verify every item before opening the PR.
+Follow project conventions (CLAUDE.md, existing patterns, linter config). Run tests and linters as you go; add tests for new behavior. If the issue body has an `## Acceptance criteria` checklist (the `/issue-plan` format), treat it as the definition of done and verify every item before opening the PR. Orchestrated: rewrite the progress marker (`step=5`) after each commit or test cycle — implementation is the longest step, and the orchestrator's hang threshold reads the marker's mtime, not your activity.
 
 ### 6. Commit and push
 
