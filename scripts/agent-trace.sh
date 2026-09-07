@@ -231,6 +231,20 @@ decode_unicode_escapes() {
   while [[ "$s" == *'\u'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]* ]]; do
     prefix="${s%%\\u*}"
     rest="${s#*\\u}"
+    # The while-guard above only confirms a valid \uXXXX exists SOMEWHERE in
+    # $s — the split above cuts at the first literal "\u" substring, which
+    # need not be that one (e.g. a Windows-style path "C:\uploads\bob"
+    # ahead of a real "\u2014" later on the same line: "rest" would start
+    # with "ploa", not 4 hex digits). Validate before doing arithmetic on
+    # it, or an invalid $hex crashes bash's `$((16#...))` under `set -e`
+    # instead of degrading gracefully like every other invalid-escape path
+    # here. A false "\u" is skipped as literal, 2 characters at a time, so
+    # the next iteration's guard finds the real escape further along.
+    if [[ "$rest" != [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]* ]]; then
+      out="$out${prefix}\\u"
+      s="$rest"
+      continue
+    fi
     hex="${rest:0:4}"
     suffix="${rest:4}"
     hexval=$((16#$hex))
