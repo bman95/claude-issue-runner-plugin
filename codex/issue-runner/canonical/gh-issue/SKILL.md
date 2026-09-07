@@ -92,7 +92,8 @@ If your dispatch prompt names an existing branch (**resume** — normally with i
 
 ```bash
 git ls-remote --exit-code --heads origin '*/issue-<number>-*' && exit 1   # a hit = a leftover branch from an earlier run → see below before anything else
-git commit --allow-empty -m "chore: checkpoint plan for #<number>"   # GitHub refuses a PR with no commits; the squash merge drops it
+git log -1 --format=%s | grep -qxF "chore: checkpoint plan for #<number>" \
+  || git commit --allow-empty -m "chore: checkpoint plan for #<number>"   # a PR needs a commit (the squash merge drops it); idempotent on a retry
 git push -u origin HEAD \
   && gh pr create --draft --title "<title under 70 chars>" --body "<body>"   # either refused → record the reason and continue (below)
 ```
@@ -253,7 +254,7 @@ TOTAL=$(gh pr checks "$PR_NUM" --json bucket -q 'length' 2>/dev/null | tail -1)
 SKIPPED=$(gh pr checks "$PR_NUM" --json bucket -q '[.[] | select(.bucket=="skipping")] | length' 2>/dev/null | tail -1)
 ```
 
-`pass` or `none` → merge, with two honesty rules for a PR that was a draft (`READIED=1` — every orchestrated PR whose checkpoint was not refused). `none` may mean draft-filtered CI that never ran: report it in Step 10 as `no checks reported after gh pr ready (CI may be draft-filtered)`, never as "no CI configured" — that plain outcome is reachable only for a PR that was never a draft. `pass` with `TOTAL` > 0 and `SKIPPED` = `TOTAL` (the counts taken after `--watch`) is not coverage either: report `all checks skipped after gh pr ready (CI is draft-filtered)`, never `pass`. Both still merge (orchestrated: surface them to the parent) — like the gate degradations, a merge without CI coverage is never silent. `fail` → interactive: report the failing checks and ask the user; orchestrated: push, refresh the PR body, revert to draft (`gh pr ready --undo`, above), return a blocker citing the failing checks. Never merge over a failing check without explicit user authorization.
+`pass` or `none` → merge, with two honesty rules for a PR that was a draft (`READIED=1` — every orchestrated PR except one created plain at Step 7 because drafts are unavailable). `none` may mean draft-filtered CI that never ran: report it in Step 10 as `no checks reported after gh pr ready (CI may be draft-filtered)`, never as "no CI configured" — that plain outcome is reachable only for a PR that was never a draft. `pass` with `TOTAL` > 0 and `SKIPPED` = `TOTAL` (the counts taken after `--watch`) is not coverage either: report `all checks skipped after gh pr ready (CI is draft-filtered)`, never `pass`. Both still merge (orchestrated: surface them to the parent) — like the gate degradations, a merge without CI coverage is never silent. `fail` → interactive: report the failing checks and ask the user; orchestrated: push, refresh the PR body, revert to draft (`gh pr ready --undo`, above), return a blocker citing the failing checks. Never merge over a failing check without explicit user authorization.
 
 ```bash
 gh pr merge --squash --delete-branch "$PR_NUM" \

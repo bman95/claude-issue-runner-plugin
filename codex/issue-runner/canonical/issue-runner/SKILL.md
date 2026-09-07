@@ -22,7 +22,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass; conflict edges from `Files likely touched:` intersection are still computed (Step 2)
 
-Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** for an issue instead of opening a duplicate (Step 3a resume check). Re-invoke with **only** the unfinished issue numbers — full scope would re-implement completed issues. Close the old PR first only when you want a from-scratch retry (`gh pr close <P> --delete-branch`: the remote branch must go too, or the fresh run's push is rejected).
+Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** for an issue instead of opening a duplicate (Step 3a resume check). Re-invoke with **only** the unfinished issue numbers — full scope would re-implement completed issues. Close the old PR first only when you want a from-scratch retry (`gh pr close <P> --delete-branch`: the remote branch must go too, or the fresh run stops on it — Step 3a's probe 3 or gh-issue's checkpoint guard).
 
 ## State
 
@@ -212,7 +212,7 @@ Read the agent's error message. **Try to resolve it yourself first** — you hol
 
 **Escalate to the user only** for decisions that change scope, product behavior, or accept risk: merging despite open findings, dropping or skipping an issue, picking between contradictory requirements, spending more budget. When escalating, present the blocker, the latest findings, and your recommendation. Escalations, cheapest first:
 
-- **Retry the implementer.** Write the user's guidance plus any finding text to `$STATE_DIR/issue-N/guidance.md` (append a `## Retry N` section). Re-dispatch per Step 3a **without** `isolation: worktree`, adding to the prompt: the existing worktree path (`cd` there first; continue on the same branch; skip the Step 4 checkpoint) and the existing PR number (push to the same PR — or, if the checkpoint never created one, that there is no PR yet and Step 7 creates it). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree.
+- **Retry the implementer.** Write the user's guidance plus any finding text to `$STATE_DIR/issue-N/guidance.md` (append a `## Retry N` section). Re-dispatch per Step 3a **without** `isolation: worktree`, adding to the prompt: the existing worktree path (`cd` there first; continue on the same branch; the Step 4 checkpoint applies only if that branch never reached the remote) and the existing PR number (push to the same PR — or, if the checkpoint never created one, that there is no PR yet and Step 7 creates it). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree.
 - **Hand off to `/codex:rescue`** for a fresh investigation; pass the worktree path and the latest review log.
 - **Mark `failed`** and let the cascade skip dependents.
 - **Bump the Codex cap and re-run** — only for a converged-but-unverified cap-stop: `/issue-runner <N> --max-codex-iterations M`. The re-run's resume check picks up the existing PR and branch.
