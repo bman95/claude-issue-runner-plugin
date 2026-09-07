@@ -28,7 +28,7 @@ Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** f
 
 ## State
 
-`STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state` — a durable per-user location rather than `/tmp`, so state and the resume pointers below outlive a reboot — where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it. GitHub is the cross-run source of truth (Step 3a's resume check rediscovers in-flight work from open PRs); `$STATE_DIR` is run-scoped scratch for in-run coordination. A new run rotates the previous run's `state` to `state.prev.*` (forensics only); the **same session re-entering its own run keeps it** — the block below compares `$RUN_ROOT/session` with `$CLAUDE_CODE_SESSION_ID` — so a run killed mid-flight still has its statuses, guidance and agent pointers where recovery expects them.
+`STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state` — a durable per-user location rather than `/tmp`, so state and the resume pointers below outlive a reboot — where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it. GitHub is the cross-run source of truth (Step 3a's resume check rediscovers in-flight work from open PRs); `$STATE_DIR` is run-scoped scratch for in-run coordination. A new run rotates the previous run's `state` to `state.prev.*` (forensics only; the backup keeps a copy of the `session` pointer it was filed under); the **same session re-entering a run it never released keeps it** — the block below compares `$RUN_ROOT/session`, which a clean release removes together with the lock, with `$CLAUDE_CODE_SESSION_ID` — so a run killed mid-flight still has its statuses, guidance and agent pointers on disk for a recovery procedure to read *before* Steps 1–3 run; the default workflow then re-initializes them (Step 1 rewrites `scope.txt` and `details.json`, Step 3 re-marks statuses, Step 3a clears `agent` at dispatch). A live lock is refused whichever process holds it — REFERENCE.md covers the own-process case.
 
 ```bash
 # Namespace state by repo root so different repos never collide on a shared run root.
@@ -62,17 +62,15 @@ mkdir -p "$RUN_ROOT" && true > "$RUN_ROOT/.write-probe" && rm -f "$RUN_ROOT/.wri
 
 # One run per repo. $PPID is the Claude Code process hosting this session — it
 # dies with the session, so a crashed run's lock reads stale and is taken over.
-# A live lock from a DIFFERENT process means another session is orchestrating
-# this repo: stop and tell the user; NEVER delete a live lock (the rotation below
-# would yank a running orchestration's state from under its implementers). A live
-# lock holding this very process's PID is this session's own run that never
-# reached Step 5 (cut off mid-flight — credit exhausted, turn aborted); a session
-# runs one orchestration at a time, so it is retaken without complaint.
+# A live lock means an orchestration may still be running in this repo — another
+# session's, or this very process's own run cut off mid-turn with its background
+# implementers still alive: stop and tell the user (REFERENCE.md says how to
+# confirm and re-enter); NEVER delete a live lock (the rotation below would yank
+# a running orchestration's state from under its implementers).
 # Never proceed without the lock and a fresh state dir. Every write below is fatal on
 # failure — a root that turned unwritable after the probe, or a state dir this session
 # cannot move — rather than let the run continue lockless on stale state.
-LOCK_PID=$(cat "$RUN_ROOT/lock" 2>/dev/null)
-if [ -n "$LOCK_PID" ] && [ "$LOCK_PID" != "$PPID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
   echo "live issue-runner in this repo (lock: $RUN_ROOT/lock)" >&2; exit 1
 fi
 echo $PPID > "$RUN_ROOT/lock" || { echo "cannot write lock: $RUN_ROOT/lock" >&2; exit 1; }
@@ -83,30 +81,40 @@ find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>
 # leaving it behind would make a same-session retry read as a concurrent run. Only if the lock
 # still holds this PPID: two starts that both passed the liveness check race on the write, and
 # the loser must not blank the winner's live lock.
-# Rotate the previous run's state out of the way — unless that run is this session's own
-# (killed mid-flight and now re-entered): $RUN_ROOT/session holds the session id the run was
-# started under, and the same session keeps its state — statuses, guidance written for a
-# retry, per-issue agent pointers — where recovery expects it. Any other id, no file, or a
-# host that does not set CLAUDE_CODE_SESSION_ID (empty never matches) rotates as before.
+# Rotate the previous run's state out of the way — unless that run is this session's own,
+# never released, and now re-entered (killed mid-flight, cut off by exhausted credit):
+# $RUN_ROOT/session holds the session id the run was started under and is removed together
+# with the lock at a clean release (Step 5, --plan), so a match means "same session, run
+# never finished". Its state — statuses, guidance written for a retry, per-issue agent
+# pointers — stays where a recovery procedure can read it BEFORE Steps 1–3 re-initialize
+# it. Any other id, no pointer (a clean completion), or a host that does not set
+# CLAUDE_CODE_SESSION_ID (empty never matches) rotates as before; the backup keeps a copy
+# of the pointer it was filed under, so a later session can still find the dead run's
+# agents by it.
 if [ -d "$STATE_DIR" ]; then
   if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ "$(cat "$RUN_ROOT/session" 2>/dev/null)" = "$CLAUDE_CODE_SESSION_ID" ]; then
-    echo "same session re-entering its run: keeping $STATE_DIR" >&2
+    echo "same session re-entering its unfinished run: keeping $STATE_DIR" >&2
   else
-    mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)" \
+    PREV="$RUN_ROOT/state.prev.$(date +%s)"
+    mv "$STATE_DIR" "$PREV" \
       || { echo "cannot rotate state: $STATE_DIR" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
+    [ -f "$RUN_ROOT/session" ] && cp "$RUN_ROOT/session" "$PREV/session" 2>/dev/null || true
   fi
 fi
 mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
 # Record which session owns this run: the pointer the rotation check reads on a re-entry,
 # and the key recovery needs (the harness files every agent this session spawned — worktree
 # path included — under its session id). Written AFTER the check, never before, or every
-# start would read as a re-entry. Beside state/, not inside it, so a rotation never moves it.
-# Empty on a host that does not set the variable.
-printf '%s\n' "${CLAUDE_CODE_SESSION_ID:-}" > "$RUN_ROOT/session" \
-  || { echo "cannot write session pointer: $RUN_ROOT/session" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
+# start would read as a re-entry; through a temp file, so a failed write leaves the previous
+# pointer intact. Beside state/, not inside it, so a rotation never moves it. Empty on a host
+# that does not set the variable.
+printf '%s\n' "${CLAUDE_CODE_SESSION_ID:-}" > "$RUN_ROOT/session.tmp" && mv "$RUN_ROOT/session.tmp" "$RUN_ROOT/session" \
+  || { echo "cannot write session pointer: $RUN_ROOT/session" >&2; rm -f "$RUN_ROOT/session.tmp"; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
 ```
 
 Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`, `summary.md` (the Step 5 summary, written when the scope shares a tracking issue and posted from there); beside `state/` in `$RUN_ROOT`: `lock` and `session` (one line, the orchestrator's `$CLAUDE_CODE_SESSION_ID`, written by the State block once per run and removed with the lock at a clean release). Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded at Step 3 item 5 for every returned implementer, and by item 4 for a hung one — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker"), `retries` (number of Step 4 re-dispatches so far; absent = 0. Step 4 increments it before every retry, self-resolved or user-authorized, and the Step 5 summary reports it), `result.json` (one JSON line the implementer writes immediately before its final message, on every exit — see gh-issue "Result file"), `branch` (written by Step 3a only when it resumes a PR on a branch outside the `/issue-N-` contract; item 5's merge proof accepts that branch), `agent` (the id the Agent tool returned at dispatch — Step 3 item 4 resolves a hung implementer's worktree by it, since a stopped agent never reports one).
+
+`session` and `agent` are **resume pointers**: written while the run is healthy because a process killed abruptly gets no chance to write anything at failure time (REFERENCE.md rationale). Neither is ever a status input — item 4 reads `agent` only to locate a hung implementer's worktree, and the State block reads `session` only to decide whether to rotate. They exist for the recovery of a run killed mid-flight, which starts from the session id (the harness files every agent's worktree under it) and each issue's agent id.
 
 `result.json` carries exactly these keys (the key set is lint-checked against gh-issue's copy):
 
@@ -133,7 +141,7 @@ done
 
 Always pass the resolved absolute path into dispatch prompts — subagents do not inherit `CLAUDE_PLUGIN_ROOT`.
 
-**Session pointer**: `$CLAUDE_CODE_SESSION_ID` in the Bash environment is this orchestrator's own session id (`$CLAUDE_PID` is the process the lock stores as `$PPID`). The State block writes it to `$RUN_ROOT/session` once per run — after its rotation check reads the previous value, which is what lets the same session re-enter its own run without rotating — so nothing is written here; just never clear it. Under a host that does not set the variable the file is written empty and every start rotates as before.
+**Session pointer**: `$CLAUDE_CODE_SESSION_ID` in the Bash environment is this orchestrator's own session id (`$CLAUDE_PID` is the process the lock stores as `$PPID`). The State block writes it to `$RUN_ROOT/session` once per run — after its rotation check reads the previous value, which is what lets the same session re-enter its own run without rotating — so nothing is written here. It is removed only together with the lock at a clean release (Step 5, the `--plan` exit): a pointer still present at the next start is what distinguishes a re-entry of an unfinished run from a new run. Under a host that does not set the variable the file is written empty and every start rotates as before.
 
 **Codex preflight**: `command -v codex >/dev/null`. Missing and `--no-codex-gate` not passed → tell the user codex is absent and ask via `AskUserQuestion`: abort *(recommended)* or proceed without the gate (equivalent to `--no-codex-gate`). Better to learn this before dispatch than have every implementer discover it mid-review.
 
@@ -173,7 +181,7 @@ done
 
 **Serializing conflicts (both sources).** Fix one total order first: a topological order of the dependency DAG built so far (`## Blocked by`, heuristic edges, out-of-scope edges as resolved above, and any `depends` edges accepted from refinement), choosing the earliest-in-`scope.txt` ready issue at every step — so it *is* `scope.txt` order wherever dependencies allow, and departs from it only where scope order contradicts a dependency (`gh issue list` returns newest first, so the two routinely disagree). If at some step no issue is ready while issues remain unplaced, the dependency DAG already contains a cycle: append the unplaced issues in `scope.txt` order and continue — do not resolve the cycle here; Step 3 item 6 reports it, and conflict edges between two appended issues are omitted so it cites the real offending dependency. Then serialize each conflict as a `depends` edge from the later issue to the earlier one **in that order**. Every edge points backward along a single order, so the DAG is acyclic by construction and identical across runs regardless of pair-processing order; a conflict edge that duplicates an existing dependency path is redundant and harmless. Record every conflict in `$STATE_DIR/conflicts.json` — a JSON array of `{"a":X,"b":Y,"reason":"…"}`.
 
-Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title) plus a section for conflicts forced into serial order, headed by their source — `Conflicts (Files likely touched intersection; LLM refinement skipped)`, `Conflicts (LLM refinement; #X, #Y lack Files likely touched:)`, or `Conflicts: none computed (--no-llm-refine; #X, #Y lack Files likely touched:)` — and the critical-path length (the number of issues on the longest dependency chain; `n/a` when the walk appended unplaced issues), so a scope that conflict edges collapse to near-serial is visible before dispatch — and, if the topological walk appended unplaced issues, a `Cycle (unresolved; Step 3 item 6 will skip): #A, #B` line, so `--plan` shows it too. To override an order, the user re-invokes with explicit numbers in the desired order; a bogus `files:` edge is removed by correcting the `Files likely touched:` line on one of its issues, not by `--no-llm-refine`. If `--plan`, release the lock (`rm -f "$RUN_ROOT/lock"`) and exit here.
+Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title) plus a section for conflicts forced into serial order, headed by their source — `Conflicts (Files likely touched intersection; LLM refinement skipped)`, `Conflicts (LLM refinement; #X, #Y lack Files likely touched:)`, or `Conflicts: none computed (--no-llm-refine; #X, #Y lack Files likely touched:)` — and the critical-path length (the number of issues on the longest dependency chain; `n/a` when the walk appended unplaced issues), so a scope that conflict edges collapse to near-serial is visible before dispatch — and, if the topological walk appended unplaced issues, a `Cycle (unresolved; Step 3 item 6 will skip): #A, #B` line, so `--plan` shows it too. To override an order, the user re-invokes with explicit numbers in the desired order; a bogus `files:` edge is removed by correcting the `Files likely touched:` line on one of its issues, not by `--no-llm-refine`. If `--plan`, release the lock together with the session pointer (`rm -f "$RUN_ROOT/lock" "$RUN_ROOT/session"`) and exit here.
 
 ### Step 3 — execute
 
@@ -298,7 +306,7 @@ prompt: |
   the Skill tool — inline the procedures; run codex via Bash.
 ```
 
-**Record the agent id** the moment the `Agent` call returns, before anything else: the result names the agent it started (`agent-…`); write that id verbatim, one line, to `$STATE_DIR/issue-N/agent` — `printf '%s\n' '<agent id>' > "$STATE_DIR/issue-N/agent"`. Every dispatch of the issue overwrites it — resume dispatches and Step 4 retries included — so the file always names the *current* implementer. It is a resume pointer, not an input to any decision (State section): recovery of a killed run reaches the implementer through it, and the implementer's worktree is already on file without our help — the harness's `.meta.json` for that agent, filed under the session id, carries `worktreePath`, `worktreeBranch` and this dispatch's `description` (`Implement issue #N`).
+**Record the agent id** the moment the `Agent` call returns, before anything else — `printf '%s\n' '<agent id>' > "$STATE_DIR/issue-N/agent"`, the id verbatim as the result reports it (`agent-…` or bare; item 4 accepts both). Every dispatch of the issue overwrites it — resume dispatches and Step 4 retries included — so the file always names the *current* implementer. It is a resume pointer, never a status input (State section); the implementer's worktree needs no pointer of ours — the harness's `.meta.json` for that agent, filed under the session id, carries `worktreePath`, `worktreeBranch` and this dispatch's `description` (`Implement issue #N`).
 
 **Gateless runs** (`--no-codex-gate`, or the user chose to proceed at the Step 0 preflight): replace the Codex-cap line with — the Codex gate is waived for this run: skip gh-issue Step 8 Phase 2, record `Codex gate waived (--no-codex-gate)` under `## Review notes`, and merge only on Phase 1 convergence.
 
@@ -363,7 +371,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Summary table**: number, status, title, error — and for every `failed` issue (hung ones included) the last `progress` line, e.g. `last progress: step=8.1 iter=2 pr=#123`, or `no progress recorded` when absent or empty. It says where the implementer stopped, not what it finished. For a hung issue the error already names which rule fired (the `--hang-minutes` threshold with the measured age, or the relative-silence fallback when there was no file) — print it verbatim so the reader can tell a tuned threshold from a guess. A hung implementer that item 5 nevertheless classified `done`, `blocked` (merged but still open) or `closed-externally` carries the hang only as an `error` suffix or not at all, so list it explicitly (`stopped as hung after merge: progress unchanged for 47m; classified done`): that outcome is the strongest evidence the threshold is too tight for this repo. Also aggregate, per issue and as totals, the review-loop telemetry from each `$STATE_DIR/issue-N/result.json` — never from the Step 10 report text: `phase1_iterations`, every `phase1_state` of `cap-stop`/`bouncing`, `gate_passes` (0–2), every `gate_state` of `degraded`/`waived`/`cap-stop`/`errored`/`bouncing`/`unavailable`, every `phase1_inline` of `true` (Phase 1 was self-review, no Agent tool), and the `checks` outcome (`pass`/`none`/`fail`) — and the Step 4 retries (`$STATE_DIR/issue-N/retries`, absent = 0 — self-resolved and user-authorized alike, so the count is the true spend) — so the review-loop and retry caps get tuned from data, not folklore, and a merge whose fresh-eyes review was self-review or whose Codex gate degraded is never buried. An issue without the file, or with an unreadable one (crashed, hung, stopped, or never dispatched), counts as `no result recorded`, not as zeros. Call out every issue `blocked` with `PR #P merged but issue still open — confirm and close by hand` (item 5): a human confirms the merged PR is this run's, closes the issue, and resolves it to `done`. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
 
-**Post the summary to the tracking issue.** The summary otherwise lives only in this terminal. When every issue in `scope.txt` carries exactly one `Part of #P` line — a body line in its `details.json` that, trimmed, matches `^Part of #[0-9]+$` (issue-plan Step 4 puts it first; any position counts; two or more such lines count as lacking it) — and `P` is the same number for all of them, and `#P` passes Step 1's tracking-issue test on its current body (`gh issue view "$P" --json body -q .body`: a line that, trimmed, is `## Slices`, none `## What to build`), write the summary table and the telemetry above to `$STATE_DIR/summary.md`, headed by one line naming the run's scope (`issue-runner run — scope: #41 #42 #43`), and post it: `gh issue comment "$P" --body-file "$STATE_DIR/summary.md"`. Sanitize every `title`, `error` and `last progress` cell before it enters the table — they are data from issue bodies and implementer output: collapse newlines, replace backticks with `'` and backslashes with `/`, escape `|` as `\|` (GFM splits a table cell on a pipe even inside a code span), then wrap a non-empty cell in a code span — an empty cell stays empty — so `@`-mentions and `#` references stay inert. One comment per run, deliberately — a partial re-run posts its own, and the scope heading makes the comments read as a history. `P` comes from the issue bodies, which is why it is pattern-matched and shape-checked before use; a comment that fails (locked issue, network) is reported, never fatal — the summary is already printed. Otherwise — some issue lacks the line, the scope names two tracking issues, or `#P` is not a tracking issue — only print, as before, plus one line saying why no comment was posted. Then, in every case, release the run lock: `rm -f "$RUN_ROOT/lock"`.
+**Post the summary to the tracking issue.** The summary otherwise lives only in this terminal. When every issue in `scope.txt` carries exactly one `Part of #P` line — a body line in its `details.json` that, trimmed, matches `^Part of #[0-9]+$` (issue-plan Step 4 puts it first; any position counts; two or more such lines count as lacking it) — and `P` is the same number for all of them, and `#P` passes Step 1's tracking-issue test on its current body (`gh issue view "$P" --json body -q .body`: a line that, trimmed, is `## Slices`, none `## What to build`), write the summary table and the telemetry above to `$STATE_DIR/summary.md`, headed by one line naming the run's scope (`issue-runner run — scope: #41 #42 #43`), and post it: `gh issue comment "$P" --body-file "$STATE_DIR/summary.md"`. Sanitize every `title`, `error` and `last progress` cell before it enters the table — they are data from issue bodies and implementer output: collapse newlines, replace backticks with `'` and backslashes with `/`, escape `|` as `\|` (GFM splits a table cell on a pipe even inside a code span), then wrap a non-empty cell in a code span — an empty cell stays empty — so `@`-mentions and `#` references stay inert. One comment per run, deliberately — a partial re-run posts its own, and the scope heading makes the comments read as a history. `P` comes from the issue bodies, which is why it is pattern-matched and shape-checked before use; a comment that fails (locked issue, network) is reported, never fatal — the summary is already printed. Otherwise — some issue lacks the line, the scope names two tracking issues, or `#P` is not a tracking issue — only print, as before, plus one line saying why no comment was posted. Then, in every case, release the run lock together with the session pointer: `rm -f "$RUN_ROOT/lock" "$RUN_ROOT/session"` — a clean release is what tells the State block that the next same-session start is a new run, not a re-entry.
 
 ## Hard rules
 
@@ -373,4 +381,4 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 - **Single-issue scope → inline fast path.** No orchestrator state, no DAG, no Step 5. The run still isolates in a worktree, but gh-issue's interactive mode owns it (creates it in Step 4, removes it in Step 9).
 - **The orchestrator never hand-manages worktrees.** In an orchestrated run, isolation comes only from dispatching implementers with the Agent tool; the parent touches worktrees solely in Step 5 cleanup. (The single-issue fast path is not orchestrated — gh-issue creates and removes its own worktree directly.)
 - **The orchestrator never enters a worktree.** In an orchestrated run all in-worktree work (fixes, re-reviews, merges) belongs to implementer subagents, so the parent's cwd and `git status` stay trustworthy and Step 5 cleanup is safe.
-- **Single-host state, one run per repo.** State is namespaced per repo (`${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`), so runs in different repos are isolated; within a repo, the PID lock (`$RUN_ROOT/lock`) refuses a concurrent run from another session (this session's own unreleased lock is retaken). Never delete a live lock to force one.
+- **Single-host state, one run per repo.** State is namespaced per repo (`${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`), so runs in different repos are isolated; within a repo, the PID lock (`$RUN_ROOT/lock`) refuses a second concurrent run. Never delete a live lock to force one.
