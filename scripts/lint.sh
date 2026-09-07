@@ -12,8 +12,11 @@
 #      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line
 #   4. CHANGELOG has an entry for the manifest version
 #   5. the issue-body contract strings appear in both issue-plan and issue-runner,
-#      and the planner's body template ends with the `Files likely touched:` line —
-#      checked for the Claude skills and for the Codex edition's canonical copies
+#      the planner's slice template ends with the `Files likely touched:` line and
+#      starts with `Part of #`, its tracking-issue template has `## Slices` and no
+#      `## What to build`, and the `Part of` pattern and Step 1 exclusion message
+#      are present at every site — checked for the Claude skills and for the
+#      Codex edition's canonical copies
 #   6. no skill references retired command names (e.g. /to-issues)
 #   7. every ```bash block embedded in skills/*/SKILL.md parses (bash -n,
 #      after neutralizing <placeholder> tokens)
@@ -122,7 +125,7 @@ SKILL_PLAN="$ROOT/skills/issue-plan/SKILL.md"
 # The Codex edition's wrappers read these canonical copies, not skills/.
 CANON_PLAN="$ROOT/codex/issue-runner/canonical/issue-plan/SKILL.md"
 CANON_RUNNER="$ROOT/codex/issue-runner/canonical/issue-runner/SKILL.md"
-for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:'; do
+for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:' 'Part of #' '## Slices'; do
   for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
     if ! grep -qF "$s" "$f"; then
       err "contract string '$s' missing from ${f#"$ROOT"/}"
@@ -145,6 +148,51 @@ for f in "$SKILL_PLAN" "$CANON_PLAN"; do
     *) err "body template's last line is not 'Files likely touched:' in ${f#"$ROOT"/} (got: '$tmpl_last')" ;;
   esac
 done
+# The runner recognizes a tracking issue by a `## Slices` line with no
+# `## What to build` line (issue-runner Step 1) and finds it from each slice's
+# first body line, `Part of #<tracking>` (Step 5). Pin both in the planner's
+# templates: the tracking template (the ```markdown block containing `## Slices`)
+# must not contain `## What to build`; the slice template's first non-blank line
+# must begin with `Part of #`.
+for f in "$SKILL_PLAN" "$CANON_PLAN"; do
+  track="$(awk '
+    /^```markdown[[:space:]]*$/ { inb=1; slices=0; wtb=0; next }
+    inb && /^```[[:space:]]*$/  { inb=0; if (slices) { print (wtb ? "bad" : "ok"); exit }; next }
+    inb && /^## Slices$/        { slices=1 }
+    inb && /^## What to build$/ { wtb=1 }
+  ' "$f")"
+  case "$track" in
+    ok)  ok "tracking-issue template has '## Slices' and no '## What to build': ${f#"$ROOT"/}" ;;
+    bad) err "tracking-issue template contains '## What to build' in ${f#"$ROOT"/}" ;;
+    *)   err "no tracking-issue template (markdown block containing '## Slices') in ${f#"$ROOT"/}" ;;
+  esac
+  slice_first="$(awk '
+    /^```markdown[[:space:]]*$/ { inb=1; hit=0; first=""; next }
+    inb && /^```[[:space:]]*$/  { inb=0; if (hit) { print first; exit }; next }
+    inb && /^## What to build/  { hit=1 }
+    inb && NF && first==""      { first=$0 }
+  ' "$f")"
+  case "$slice_first" in
+    'Part of #'*) ok "slice template starts with 'Part of #': ${f#"$ROOT"/}" ;;
+    *) err "slice template's first line is not 'Part of #' in ${f#"$ROOT"/} (got: '$slice_first')" ;;
+  esac
+done
+# Two literals must agree across files: the `Part of #P` pattern the runner matches
+# and the planner promises (issue-runner Step 5 / issue-plan Step 4), and the Step 1
+# exclusion message (the scenarios cite it by prefix), pinned across both runner
+# editions. The exact literal must appear at every site.
+literals_ok=1
+for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
+  if ! grep -qF '^Part of #[0-9]+$' "$f"; then
+    err "Part of pattern '^Part of #[0-9]+\$' missing from ${f#"$ROOT"/}"; literals_ok=0
+  fi
+done
+for f in "$SKILL_RUNNER" "$CANON_RUNNER"; do
+  if ! grep -qF 'Excluded #P: tracking issue (slice list, no ## What to build)' "$f"; then
+    err "Step 1 exclusion message missing from ${f#"$ROOT"/}"; literals_ok=0
+  fi
+done
+[ "$literals_ok" -eq 1 ] && ok "Part of pattern and Step 1 exclusion message present at every site"
 
 # 6. Retired command names ------------------------------------------------------
 if grep -rn 'to-issues' "$ROOT/skills" ; then
