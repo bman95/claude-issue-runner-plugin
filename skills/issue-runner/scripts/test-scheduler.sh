@@ -184,16 +184,63 @@ fi
 # --- Temp-file failure: fail loudly, never a false "done" -------------------
 # A starved TMPDIR (disk full, an unwritable temp dir) must exit non-zero,
 # never fall through to evaluating an empty/unopened dag.txt and reporting
-# every issue terminal when nothing was actually evaluated.
+# every issue terminal when nothing was actually evaluated. Pinned on the
+# exact error message, not just a non-zero exit, so this can't pass for the
+# wrong reason (e.g. a shell startup error unrelated to the mktemp guard).
 mktemp_fail_run="$TMP/mktempfail"
 rm -rf "$mktemp_fail_run"
 mkdir -p "$mktemp_fail_run/state/issue-1"
 printf '1:\n' > "$mktemp_fail_run/state/dag.txt"
 printf 'pending\n' > "$mktemp_fail_run/state/issue-1/status"
-if TMPDIR="$TMP/no-such-tmpdir" bash "$SCHEDULER" "$mktemp_fail_run/state" >/dev/null 2>&1; then
-  err "mktemp failure: expected non-zero exit, got 0 (a false 'done' would tell the orchestrator the run finished)"
+mktemp_fail_err="$(TMPDIR="$TMP/no-such-tmpdir" bash "$SCHEDULER" "$mktemp_fail_run/state" 2>&1 >/dev/null)"
+mktemp_fail_status=$?
+if [ "$mktemp_fail_status" -ne 0 ] && printf '%s' "$mktemp_fail_err" | grep -qF 'cannot create temp file'; then
+  ok "mktemp failure exits non-zero with its own error, rather than reporting a false 'done'"
 else
-  ok "mktemp failure exits non-zero rather than reporting a false 'done'"
+  err "mktemp failure: expected non-zero exit with 'cannot create temp file' in stderr (status=$mktemp_fail_status)"
+  printf '%s\n' "$mktemp_fail_err" | sed 's/^/  stderr  > /' >&2
+fi
+
+# --- OVERLAY write failure: fail loudly, never spin forever -----------------
+# An OVERLAY append that fails (the same starved-disk trigger, after its
+# 0-byte temp file was already created) must not be ignored: a silently
+# failed append still sets changed=1, and the next cascade pass re-derives
+# the identical skip and sets changed=1 again -- forever. A fake `mktemp`
+# ahead on PATH lets the real mktemp create OVERLAY normally, then makes it
+# read-only, so the append inside the cascade loop fails deterministically
+# without needing a real full disk. `timeout` bounds the assertion itself:
+# if this regresses to a hang, the test fails loudly instead of wedging the
+# whole suite.
+overlay_run="$TMP/overlayfail"
+rm -rf "$overlay_run"
+mkdir -p "$overlay_run/fakebin" "$overlay_run/state/issue-1" "$overlay_run/state/issue-2"
+printf '1:\n2: 1\n' > "$overlay_run/state/dag.txt"
+printf 'failed\n' > "$overlay_run/state/issue-1/status"
+printf 'pending\n' > "$overlay_run/state/issue-2/status"
+cat > "$overlay_run/fakebin/mktemp" <<'FAKE_MKTEMP'
+#!/usr/bin/env bash
+# 1st call (DAG): pass through untouched. 2nd call (OVERLAY): create it
+# normally, then make it read-only so an append into it fails.
+count_file="$FAKE_MKTEMP_COUNTER"
+count=$(($(cat "$count_file" 2>/dev/null || echo 0) + 1))
+printf '%s' "$count" > "$count_file"
+real=$(command -p mktemp "$@")
+[ "$count" -eq 2 ] && chmod 0444 "$real"
+printf '%s\n' "$real"
+FAKE_MKTEMP
+chmod +x "$overlay_run/fakebin/mktemp"
+overlay_counter="$overlay_run/mktemp-count"
+overlay_actual_err=""
+overlay_status=0
+overlay_actual_err="$(PATH="$overlay_run/fakebin:$PATH" FAKE_MKTEMP_COUNTER="$overlay_counter" \
+  timeout 10 bash "$SCHEDULER" "$overlay_run/state" 2>&1 >/dev/null)" || overlay_status=$?
+if [ "$overlay_status" -eq 124 ]; then
+  err "OVERLAY write failure: scheduler.sh hung (timeout) instead of exiting non-zero"
+elif [ "$overlay_status" -ne 0 ] && printf '%s' "$overlay_actual_err" | grep -qF 'cannot write temp overlay'; then
+  ok "OVERLAY write failure exits non-zero rather than spinning forever"
+else
+  err "OVERLAY write failure: expected non-zero exit with 'cannot write temp overlay' in stderr (status=$overlay_status)"
+  printf '%s\n' "$overlay_actual_err" | sed 's/^/  stderr  > /' >&2
 fi
 
 # --- Glob safety: a literal `*` in dag.txt must never expand against the ----

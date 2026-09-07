@@ -167,7 +167,13 @@ while [ "$changed" -eq 1 ]; do
       done
     fi
     if [ -n "$reason" ]; then
-      printf '%s\t%s\t%s\n' "$n" skipped "$reason" >> "$OVERLAY"
+      # Checked, not assumed — same reason as the mktemp/tr checks above: an
+      # append that fails silently here (disk fills after OVERLAY's 0-byte
+      # file was created) would still set changed=1, and the next pass would
+      # re-read the same empty overlay, re-derive the same reason, and set
+      # changed=1 again forever — an infinite loop, never a false answer.
+      printf '%s\t%s\t%s\n' "$n" skipped "$reason" >> "$OVERLAY" \
+        || { echo "scheduler.sh: cannot write temp overlay" >&2; exit 1; }
       changed=1
     fi
   done
