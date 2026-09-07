@@ -93,6 +93,18 @@ STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/$REPO_KEY/state"
 GUIDANCE="$STATE_DIR/issue-$ISSUE_N/guidance.md"
 mkdir -p "$(dirname "$GUIDANCE")"
 
+# Idempotency guard: the fallback bullet that calls this script (SKILL.md
+# Step 3) runs before the issue's status is actually written `pending` in a
+# later, separate step — if the hosting session is interrupted in between,
+# a same-session re-entry can re-run the same fallback for the same
+# still-`implementing` issue and the same dead agent id. Detect that via
+# the marker line this script itself writes below, and skip re-appending a
+# duplicate digest of the identical transcript.
+if [ -f "$GUIDANCE" ] && grep -qF "Digest of agent-$AGENT_ID (session $SESSION_ID," "$GUIDANCE"; then
+  echo "agent-trace: digest for agent-$AGENT_ID already present in $GUIDANCE, skipping" >&2
+  exit 0
+fi
+
 # --- Digest the transcript (awk: one JSON record per line, no embedded raw
 # newlines, so per-line substring scanning is safe). Each assistant JSONL
 # record carries exactly one content block (thinking, text, or tool_use —
@@ -190,20 +202,51 @@ DIGEST_BODY="$(awk "$AWK_PROG" "$TRANSCRIPT")"
 # decoding a JSON \u escape into real UTF-8 needs bit-level codepoint math
 # that isn't portable across awk implementations (gawk vs mawk vs BSD awk),
 # so it is done here instead: bash's own printf builtin already implements
-# \uHHHH universal-character-name expansion (bash >= 4.2), so feeding it the
-# literal "\uHHHH" text as a format string decodes it correctly and
-# portably. Common in real transcripts (em dashes, curly quotes are
-# routinely \u-escaped) — left undecoded, they show up as raw JSON syntax
-# in the guidance a replacement implementer reads. An invalid or truncated
-# escape (bad hex, or fewer than 4 hex digits) is left exactly as-is rather
-# than guessed at.
+# \uHHHH (and \UHHHHHHHH) universal-character-name expansion (bash >= 4.2),
+# so feeding it the literal "\uHHHH" text as a format string decodes it
+# correctly and portably. Common in real transcripts (em dashes, curly
+# quotes are routinely \u-escaped) — left undecoded, they show up as raw
+# JSON syntax in the guidance a replacement implementer reads. An invalid
+# or truncated escape (bad hex, or fewer than 4 hex digits) is left exactly
+# as-is rather than guessed at. A supplementary-plane character (an emoji,
+# say) is encoded in JSON as a UTF-16 surrogate PAIR — two adjacent \uXXXX
+# escapes, a high one (D800-DBFF) followed immediately by a low one
+# (DC00-DFFF) — that must be combined into one codepoint before decoding:
+# decoding each half independently (as bash's own \uHHHH would with a lone
+# surrogate value) produces invalid UTF-8 bytes, not an error, so a lone or
+# mismatched surrogate is left literal rather than trusted.
 decode_unicode_escapes() {
-  local s="$1" out="" prefix rest hex suffix char
+  local s="$1" out="" prefix rest hex suffix char hexval nexthex nextval cp
   while [[ "$s" == *'\u'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]* ]]; do
     prefix="${s%%\\u*}"
     rest="${s#*\\u}"
     hex="${rest:0:4}"
     suffix="${rest:4}"
+    hexval=$((16#$hex))
+    if [ "$hexval" -ge 55296 ] && [ "$hexval" -le 56319 ]; then
+      # High surrogate: only valid combined with an immediately-following low
+      # surrogate escape (no gap — real JSON never separates a pair).
+      if [[ "$suffix" == '\u'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]* ]]; then
+        nexthex="${suffix:2:4}"
+        nextval=$((16#$nexthex))
+        if [ "$nextval" -ge 56320 ] && [ "$nextval" -le 57343 ]; then
+          cp=$(( 65536 + (hexval - 55296) * 1024 + (nextval - 56320) ))
+          if printf -v char '\U'"$(printf '%08x' "$cp")" 2>/dev/null; then
+            out="$out$prefix$char"
+            s="${suffix:6}"
+            continue
+          fi
+        fi
+      fi
+      out="$out${prefix}\\u${hex}"
+      s="$suffix"
+      continue
+    elif [ "$hexval" -ge 56320 ] && [ "$hexval" -le 57343 ]; then
+      # Lone low surrogate with no preceding high one: invalid, leave literal.
+      out="$out${prefix}\\u${hex}"
+      s="$suffix"
+      continue
+    fi
     if printf -v char '\u'"$hex" 2>/dev/null; then
       out="$out$prefix$char"
     else
