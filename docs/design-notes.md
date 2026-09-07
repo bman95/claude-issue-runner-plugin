@@ -31,6 +31,8 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 **Recommendation.** Sketch, don't build yet. Cost is one extra test run per merge plus queue serialization at the end of the run; value scales with parallelism and test coverage. Below ~N=6 parallel slices on repos with decent suites, the conflict-edge serialization has been sufficient in production runs. Shape when needed: a "merge token" file in `$STATE_DIR` — an implementer ready to merge waits for the token, refreshes against main, tests, merges, releases. Fits the existing state-through-files rule with no new machinery.
 
+**Implemented — cheap fix (issue #15).** gh-issue Step 9's base-freshness check, and `--merge-ready`'s own later merge point (issue #14), no longer gate the merge-and-retest on file overlap: whenever `origin/$BASE_BRANCH` advanced since the branch point, each merges the base in and re-runs the tests unconditionally, closing exactly the two-trains window described above without a merge queue's serialization. The file-overlap check survives only as an advisory warning that a *textual* conflict is likely — never the gate on whether to re-test; a merge conflict that will not resolve cleanly, or a test failure after the merge, is a blocker (orchestrated) or a question (interactive), never a forced resolution. See `skills/gh-issue/SKILL.md` Step 9 and REFERENCE.md's "Why merge waits for CI checks" rationale. Still unbuilt from option 2 above: the queue's own serialization (one merge token, one PR through it at a time) — parked until parallelism outgrows conflict-edge serialization.
+
 ---
 
 ## 3. Pluggable review gate

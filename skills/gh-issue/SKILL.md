@@ -262,19 +262,21 @@ fi
 
 A workflow that skips drafts (`if: github.event.pull_request.draft == false`) without `ready_for_review` in its `types` never executes on this PR — either no check runs exist, or every run reports `skipped` — and the checks gate below cannot tell either from real coverage on its own; the target repo's CI must run on drafts or include that event type (README, Requirements). `READIED` and the `TOTAL`/`SKIPPED`/`NEVER_RERAN` counts the checks gate takes after `--watch` make its verdict honest about it.
 
-**Base freshness next.** The review judged this diff against its branch point; a sibling PR may have merged into `$BASE_BRANCH` since — a semantic-conflict window no textual merge check catches:
+**Base freshness next.** The review judged this diff against its branch point; a sibling PR may have merged into `$BASE_BRANCH` since — a semantic-conflict window no textual merge check catches, and file overlap is not a reliable signal for it: sibling PR A renames a function in `a.ts`, this PR calls the old name from `b.ts`, the two diffs never touch a common file, and this PR's tests never run against main+A. So merge and re-test whenever the base moved at all, never gated on overlap (issue #15):
 
 ```bash
 git fetch origin "$BASE_BRANCH"
 MB=$(git merge-base HEAD "origin/$BASE_BRANCH")
-if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ] \
-   && git diff --name-only "$MB" "origin/$BASE_BRANCH" \
+if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ]; then
+  if git diff --name-only "$MB" "origin/$BASE_BRANCH" \
       | grep -qxFf <(git diff --name-only "$MB" HEAD); then
-  git merge "origin/$BASE_BRANCH"   # then re-run the tests and push before the checks gate
+    echo "base freshness: file overlap with $BASE_BRANCH — a textual conflict is likely" >&2   # warning only, never gates the merge below
+  fi
+  git merge "origin/$BASE_BRANCH" || MERGE_FAILED=1   # unconditional; then re-run the tests and push before the checks gate
 fi
 ```
 
-Base advanced but no file overlap with this PR → proceed directly. Overlap → merge `origin/$BASE_BRANCH` in, re-run the tests, push, then — for a PR that was a draft (`READIED=1`) — repeat the bounded registration poll above before the checks gate: the new head has no check runs until CI registers them, and `--watch` reads that instant as "no checks reported"; the post-`--watch` counts then judge the head that actually merges. Then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
+Base unchanged → proceed directly. Base advanced → merge `origin/$BASE_BRANCH` in unconditionally, regardless of overlap; the file-overlap check above only warns that a *textual* conflict is likely — it never decides whether to merge, and its absence never skips the merge either. A conflict that does not resolve cleanly (`git merge` exits non-zero, `MERGE_FAILED=1`) is never force-resolved: `git merge --abort`, then stop — interactive: ask the user how to proceed; orchestrated: return a blocker naming the conflicting files. Do not attempt automatic conflict resolution. A clean merge → re-run the project's tests; a failure here is exactly a failing check, never a green light to merge over it — interactive asks; orchestrated pushes the merge commit (so the unresolved state is visible on the PR) and returns a blocker citing the failing tests. Only a clean merge with passing tests continues: push, then — for a PR that was a draft (`READIED=1`) — repeat the bounded registration poll above before the checks gate: the new head has no check runs until CI registers them, and `--watch` reads that instant as "no checks reported"; the post-`--watch` counts then judge the head that actually merges. Then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
 
 **Checks gate.** `gh pr merge` enforces only *required* branch protections server-side — advisory checks (the common case on personal repos) would not stop it, so gate on CI yourself (orchestrated: write `step=9.2 pr=#P` first — `--watch` is the procedure's longest silent wait, and the marker lets whoever reads `--status` tell "waiting on CI" from an unexplained silence):
 
