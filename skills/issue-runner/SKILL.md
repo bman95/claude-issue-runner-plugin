@@ -152,11 +152,13 @@ printf '%s\n' "${CLAUDE_CODE_SESSION_ID:-}" > "$RUN_ROOT/session.tmp.$PPID" && m
 
 ```bash
 if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
-  [ "$(cat "$RUN_ROOT/session" 2>/dev/null)" = "$CLAUDE_CODE_SESSION_ID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
+  [ -f "$RUN_ROOT/lock" ] && [ "$(cat "$RUN_ROOT/session" 2>/dev/null)" = "$CLAUDE_CODE_SESSION_ID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
 else
-  [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
+  [ -f "$RUN_ROOT/lock" ] && [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
 fi
 ```
+
+The leading `[ -f "$RUN_ROOT/lock" ]` matters beyond style: `touch` creates its target if missing, and the lock should never come back that way. A live lock is never supposed to be deleted by hand (State section), but if one is, silently recreating it — empty, with no PID — on the very next heartbeat would look identical to a clean release to any other session's liveness check (an empty `LOCK_PID` reads as neither PID-alive nor heartbeat-fresh — the same rule the failure-path truncation above relies on), letting a second run take over and rotate state out from under the still-running first one: the exact bug this heartbeat exists to prevent, reopened through the one code path that touches the lock without first taking it.
 
 at the top of every pass through the Step 3 loop (item 4's "on every wake" — Step 3) and immediately after every `AskUserQuestion` call returns from this point on (Step 2's out-of-scope-edges question; Step 4's escalations) — `Step 0` and Step 1's own `AskUserQuestion` calls (Codex/Agent-tool preflight, parked labels, dirty-tree audit) all run before this block, so there is no lock yet to touch.
 
