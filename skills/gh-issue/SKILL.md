@@ -48,28 +48,28 @@ Fields: `step=<id>` always (`1`–`10`; `8.1 iter=K` per Phase 1 iteration, `8.2
 
 ## Result file (orchestrated only)
 
-The progress marker says where you *are*; the orchestrator also needs to know how you *ended* without parsing the Step 10 prose. So whenever the dispatch prompt supplied a state path, write the sibling file `<STATE_DIR>/issue-<number>/result.json` **once, immediately before your final message** — on every orchestrated exit, a blocker returned from Step 2, 3, 8 or 9 included, not only after a merge. One JSON object on one line, exactly these keys (the key set is lint-checked against the orchestrator's copy):
+The progress marker says where you *are*; the orchestrator also needs to know how you *ended* without parsing the Step 10 prose. So whenever the dispatch prompt supplied a state path, write the sibling file `<STATE_DIR>/issue-<number>/result.json` **once, immediately before your final message** — on every orchestrated exit, a blocker or failure returned from any step included, not only after a merge. One JSON object on one physical line, exactly these keys (the key set is lint-checked against the orchestrator's copy):
 
 ```json
-{"outcome":"merged|blocker|failed","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored","checks":"pass|none|fail","security_lens":true,"blocker":null}
+{"outcome":"merged|blocker|failed","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|unavailable","checks":"pass|none|fail","security_lens":true,"blocker":null}
 ```
 
 - `outcome` — `merged` only after Step 9's own verification (`gh pr view --json state` reports `MERGED`); `blocker` when you return a blocker (spec ambiguity, a bouncing review loop, a cap-stop, failing checks, an unavailable gate, unauthorized inline review); `failed` when an environmental failure the parent cannot resolve stops you (credentials, an irresolvable merge conflict, a refused push).
 - `pr` — the PR number; `null` before Step 7 opened one.
 - `branch`, `worktree` — `git rev-parse --abbrev-ref HEAD` and `git rev-parse --show-toplevel`, the same value the `worktree:` line carries.
-- `phase1_iterations` — Phase 1 iterations run (`0` if never entered); `phase1_inline` — `true` when Phase 1 ran inline (the "Agent tool unavailable" path), `false` when fresh-eyes subagents reviewed.
-- `gate_passes` — Codex passes spent (0–2); `gate_state` — `clean`, `degraded` (credit/quota), `waived` (`--no-codex-gate`), `cap-stop`, or `errored` (non-zero exit for any other reason); `null` when Phase 2 was never entered (a Phase 1 cap-stop, or an earlier blocker).
+- `phase1_iterations` — Phase 1 iterations run (`0` if never entered); `phase1_inline` — `true` when Phase 1 ran inline (the "Agent tool unavailable" path), `false` when fresh-eyes subagents reviewed; `phase1_state` — `converged`, `cap-stop` (the Phase 1 cap reached with Apply-class findings still arriving), or `bouncing` (a stop-and-ask convergence failure); `null` when Phase 1 was never entered.
+- `gate_passes` — Codex passes spent (0–2); `gate_state` — `clean`, `degraded` (credit/quota), `waived` (`--no-codex-gate`), `cap-stop`, `errored` (non-zero exit for any other reason), or `unavailable` (CLI missing and the gate not waived); `null` when Phase 2 was never entered (a Phase 1 cap-stop, or an earlier blocker).
 - `checks` — the Step 9 checks-gate result; `null` when that gate never ran.
 - `security_lens` — whether the Step 8 security lens was added to the reviewer prompts.
-- `blocker` — the blocker or failure message verbatim (the same text your final message carries); `null` when `outcome` is `merged`.
+- `blocker` — the blocker or failure message verbatim (the same text your final message carries), newlines written as `\n` so the file stays one physical line; `null` when `outcome` is `merged`.
 
 ```bash
 cat 2>/dev/null > "<STATE_DIR>/issue-<number>/result.json" <<'EOF' || true
-{"outcome":"blocker","pr":123,"branch":"feat/issue-42-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"gate_passes":1,"gate_state":"cap-stop","checks":null,"security_lens":false,"blocker":"Codex gate cap-stop: P1 finding unverified"}
+{"outcome":"blocker","pr":123,"branch":"feat/issue-42-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged","gate_passes":1,"gate_state":"cap-stop","checks":null,"security_lens":false,"blocker":"Codex gate cap-stop: P1 finding unverified"}
 EOF
 ```
 
-Rules, the same as the progress marker's: **best-effort and free** (one local write, no API calls, the quoted `'EOF'` delimiter disables expansion so the only escaping is JSON's own — `"` and `\` inside the `blocker` string — and `|| true` means an unwritable path never fails the step); **never surfaces in the deliverable** (not in the PR body, `## Review notes`, or a commit; it lives outside the repository); and **advisory for status, authoritative for telemetry** — the orchestrator reads it before your prose, but still verifies `merged` against GitHub (`gh pr list --head <branch> --state merged`) and never derives a status from the file alone, while its review-loop telemetry (iterations, gate passes, degradations, waivers, checks) comes only from these files. Write the `step=10` progress marker first, then this file, then the final message — which still carries the `worktree:` line and the Step 10 report: that prose is the parent's fallback when the file is absent (a crash before the write). Interactive runs (no state path) write nothing.
+Rules, the same as the progress marker's: **best-effort and free** (one local write, no API calls, the quoted `'EOF'` delimiter disables expansion so the only escaping is JSON's own — `"` and `\` inside the `blocker` string — and `|| true` means an unwritable path never fails the step); **never surfaces in the deliverable** (not in the PR body, `## Review notes`, or a commit; it lives outside the repository); and **advisory for status, authoritative for telemetry** — the orchestrator reads it before your prose, but still verifies `merged` against GitHub (`gh pr list --head <branch> --state merged`) and never derives `done` from the file alone, while its review-loop telemetry (iterations, gate passes, degradations, waivers, checks) comes only from these files. Write the `step=10` progress marker first, then this file, then the final message — which still carries the `worktree:` line and the Step 10 report: that prose is the parent's fallback when the file is absent (a crash before the write). Interactive runs (no state path) write nothing.
 
 ## Workflow
 
@@ -273,7 +273,7 @@ git fetch --prune                                                            # d
 
 ### 10. Report
 
-**Orchestrated:** every exit passes through this step — a blocker returned from Step 2, 3, 8 or 9 as much as a merge. Write the result file (the "Result file" section) before the message: the parent reads it first and falls back to the prose below only when the file is absent, so an `outcome` that disagrees with your message is a bug in your run, not a tolerable drift.
+**Orchestrated:** every exit passes through this step — a blocker or failure returned from any step as much as a merge. Write the result file (the "Result file" section) before the message: the parent reads it first and falls back to the prose below only when the file is absent, so an `outcome` that disagrees with your message is a bug in your run, not a tolerable drift.
 
 PR URL plus: Phase 1 iterations and findings applied, whether Phase 1 ran with fresh-eyes subagents or inline (Agent tool unavailable), gate passes spent (0–2), final state (clean / degraded on credit-quota / gate-waived / cap-stop / errored), the checks-gate outcome (pass / no CI configured), and whether the security lens ran. If the Codex gate was skipped on credit/quota or waived via `--no-codex-gate`, or Phase 1 ran inline, state it **prominently** here (and in orchestrated runs surface it to the parent) — a merge without Codex coverage or without fresh-eyes review is never buried in the report.
 

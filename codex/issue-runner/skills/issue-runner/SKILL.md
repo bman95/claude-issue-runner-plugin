@@ -18,7 +18,7 @@ Read [the bundled canonical orchestrator procedure](../../canonical/issue-runner
 - Codex subagents share the filesystem. The dispatch prompt must tell a fresh implementer to create and enter its own unique worktree before editing; a resumed implementer must enter the existing recorded worktree. The parent never enters an implementer worktree.
 - Use `list_agents`, agent completion messages, and `wait_agent` to supervise the in-flight set. Respect the four-slot host limit even when `--max-parallel` is higher: reserve one slot for the parent, so at most three direct implementers may run concurrently unless the active environment exposes a larger limit.
 - Implementers may use bounded helpers only when a slot is available. Helpers must not spawn further agents.
-- Replace the Claude `Agent` dispatch template with `spawn_agent`, preserving every input path, review cap, merge rule, blocker rule, and required `worktree:` result line from that template.
+- Replace the Claude `Agent` dispatch template with `spawn_agent`, preserving every input path, review cap, merge rule, blocker rule, the required `worktree:` result line, and the progress-marker and result-file bullets from that template.
 - For rescue, dispatch a fresh diagnostic subagent instead of invoking `/codex:rescue`.
 - `$PPID` may not identify the long-lived Codex session host. Before relying on a live PID lock, verify the recorded process belongs to the active run; otherwise treat filesystem state plus active-agent inspection as authoritative. Never remove a lock known to belong to a live run.
 
