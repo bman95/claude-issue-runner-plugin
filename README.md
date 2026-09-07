@@ -2,7 +2,7 @@
 
 A self-sufficient Codex and Claude Code plugin for the full agentic issue pipeline: from an idea to merged PRs.
 
-- **`/issue-plan`** turns an idea, plan, or spec into ready-to-run issues: it asks only the questions the input needs, slices the work into tracer-bullet vertical slices, and publishes issues in the format the runner parses.
+- **`/issue-plan`** turns an idea, plan, or spec into ready-to-run issues: it asks only the questions the input needs, slices the work into tracer-bullet vertical slices, and publishes issues in the format the runner parses, under a tracking issue that keeps the input and the interview's decisions.
 - **`/issue-runner`** reads the issue queue, builds a dependency DAG, and dispatches each issue to an **autonomous implementer subagent** in an isolated worktree. Implementers spawn their own subagents — `Explore`/`Plan` helpers, fresh-eyes reviewers, delegated `general-purpose` chunks (helpers don't nest further) — then converge the PR through a Codex gate and merge it. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents.
 
 Run-time doubts escalate up the chain: implementer → parent (resolves coordination/context blockers from run-wide knowledge, retrying on its own only while an issue's Step 4 re-dispatches stay under `--max-retries`) → human (scope, product-behavior, or risk decisions — and every blocker once an issue's retry cap is reached).
@@ -71,8 +71,9 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner                              # all open issues (label-filtered)
 /issue-runner:issue-runner 42 43 44                     # specific issue numbers
 /issue-runner:issue-runner --plan                       # build the DAG and exit
-/issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress (read-only)
+/issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress and per-issue outcomes (read-only)
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
+/issue-runner:issue-runner --hang-minutes N             # hung-implementer threshold: progress file unchanged for more than N minutes (default 30)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
 /issue-runner:issue-runner --max-retries N              # Step 4 re-dispatches per issue before every blocker escalates to you (default 2)
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
@@ -84,8 +85,8 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 
 ## Architecture
 
-- **Planner** (`skills/issue-plan/SKILL.md`): absorb the idea → adaptive interrogation (human decisions settled up front) → tracer-bullet vertical slices → publish issues with `## What to build` / `## Acceptance criteria` / `## Blocked by` / `Files likely touched:` — the contract the runner and implementer parse.
-- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, dirty-tree audit) → dependency DAG (`## Blocked by` primary, heuristics as fallback; conflict edges from `Files likely touched:` intersection, LLM refinement as fallback) → parallel dispatch → two-tier blocker escalation (parent first, human last) → cleanup. The orchestrator never enters a worktree.
+- **Planner** (`skills/issue-plan/SKILL.md`): absorb the idea → adaptive interrogation (human decisions settled up front) → tracer-bullet vertical slices → publish a tracking issue (the input, the interview's decision log, the slice list) and one issue per slice with `## What to build` / `## Acceptance criteria` / `## Blocked by` / `Files likely touched:` — the contract the runner and implementer parse — plus a `Part of #<tracking>` line outside it.
+- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, tracking issues excluded, dirty-tree audit) → dependency DAG (`## Blocked by` primary, heuristics as fallback; conflict edges from `Files likely touched:` intersection, LLM refinement as fallback) → parallel dispatch → two-tier blocker escalation (parent first, human last) → cleanup and summary, posted as a comment on the plan's tracking issue when the scope shares one. The orchestrator never enters a worktree.
 - **Implementer** (`skills/gh-issue/SKILL.md`): understand → explore (Explore subagent) → plan → branch → implement → PR → layered review → merge. The review runs fresh-eyes reviewer subagents locally (no Codex spend) and uses `codex review` only as a final certification gate (1–2 passes per PR), with a credit/quota degradation path.
 - **Reference** (`skills/issue-runner/REFERENCE.md`): troubleshooting and the rationale behind the defensive recipes (worktree locks, branch deletion after squash merges, duplicate PRs on re-runs).
 
