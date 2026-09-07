@@ -148,10 +148,14 @@ printf '%s\n' "${CLAUDE_CODE_SESSION_ID:-}" > "$RUN_ROOT/session.tmp.$PPID" && m
   || { echo "cannot write session pointer: $RUN_ROOT/session" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; rm -f "$RUN_ROOT/session.tmp.$PPID" 2>/dev/null || true; exit 1; }
 ```
 
-**Heartbeat.** Once the lock is held, keep its mtime fresh so the liveness check above never misreads a genuinely running orchestration as stale: touch it (guarded by the same ownership check the failure paths above use, so a lock this session no longer owns is never refreshed)
+**Heartbeat.** Once the lock is held, keep its mtime fresh so the liveness check above never misreads a genuinely running orchestration as stale: touch it, guarded by an ownership check — but **not** the `$PPID`-equality guard the failure paths above use, which is safe there only because it runs in the *same* Bash call that wrote the lock. The heartbeat touch fires from later, separate calls, and on exactly the wrapper-shell platform this heartbeat exists for, `$PPID` is a *different*, already-dead value on every call — so a `$PPID` guard here would silently never fire on that platform, defeating the heartbeat where it matters most. Use the session pointer instead: it is written once and, unlike `$PPID`, stays valid across calls within the same session (it is what the same-session bypass above already relies on for exactly this reason). Fall back to the `$PPID` guard only when the host never set `$CLAUDE_CODE_SESSION_ID` (empty never matches a recorded pointer, so a plain equality would falsely treat blank-vs-blank as ownership):
 
 ```bash
-[ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
+if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
+  [ "$(cat "$RUN_ROOT/session" 2>/dev/null)" = "$CLAUDE_CODE_SESSION_ID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
+else
+  [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
+fi
 ```
 
 at the top of every pass through the Step 3 loop (item 4's "on every wake" — Step 3) and immediately after every `AskUserQuestion` call returns from this point on (Step 2's out-of-scope-edges question; Step 4's escalations) — `Step 0` and Step 1's own `AskUserQuestion` calls (Codex/Agent-tool preflight, parked labels, dirty-tree audit) all run before this block, so there is no lock yet to touch.
