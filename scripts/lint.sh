@@ -22,6 +22,12 @@
 #   9. the default-branch resolution one-liner is byte-identical at every site
 #  10. both SKILL files carry the /issue-< branch-contract match (placeholder
 #      spelling drift <N> vs <number> is a warning)
+#  11. the result.json key set is spelled identically on every contract line
+#      (a line starting with `{` and carrying `"outcome":` — the shape line and
+#      the write recipe) in gh-issue and issue-runner — Claude skills and the
+#      Codex edition's canonical copies alike; compared per line, not per file,
+#      with the contract-line count pinned per file and the shape line (enum
+#      values included) byte-identical across the four files
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -236,6 +242,59 @@ if [ "$contract_ok" -eq 1 ]; then
   if [ "$sp_runner" != "$sp_gh" ]; then
     warn "branch-contract placeholder spelling differs: issue-runner uses '$sp_runner', gh-issue uses '$sp_gh'"
   fi
+fi
+
+# 11. result.json key set identical on every contract line, both editions -------
+# A contract line starts with `{` and carries `"outcome":` — the shape line in
+# both SKILL files and gh-issue's write recipe; prose that mentions "outcome" is
+# not one. Compared per line (not unioned per file), so a key dropped from one
+# of a file's two lines cannot hide behind the other. Values are free.
+CANON_GH="$ROOT/codex/issue-runner/canonical/gh-issue/SKILL.md"
+result_key_lines() {   # prints "<line-no>:<sorted,keys>" for each contract line of $1
+  grep -nE '^[[:space:]]*\{.*"outcome":' "$1" | while IFS=: read -r ln rest; do
+    printf '%s:%s\n' "$ln" "$(printf '%s' "$rest" | grep -oE '"[A-Za-z0-9_]+":' | tr -d '":' | sort -u | paste -sd, -)"
+  done
+}
+# First contract line of gh-issue is the reference. Taken in the shell rather
+# than via `| head -1`, which would close the pipe while the second line is
+# still being printed and litter stderr with "Broken pipe".
+gh_lines="$(result_key_lines "$SKILL_GH")"
+keys_ref="${gh_lines%%$'\n'*}"; keys_ref="${keys_ref#*:}"
+if [ -z "$keys_ref" ]; then
+  err "result.json shape line (starting with '{', carrying '\"outcome\":') missing from ${SKILL_GH#"$ROOT"/}"
+else
+  keys_ok=1
+  # Expected contract lines per file: gh-issue carries the shape line and the
+  # write recipe (2); issue-runner carries the shape line only (1). Pinning the
+  # count means a line that lost `"outcome":` itself cannot silently drop out.
+  for entry in "$SKILL_GH:2" "$SKILL_RUNNER:1" "$CANON_GH:2" "$CANON_RUNNER:1"; do
+    f="${entry%:*}"; want="${entry##*:}"
+    lines="$(result_key_lines "$f")"
+    have="$(printf '%s\n' "$lines" | grep -c .)"
+    if [ "$have" -ne "$want" ]; then
+      err "result.json contract lines in ${f#"$ROOT"/}: found $have, expected $want"
+      keys_ok=0
+    fi
+    [ -n "$lines" ] || continue
+    while IFS=: read -r ln k; do
+      if [ "$k" != "$keys_ref" ]; then
+        err "result.json key set drift at ${f#"$ROOT"/}:$ln: got '$k', expected '$keys_ref'"
+        keys_ok=0
+      fi
+    done <<EOF_KEYS
+$lines
+EOF_KEYS
+  done
+  # The shape line (the first contract line of each file) also carries the enum
+  # values Step 5 aggregates on; it must be byte-identical across all four files.
+  shapes="$(for f in "$SKILL_GH" "$SKILL_RUNNER" "$CANON_GH" "$CANON_RUNNER"; do
+    grep -m1 -E '^[[:space:]]*\{.*"outcome":' "$f" | sed 's/^[[:space:]]*//'
+  done | sort -u | grep -c .)"
+  if [ "$shapes" -ne 1 ]; then
+    err "result.json shape line drifted: $shapes variants across the four SKILL files (enum values must match)"
+    keys_ok=0
+  fi
+  [ "$keys_ok" -eq 1 ] && ok "result.json key set identical on every contract line and shape line byte-identical (both editions): $keys_ref"
 fi
 
 if [ "$fail" -ne 0 ]; then

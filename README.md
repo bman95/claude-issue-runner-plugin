@@ -71,7 +71,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner                              # all open issues (label-filtered)
 /issue-runner:issue-runner 42 43 44                     # specific issue numbers
 /issue-runner:issue-runner --plan                       # build the DAG and exit
-/issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress (read-only)
+/issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress and per-issue outcomes (read-only)
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
 /issue-runner:issue-runner --max-retries N              # Step 4 re-dispatches per issue before every blocker escalates to you (default 2)
