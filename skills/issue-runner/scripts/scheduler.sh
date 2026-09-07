@@ -13,7 +13,8 @@
 #   STATE_DIR is $RUN_ROOT/state (issue-runner's State section). Per issue N,
 #   this script reads:
 #     STATE_DIR/issue-N/status   pending|implementing|blocked|done|failed|
-#                                 skipped|closed-externally (absent/empty = pending)
+#                                 skipped|closed-externally|ready (absent/empty
+#                                 = pending; `ready` only under --no-merge)
 #   and one run-level file:
 #     STATE_DIR/dag.txt          "N: dep dep …" one line per in-scope issue,
 #                                 written alongside dag.json in Step 2. Empty
@@ -35,9 +36,10 @@
 #   cycle N <dep>    N is part of a true dependency cycle; <dep> is a real
 #                    offending dependency also stuck in the cycle (item 6)
 #   paused           nothing to skip/dispatch/cycle: at least one remaining
-#                    `pending` issue has a `blocked` ancestor (item 6,
-#                    blocked-chain case) — resolve the blocked issue(s) via
-#                    Step 4, never treat this as a cycle
+#                    `pending` issue has a `blocked` or `ready` ancestor (item
+#                    6, blocked-chain case) — resolve the blocked issue via
+#                    Step 4, or wait for the ready one to be merged (by hand
+#                    or --merge-ready, issue #14) — never treat this as a cycle
 #   run-paused       nothing to skip/dispatch/cycle: RUN_ROOT/paused exists,
 #                    so every remaining `pending` issue is paused for that one
 #                    run-wide reason (item 6, run-paused case) — skip Step 4's
@@ -257,8 +259,13 @@ if [ -f "$RUN_ROOT/paused" ]; then
 fi
 
 # has_blocked_ancestor N -> "yes"/"no": true if any transitive dependency of N
-# currently has status=blocked. Visited-guarded so a true cycle (which this
-# is specifically here to rule out) can never spin the search forever.
+# currently has status=blocked OR status=ready. A `ready` dependency (issue #14,
+# --no-merge mode) is unmerged by design until a human or --merge-ready acts on
+# it, so a dependent waiting on one is paused exactly like a blocked-chain
+# waiter — never a cycle, and never escalated through Step 4 (there is nothing
+# for a human to resolve there; the fix is a merge, not a decision). Visited-
+# guarded so a true cycle (which this is specifically here to rule out) can
+# never spin the search forever.
 has_blocked_ancestor() {
   local start="$1" visited=" $1 " queue cur
   queue=$(deps_of "$start")
@@ -270,10 +277,12 @@ has_blocked_ancestor() {
     queue="$*"
     case "$visited" in *" $cur "*) continue ;; esac
     visited="$visited$cur "
-    if [ "$(status_of "$cur")" = blocked ]; then
-      echo yes
-      return
-    fi
+    case "$(status_of "$cur")" in
+      blocked|ready)
+        echo yes
+        return
+        ;;
+    esac
     # Re-normalize through a word-split `echo`, not a plain concatenation: once
     # $queue has been drained to "" (the common case at the last real node),
     # "$queue $(deps_of "$cur")" is a lone space when deps_of also returns ""
