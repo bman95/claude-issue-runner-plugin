@@ -25,7 +25,9 @@
 #  11. the result.json key set is spelled identically on every contract line
 #      (a line starting with `{` and carrying `"outcome":` — the shape line and
 #      the write recipe) in gh-issue and issue-runner — Claude skills and the
-#      Codex edition's canonical copies alike; compared per line, not per file
+#      Codex edition's canonical copies alike; compared per line, not per file,
+#      with the contract-line count pinned per file and the shape line (enum
+#      values included) byte-identical across the four files
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -258,13 +260,18 @@ if [ -z "$keys_ref" ]; then
   err "result.json shape line (starting with '{', carrying '\"outcome\":') missing from ${SKILL_GH#"$ROOT"/}"
 else
   keys_ok=1
-  for f in "$SKILL_GH" "$SKILL_RUNNER" "$CANON_GH" "$CANON_RUNNER"; do
+  # Expected contract lines per file: gh-issue carries the shape line and the
+  # write recipe (2); issue-runner carries the shape line only (1). Pinning the
+  # count means a line that lost `"outcome":` itself cannot silently drop out.
+  for entry in "$SKILL_GH:2" "$SKILL_RUNNER:1" "$CANON_GH:2" "$CANON_RUNNER:1"; do
+    f="${entry%:*}"; want="${entry##*:}"
     lines="$(result_key_lines "$f")"
-    if [ -z "$lines" ]; then
-      err "result.json shape line missing from ${f#"$ROOT"/}"
+    have="$(printf '%s\n' "$lines" | grep -c .)"
+    if [ "$have" -ne "$want" ]; then
+      err "result.json contract lines in ${f#"$ROOT"/}: found $have, expected $want"
       keys_ok=0
-      continue
     fi
+    [ -n "$lines" ] || continue
     while IFS=: read -r ln k; do
       if [ "$k" != "$keys_ref" ]; then
         err "result.json key set drift at ${f#"$ROOT"/}:$ln: got '$k', expected '$keys_ref'"
@@ -274,7 +281,16 @@ else
 $lines
 EOF_KEYS
   done
-  [ "$keys_ok" -eq 1 ] && ok "result.json key set identical on every contract line (both editions): $keys_ref"
+  # The shape line (the first contract line of each file) also carries the enum
+  # values Step 5 aggregates on; it must be byte-identical across all four files.
+  shapes="$(for f in "$SKILL_GH" "$SKILL_RUNNER" "$CANON_GH" "$CANON_RUNNER"; do
+    grep -E '^[[:space:]]*\{.*"outcome":' "$f" | head -1 | sed 's/^[[:space:]]*//'
+  done | sort -u | grep -c .)"
+  if [ "$shapes" -ne 1 ]; then
+    err "result.json shape line drifted: $shapes variants across the four SKILL files (enum values must match)"
+    keys_ok=0
+  fi
+  [ "$keys_ok" -eq 1 ] && ok "result.json key set identical on every contract line and shape line byte-identical (both editions): $keys_ref"
 fi
 
 if [ "$fail" -ne 0 ]; then
