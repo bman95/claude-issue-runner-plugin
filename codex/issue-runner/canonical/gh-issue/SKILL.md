@@ -52,13 +52,13 @@ The progress marker says where you *are*; the orchestrator also needs to know ho
 {"outcome":"merged|blocker|failed","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|n/a","security_lens":true,"blocker":null}
 ```
 
-- `outcome` — `merged` only after Step 9's own verification (`gh pr view --json state` reports `MERGED`); `blocker` when you return a blocker (spec ambiguity, a bouncing review loop, a cap-stop, failing checks, an unavailable gate, unauthorized inline review); `failed` when an environmental failure the parent cannot resolve stops you (credentials, an irresolvable merge conflict, a refused push).
+- `outcome` — `merged` only after Step 9's own verification (`gh pr view --json state` reports `MERGED`); `blocker` when you return a blocker (spec ambiguity, a bouncing review loop, a cap-stop, failing checks, an unavailable gate, unauthorized inline review); `failed` when an environmental failure the parent cannot resolve stops you (credentials, an irresolvable merge conflict, a refused push — Step 6's; a refused Step 4 checkpoint push is `checkpoint: refused` and never fails the run).
 - `pr` — the PR number; `null` before Step 7 opened one.
 - `branch`, `worktree` — `git rev-parse --abbrev-ref HEAD` and `git rev-parse --show-toplevel`, the same value the `worktree:` line carries.
 - `phase1_iterations` — Phase 1 iterations run (`0` if never entered); `phase1_inline` — `true` when Phase 1 ran inline by the implementing context, `false` when fresh-eyes subagents reviewed (this edition has no inline Phase 1 path, so it is always `false` here); `phase1_state` — `converged`, `cap-stop` (the Phase 1 cap reached with Apply-class findings still arriving), or `bouncing` (a stop-and-ask convergence failure); `null` when Phase 1 was never entered.
 - `gate_passes` — Codex passes spent (0–2); `gate_state` — `clean`, `degraded` (credit/quota), `waived` (`--no-codex-gate`), `cap-stop`, `errored` (non-zero exit for any other reason), `bouncing` (a fixed finding re-appeared in the verification pass), or `unavailable` (CLI missing and the gate not waived); `null` when Phase 2 was never entered (a Phase 1 cap-stop, or an earlier blocker).
 - `checks` — the Step 9 checks-gate result: `pass`, `none`, `fail`, or — for a PR that was a draft — one of the draft-aware outcomes Step 9 reports instead of a plain `pass`/`none`: `none-after-ready` (no checks reported after `gh pr ready`), `all-skipped` (every check run skipped after `gh pr ready`), `unchanged-after-ready` (skipped runs never re-ran after `gh pr ready`) — all three still merge, but never silently; `null` when that gate never ran.
-- `checkpoint` — the Step 4 draft checkpoint: `created` (this run opened it, an orphan resume included), `refused` (the reason goes in the Step 10 `checkpoint:` line), or `n/a` (a resume of a PR that predated this run).
+- `checkpoint` — the Step 4 draft checkpoint: `created` (this run opened it, an orphan resume included), `refused` (the reason goes in the Step 10 `checkpoint:` line), or `n/a` (a resume of a PR that predated this implementer invocation, or an exit before Step 4 was reached).
 - `security_lens` — whether the Step 8 security lens was added to the reviewer prompts.
 - `blocker` — the blocker or failure message verbatim (the same text your final message carries), with `"`, `\` and every control character JSON-escaped (`\n`, `\t`) so the file stays one physical line; `null` when `outcome` is `merged`.
 
@@ -112,7 +112,7 @@ Decide what changes, in what order, with what tests. **Interactive:** share a br
 git checkout -b <type>/issue-<number>-<short-slug>   # fix/ feat/ docs/ chore/
 ```
 
-If your dispatch prompt names an existing branch (**resume** — normally with its PR; a branch alone is an orphan that gets its draft PR here), check that branch out instead — `git fetch origin <branch> && git checkout <branch>` — and skip only `gh pr create` in Step 7 when the PR exists — its body rewrite still applies; push to the named PR. Skip the checkpoint below too when the PR exists; the plan you took from its body in Step 3 is the checkpoint. For an orphan (pushed, no PR) run only its last line — `gh pr create --draft` with the plan you derived in Step 3 — so the plan is back on GitHub before you implement.
+If your dispatch prompt names an existing branch (**resume** — normally with its PR; a branch alone is an orphan that gets its draft PR here), check that branch out instead — `git fetch origin <branch> && git checkout <branch>` — and skip only `gh pr create` in Step 7 when the PR exists — its body rewrite still applies; push to the named PR. Skip the checkpoint below too when the PR exists; the plan you took from its body in Step 3 is the checkpoint. For an orphan (pushed, no PR) run only its last line — `gh pr create --draft` with the plan you derived in Step 3 — so the plan is back on GitHub before you implement. If it names an existing worktree but no PR (a retry of a pre-PR blocker), keep the branch you find checked out and decide about the checkpoint by the remote, not the branch name: `git ls-remote --exit-code --heads origin "$(git rev-parse --abbrev-ref HEAD)"` — a hit with no open PR is the orphan case (only `gh pr create --draft` applies: the branch is already pushed); a miss means the earlier run never got its checkpoint out, so run the checkpoint below as on any fresh branch (its guard re-runs too, and the commit line is idempotent).
 
 **Orchestrated, on a fresh branch: checkpoint the plan before writing any code.** Everything up to here — the exploration and the plan — lives only in this worktree and in a transcript store that some hosts throw away (Claude Code on the web, CI containers: the whole `~/.claude` tree goes with the container). Push the branch and open a **draft** PR carrying the plan, so a run that dies before Step 7 leaves its distilled context exactly where the orchestrator's resume check looks:
 
@@ -236,31 +236,27 @@ The PR body becomes the squash-commit message (Step 9), so refresh Summary / Cha
 READIED=1   # "this PR was ever a draft": every orchestrated PR except one created plain at Step 7 because
             # drafts are unavailable (checkpoint: refused) — set 0 for that one, and for an interactive PR that
             # never was a draft. Shell state does not persist across tool calls — carry the value forward yourself.
-BEFORE=""    # the draft-era rollup, snapshotted before the ready event (stays empty on a resume of an already-readied PR)
 if [ "$(gh pr view "$PR_NUM" --json isDraft -q .isDraft)" = true ]; then
-  BEFORE=$(gh pr checks "$PR_NUM" --json name,bucket -q '.[] | "\(.name) \(.bucket)"' 2>/dev/null | sort)
   if ! gh pr ready "$PR_NUM"; then echo "gh pr ready failed" >&2; exit 1; fi   # blocker — do not continue
 fi
-CHANGED=0
 if [ "$READIED" -eq 1 ]; then
   # Draft-filtered CI shows up as no check runs at all, or as runs that report `skipping`
   # (a job-level `if: !draft` still creates them, instantly) — possibly next to a job that
   # does run on drafts (lint passed, tests skipped): a mixed rollup `--watch` would accept.
-  # None of that is the ready_for_review run, so wait — bounded — until the rollup CHANGES
-  # from the draft-era snapshot (a new run, or a skipped one re-run) and is not all-skipped.
-  # Keyed on READIED, not on the flip above: a PR an earlier attempt readied just before
-  # crashing may still be waiting for that run (no snapshot then: any non-skipped run ends the wait).
+  # The ready_for_review run re-creates each skipped job under the same name, so wait —
+  # bounded — until every skipped name has a non-skipped twin. No snapshot, no state:
+  # this works the same on a PR an earlier attempt readied just before crashing.
   for _ in 1 2 3 4 5 6; do
-    NOW=$(gh pr checks "$PR_NUM" --json name,bucket -q '.[] | "\(.name) \(.bucket)"' 2>/dev/null | sort)
-    TOTAL=$(printf '%s\n' "$NOW" | grep -c .)
-    SKIPPED=$(printf '%s\n' "$NOW" | grep -c ' skipping$')
-    if [ "$TOTAL" -gt 0 ] && [ "$SKIPPED" -lt "$TOTAL" ] && [ "$NOW" != "$BEFORE" ]; then CHANGED=1; break; fi
+    TOTAL=$(gh pr checks "$PR_NUM" --json bucket -q 'length' 2>/dev/null | tail -1)
+    NEVER_RERAN=$(gh pr checks "$PR_NUM" --json name,bucket \
+      -q '[.[] | select(.bucket=="skipping") | .name] - [.[] | select(.bucket!="skipping") | .name] | length' 2>/dev/null | tail -1)
+    [ "${TOTAL:-0}" -gt 0 ] && [ "${NEVER_RERAN:-0}" -eq 0 ] && break
     sleep 10
   done
 fi
 ```
 
-A workflow that skips drafts (`if: github.event.pull_request.draft == false`) without `ready_for_review` in its `types` never executes on this PR — either no check runs exist, or every run reports `skipped` — and the checks gate below cannot tell either from real coverage on its own; the target repo's CI must run on drafts or include that event type (README, Requirements). `READIED`, `CHANGED` and the `TOTAL`/`SKIPPED` counts the checks gate takes after `--watch` make its verdict honest about it.
+A workflow that skips drafts (`if: github.event.pull_request.draft == false`) without `ready_for_review` in its `types` never executes on this PR — either no check runs exist, or every run reports `skipped` — and the checks gate below cannot tell either from real coverage on its own; the target repo's CI must run on drafts or include that event type (README, Requirements). `READIED` and the `TOTAL`/`SKIPPED`/`NEVER_RERAN` counts the checks gate takes after `--watch` make its verdict honest about it.
 
 **Base freshness next.** The review judged this diff against its branch point; a sibling PR may have merged into `$BASE_BRANCH` since — a semantic-conflict window no textual merge check catches:
 
@@ -274,7 +270,7 @@ if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ] \
 fi
 ```
 
-Base advanced but no file overlap with this PR → proceed directly. Overlap → merge `origin/$BASE_BRANCH` in, re-run the tests, push, then — for a PR that was a draft (`READIED=1`) — repeat the bounded registration poll above (with `BEFORE` reset to empty: the new head starts with no runs) before the checks gate: the new head has no check runs until CI registers them, and `--watch` reads that instant as "no checks reported"; the post-`--watch` counts then judge the head that actually merges. Then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
+Base advanced but no file overlap with this PR → proceed directly. Overlap → merge `origin/$BASE_BRANCH` in, re-run the tests, push, then — for a PR that was a draft (`READIED=1`) — repeat the bounded registration poll above before the checks gate: the new head has no check runs until CI registers them, and `--watch` reads that instant as "no checks reported"; the post-`--watch` counts then judge the head that actually merges. Then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
 
 **Checks gate.** `gh pr merge` enforces only *required* branch protections server-side — advisory checks (the common case on personal repos) would not stop it, so gate on CI yourself (orchestrated: write `step=9.2 pr=#P` first — `--watch` is the procedure's longest silent wait, and the marker lets whoever reads `--status` tell "waiting on CI" from an unexplained silence):
 
@@ -286,12 +282,14 @@ else CHECKS=fail
 fi
 # Count the rollup `--watch` actually judged (a base-freshness push above may have replaced the
 # head, and draft-era runs may have been joined by real ones since Step 9's poll): all-`skipping`
-# runs exit 0 from `--watch` but are not coverage.
+# runs exit 0 from `--watch` but are not coverage; nor is a skipped run with no non-skipped twin.
 TOTAL=$(gh pr checks "$PR_NUM" --json bucket -q 'length' 2>/dev/null | tail -1)
 SKIPPED=$(gh pr checks "$PR_NUM" --json bucket -q '[.[] | select(.bucket=="skipping")] | length' 2>/dev/null | tail -1)
+NEVER_RERAN=$(gh pr checks "$PR_NUM" --json name,bucket \
+  -q '[.[] | select(.bucket=="skipping") | .name] - [.[] | select(.bucket!="skipping") | .name] | length' 2>/dev/null | tail -1)
 ```
 
-`pass` or `none` → merge, with three honesty rules for a PR that was a draft (`READIED=1` — every PR that was ever a draft: every orchestrated PR except one created plain at Step 7 because drafts are unavailable, including one an earlier attempt readied before it crashed). `none` may mean draft-filtered CI that never ran: report it in Step 10 as `no checks reported after gh pr ready (CI may be draft-filtered)` (`checks`: `none-after-ready`), never as "no CI configured" — that plain outcome is reachable only for a PR that was never a draft. `pass` with `TOTAL` > 0 and `SKIPPED` = `TOTAL` (the counts taken after `--watch`) is not coverage either: report `all checks skipped after gh pr ready (CI is draft-filtered)` (`checks`: `all-skipped`), never `pass`. `pass` with `CHANGED` = 0 and `SKIPPED` > 0 — the rollup never changed after `gh pr ready` and still carries skipped runs (a job that runs on drafts passed next to one that did not) — is a mixed rollup the ready event never re-ran: report `skipped runs never re-ran after gh pr ready (CI may be draft-filtered)` (`checks`: `unchanged-after-ready`), never plain `pass`. All three still merge (orchestrated: surface them to the parent) — like the gate degradations, a merge without CI coverage is never silent. `fail` → interactive: report the failing checks and ask the user; orchestrated: push, refresh the PR body, revert to draft (`gh pr ready --undo`, above), return a blocker citing the failing checks. Never merge over a failing check without explicit user authorization.
+`pass` or `none` → merge, with three honesty rules for a PR that was a draft (`READIED=1` — every PR that was ever a draft: every orchestrated PR except one created plain at Step 7 because drafts are unavailable, including one an earlier attempt readied before it crashed). `none` may mean draft-filtered CI that never ran: report it in Step 10 as `no checks reported after gh pr ready (CI may be draft-filtered)` (`checks`: `none-after-ready`), never as "no CI configured" — that plain outcome is reachable only for a PR that was never a draft. `pass` with `TOTAL` > 0 and `SKIPPED` = `TOTAL` (the counts taken after `--watch`) is not coverage either: report `all checks skipped after gh pr ready (CI is draft-filtered)` (`checks`: `all-skipped`), never `pass`. `pass` with `SKIPPED` < `TOTAL` and `NEVER_RERAN` > 0 — a skipped run with no non-skipped twin of the same name after `--watch` (a job that runs on drafts passed next to one the ready event never re-ran) — is a mixed rollup that is not coverage either: report `skipped runs never re-ran after gh pr ready (CI may be draft-filtered)` (`checks`: `unchanged-after-ready`), never plain `pass`; when every run is skipped, the all-skipped rule above wins. All three still merge (orchestrated: surface them to the parent) — like the gate degradations, a merge without CI coverage is never silent. `fail` → interactive: report the failing checks and ask the user; orchestrated: push, refresh the PR body, revert to draft (`gh pr ready --undo`, above), return a blocker citing the failing checks. Never merge over a failing check without explicit user authorization.
 
 ```bash
 gh pr merge --squash --delete-branch "$PR_NUM" \
@@ -325,7 +323,7 @@ git fetch --prune                                                            # d
 
 **Orchestrated:** every exit passes through this step — a blocker or failure returned from any step as much as a merge. Write the result file (the "Result file" section) before the message: the parent reads it first and falls back to the prose below only when the file is absent or unreadable, so an `outcome` that disagrees with your message is a bug in your run, not a tolerable drift.
 
-PR URL plus: Phase 1 iterations and findings applied, gate passes spent (0–2), final state (clean / degraded on credit-quota / gate-waived / cap-stop / errored), the checks-gate outcome (pass / no CI configured / no checks reported after `gh pr ready` — CI may be draft-filtered / all checks skipped after `gh pr ready` — CI is draft-filtered / skipped runs never re-ran after `gh pr ready` — CI may be draft-filtered), one line `checkpoint: created | refused (<reason>) | n/a` (n/a for interactive runs and for resumes of a PR that predated this run; an orphan resume that opened the draft at Step 4 reports `created` — a refusal means the crash-recovery checkpoint does not work on this repo), and whether the security lens ran. If the Codex gate was skipped on credit/quota or waived via `--no-codex-gate`, state it **prominently** here (and in orchestrated runs surface it to the parent) — a merge without Codex coverage is never buried in the report.
+PR URL plus: Phase 1 iterations and findings applied, gate passes spent (0–2), final state (clean / degraded on credit-quota / gate-waived / cap-stop / errored), the checks-gate outcome (pass / no CI configured / no checks reported after `gh pr ready` — CI may be draft-filtered / all checks skipped after `gh pr ready` — CI is draft-filtered / skipped runs never re-ran after `gh pr ready` — CI may be draft-filtered), one line `checkpoint: created | refused (<reason>) | n/a` (n/a for interactive runs, for resumes of a PR that predated this invocation, and for an exit before Step 4; an orphan resume that opened the draft at Step 4 reports `created` — a refusal means the crash-recovery checkpoint does not work on this repo), and whether the security lens ran. If the Codex gate was skipped on credit/quota or waived via `--no-codex-gate`, state it **prominently** here (and in orchestrated runs surface it to the parent) — a merge without Codex coverage is never buried in the report.
 
 ## Edge cases
 
