@@ -22,6 +22,9 @@
 #   9. the default-branch resolution one-liner is byte-identical at every site
 #  10. both SKILL files carry the /issue-< branch-contract match (placeholder
 #      spelling drift <N> vs <number> is a warning)
+#  11. the result.json key set (the line carrying `"outcome":`) is spelled
+#      identically in gh-issue and issue-runner — Claude skills and the Codex
+#      edition's canonical copies alike
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -236,6 +239,28 @@ if [ "$contract_ok" -eq 1 ]; then
   if [ "$sp_runner" != "$sp_gh" ]; then
     warn "branch-contract placeholder spelling differs: issue-runner uses '$sp_runner', gh-issue uses '$sp_gh'"
   fi
+fi
+
+# 11. result.json key set identical in gh-issue and issue-runner ----------------
+# The contract is the set of keys on every line carrying `"outcome":` (the shape
+# line, and gh-issue's write recipe). Values are free; keys must not drift.
+CANON_GH="$ROOT/codex/issue-runner/canonical/gh-issue/SKILL.md"
+result_keys() {
+  grep -F '"outcome":' "$1" | grep -oE '"[A-Za-z0-9_]+":' | tr -d '":' | sort -u | paste -sd, -
+}
+keys_ref="$(result_keys "$SKILL_GH")"
+if [ -z "$keys_ref" ]; then
+  err "result.json shape line (carrying '\"outcome\":') missing from ${SKILL_GH#"$ROOT"/}"
+else
+  keys_ok=1
+  for f in "$SKILL_RUNNER" "$CANON_GH" "$CANON_RUNNER"; do
+    k="$(result_keys "$f")"
+    if [ "$k" != "$keys_ref" ]; then
+      err "result.json key set drift in ${f#"$ROOT"/}: got '${k:-<none>}', gh-issue has '$keys_ref'"
+      keys_ok=0
+    fi
+  done
+  [ "$keys_ok" -eq 1 ] && ok "result.json key set identical across gh-issue and issue-runner (both editions): $keys_ref"
 fi
 
 if [ "$fail" -ne 0 ]; then
