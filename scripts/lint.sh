@@ -11,7 +11,9 @@
 #   3. --max-parallel default agrees across README, SKILL arg line, and the
 #      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line
 #   4. CHANGELOG has an entry for the manifest version
-#   5. the issue-body contract strings appear in both issue-plan and issue-runner
+#   5. the issue-body contract strings appear in both issue-plan and issue-runner,
+#      and the planner's body template ends with the `Files likely touched:` line —
+#      checked for the Claude skills and for the Codex edition's canonical copies
 #   6. no skill references retired command names (e.g. /to-issues)
 #   7. every ```bash block embedded in skills/*/SKILL.md parses (bash -n,
 #      after neutralizing <placeholder> tokens)
@@ -111,14 +113,32 @@ fi
 
 # 5. Issue-body contract strings shared by planner and runner ------------------
 SKILL_PLAN="$ROOT/skills/issue-plan/SKILL.md"
-for s in '## Blocked by' 'None - can start immediately'; do
-  for f in "$SKILL_PLAN" "$SKILL_RUNNER"; do
+# The Codex edition's wrappers read these canonical copies, not skills/.
+CANON_PLAN="$ROOT/codex/issue-runner/canonical/issue-plan/SKILL.md"
+CANON_RUNNER="$ROOT/codex/issue-runner/canonical/issue-runner/SKILL.md"
+for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:'; do
+  for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
     if ! grep -qF "$s" "$f"; then
       err "contract string '$s' missing from ${f#"$ROOT"/}"
     fi
   done
 done
-ok "issue-body contract strings present in planner and runner"
+ok "issue-body contract strings present in planner and runner (both editions)"
+# The runner parses the LAST body line beginning with `Files likely touched:`
+# (issue-runner Step 2), so the planner's body template — the ```markdown block
+# containing `## What to build` — must end with it.
+for f in "$SKILL_PLAN" "$CANON_PLAN"; do
+  tmpl_last="$(awk '
+    /^```markdown[[:space:]]*$/ { inb=1; hit=0; l=""; next }
+    inb && /^```[[:space:]]*$/  { inb=0; if (hit) { print l; exit }; next }
+    inb && /^## What to build/  { hit=1 }
+    inb && NF                   { l=$0 }
+  ' "$f")"
+  case "$tmpl_last" in
+    'Files likely touched:'*) ok "body template ends with 'Files likely touched:': ${f#"$ROOT"/}" ;;
+    *) err "body template's last line is not 'Files likely touched:' in ${f#"$ROOT"/} (got: '$tmpl_last')" ;;
+  esac
+done
 
 # 6. Retired command names ------------------------------------------------------
 if grep -rn 'to-issues' "$ROOT/skills" ; then
