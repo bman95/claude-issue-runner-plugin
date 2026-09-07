@@ -179,7 +179,8 @@ for f in "$SKILL_PLAN" "$CANON_PLAN"; do
 done
 # Two literals must agree across files: the `Part of #P` pattern the runner matches
 # and the planner promises (issue-runner Step 5 / issue-plan Step 4), and the Step 1
-# exclusion message the scenarios cite. The exact literal must appear at every site.
+# exclusion message (the scenarios cite it by prefix), pinned across both runner
+# editions. The exact literal must appear at every site.
 literals_ok=1
 for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
   if ! grep -qF '^Part of #[0-9]+$' "$f"; then
