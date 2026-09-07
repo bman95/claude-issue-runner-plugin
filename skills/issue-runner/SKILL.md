@@ -16,7 +16,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner` — all open issues (label-filtered, Step 1)
 - `/issue-runner 42 43 44` — exactly these issues; label filters bypassed
 - `/issue-runner --plan` — build and print the DAG, then exit (releasing the run lock)
-- `/issue-runner --status` — read-only: resolve `REPO_KEY` (the State block's first four lines — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`; for `implementing` issues also the `progress` line, or `no progress recorded` when the file is absent or empty), and exit. No state dir → say so.
+- `/issue-runner --status` — read-only: resolve `STATE_DIR` (the State block through its `STATE_DIR=` line: the four assignments plus the absolute-path check on `RUN_ROOT` — never lock, rotate, or initialize), print a per-issue table from `$STATE_DIR` (number, `status`, `error`, title from `details.json`; for `implementing` issues also the `progress` line, or `no progress recorded` when the file is absent or empty), and exit. No state dir → say so, naming the resolved path it looked at.
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --max-retries N` — cap on Step 4 re-dispatches per issue, self-resolved and user-authorized alike (default 2). Under it the orchestrator retries coordination/context blockers on its own; at it every further blocker on that issue goes to the user with the full retry history, and only the user can authorize more
@@ -27,32 +27,62 @@ Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** f
 
 ## State
 
-`STATE_DIR=/tmp/issue-runner/<repo-key>/state`, where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it. GitHub is the cross-run source of truth (Step 3a's resume check rediscovers in-flight work from open PRs); `$STATE_DIR` is run-scoped scratch for in-run coordination, and `state.prev.*` rotations are forensics only.
+`STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state` — a durable per-user location rather than `/tmp`, so state outlives a reboot (groundwork for resume pointers; the rotation and cross-run rules below are unchanged) — where `<repo-key>` is derived from the repository root so runs in **different repos never share state**. Resolve it once (below) and use the resolved absolute path everywhere after — subagents don't inherit it, so substitute the literal path into dispatch prompts (Step 3a), exactly as with `GH_ISSUE_SKILL`. Initialized only when a DAG is built (orchestrated runs and `--plan`, scope ≥ 2 — `--plan`'s `dag.json` is its artifact); the single-issue fast path and `--status` never initialize it. GitHub is the cross-run source of truth (Step 3a's resume check rediscovers in-flight work from open PRs); `$STATE_DIR` is run-scoped scratch for in-run coordination, and `state.prev.*` rotations are forensics only.
 
 ```bash
-# Namespace state by repo root so different repos never collide on a shared /tmp path.
+# Namespace state by repo root so different repos never collide on a shared run root.
 # The orchestrator never enters a worktree, so the toplevel is stable for the whole run.
 REPO_ROOT=$(git rev-parse --show-toplevel)
 # git hash-object, not sha1sum: sha1sum is absent on stock macOS, and the silent
 # pipeline failure would collapse the key to <basename>- — same-basename repos colliding.
 REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | git hash-object --stdin | cut -c1-8)
-RUN_ROOT=/tmp/issue-runner/$REPO_KEY
+# Durable per-user run root (XDG state dir), not /tmp: it survives reboots and macOS's
+# periodic /tmp purge, so run state — and resume pointers, once recorded — outlives the session.
+RUN_ROOT=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/$REPO_KEY
+# A relative root (the XDG spec calls a relative XDG_STATE_HOME invalid; refuse it rather than
+# silently fall back, since dispatch prompts carry this path literally) would resolve against
+# whatever cwd reads it — --status included — so fail here, before any path is used.
+case $RUN_ROOT in /*) ;; *) echo "run root is not absolute: $RUN_ROOT" >&2; exit 1;; esac
 STATE_DIR=$RUN_ROOT/state
+
+# Hard precondition, checked before the lock and the rotation: this session must be able to
+# create the root and write inside it. There is no fallback root. An unwritable root (HOME
+# unset or read-only, a root left behind by a session with wider permissions) is fixed in
+# place; a sandbox that denies the path (Codex workspace-write allows only the workspace,
+# /tmp and $TMPDIR by default) needs a relaunch, because writable roots are launch-time
+# options a running session cannot widen. A real write probe, not -w: sandboxes deny at
+# open(), not in the mode bits (and `true`, not `:`, so a POSIX-mode shell reaches the
+# message instead of aborting on the special builtin). On failure nothing is locked or rotated.
+mkdir -p "$RUN_ROOT" && true > "$RUN_ROOT/.write-probe" && rm -f "$RUN_ROOT/.write-probe" || {
+  echo "run root is not writable: $RUN_ROOT" >&2
+  echo "issue-runner keeps its state there and has no fallback root. Fix the permissions, or relaunch with that path writable: create ${RUN_ROOT%/*} from an unsandboxed shell, then \`codex --add-dir \"${RUN_ROOT%/*}\"\` (or list it under sandbox_workspace_write.writable_roots in config.toml); in other sandboxes allow-list the same path. Then retry." >&2
+  exit 1
+}
 
 # One run per repo. $PPID is the Claude Code process hosting this session — it
 # dies with the session, so a crashed run's lock reads stale and is taken over.
 # A live lock means another session is orchestrating this repo: stop and tell
 # the user; NEVER delete a live lock (the rotation below would yank a running
 # orchestration's state from under its implementers).
-mkdir -p "$RUN_ROOT"
+# Never proceed without the lock and a fresh state dir. Every write below is fatal on
+# failure — a root that turned unwritable after the probe, or a state dir this session
+# cannot move — rather than let the run continue lockless on stale state.
 if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
   echo "live issue-runner in this repo (lock: $RUN_ROOT/lock)" >&2; exit 1
 fi
-echo $PPID > "$RUN_ROOT/lock"
+echo $PPID > "$RUN_ROOT/lock" || { echo "cannot write lock: $RUN_ROOT/lock" >&2; exit 1; }
 
 find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
-[ -d "$STATE_DIR" ] && mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)"
-mkdir -p "$STATE_DIR"
+# Failures past this point release the lock just taken (truncate, which works even where the
+# directory is read-only; an empty lock reads stale): it holds this session's live PPID, so
+# leaving it behind would make a same-session retry read as a concurrent run. Only if the lock
+# still holds this PPID: two starts that both passed the liveness check race on the write, and
+# the loser must not blank the winner's live lock.
+if [ -d "$STATE_DIR" ]; then
+  mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)" \
+    || { echo "cannot rotate state: $STATE_DIR" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
+fi
+mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
 ```
 
 Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker"), `retries` (number of Step 4 re-dispatches so far; absent = 0. Step 4 increments it before every retry, self-resolved or user-authorized, and the Step 5 summary reports it).
@@ -297,4 +327,4 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 - **Single-issue scope → inline fast path.** No orchestrator state, no DAG, no Step 5. The run still isolates in a worktree, but gh-issue's interactive mode owns it (creates it in Step 4, removes it in Step 9).
 - **The orchestrator never hand-manages worktrees.** In an orchestrated run, isolation comes only from dispatching implementers with the Agent tool; the parent touches worktrees solely in Step 5 cleanup. (The single-issue fast path is not orchestrated — gh-issue creates and removes its own worktree directly.)
 - **The orchestrator never enters a worktree.** In an orchestrated run all in-worktree work (fixes, re-reviews, merges) belongs to implementer subagents, so the parent's cwd and `git status` stay trustworthy and Step 5 cleanup is safe.
-- **Single-host state, one run per repo.** State is namespaced per repo (`/tmp/issue-runner/<repo-key>/state`), so runs in different repos are isolated; within a repo, the PID lock (`$RUN_ROOT/lock`) refuses a second concurrent run. Never delete a live lock to force one.
+- **Single-host state, one run per repo.** State is namespaced per repo (`${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`), so runs in different repos are isolated; within a repo, the PID lock (`$RUN_ROOT/lock`) refuses a second concurrent run. Never delete a live lock to force one.
