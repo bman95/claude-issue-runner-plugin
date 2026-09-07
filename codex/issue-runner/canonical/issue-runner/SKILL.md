@@ -50,8 +50,9 @@ STATE_DIR=$RUN_ROOT/state
 # place; a sandbox that denies the path (Codex workspace-write allows only the workspace,
 # /tmp and $TMPDIR by default) needs a relaunch, because writable roots are launch-time
 # options a running session cannot widen. A real write probe, not -w: sandboxes deny at
-# open(), not in the mode bits. Side-effect-free on failure — nothing is locked or rotated.
-mkdir -p "$RUN_ROOT" && : > "$RUN_ROOT/.write-probe" && rm -f "$RUN_ROOT/.write-probe" || {
+# open(), not in the mode bits (and `true`, not `:`, so a POSIX-mode shell reaches the
+# message instead of aborting on the special builtin). On failure nothing is locked or rotated.
+mkdir -p "$RUN_ROOT" && true > "$RUN_ROOT/.write-probe" && rm -f "$RUN_ROOT/.write-probe" || {
   echo "run root is not writable: $RUN_ROOT" >&2
   echo "issue-runner keeps its state there and has no fallback root. Fix the permissions, or relaunch with that path writable: create ${RUN_ROOT%/*} from an unsandboxed shell, then \`codex --add-dir \"${RUN_ROOT%/*}\"\` (or list it under sandbox_workspace_write.writable_roots in config.toml); in other sandboxes allow-list the same path. Then retry." >&2
   exit 1
@@ -73,12 +74,14 @@ echo $PPID > "$RUN_ROOT/lock" || { echo "cannot write lock: $RUN_ROOT/lock" >&2;
 find "$RUN_ROOT" -maxdepth 1 -name 'state.prev.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
 # Failures past this point release the lock just taken (truncate, which works even where the
 # directory is read-only; an empty lock reads stale): it holds this session's live PPID, so
-# leaving it behind would make a same-session retry read as a concurrent run.
+# leaving it behind would make a same-session retry read as a concurrent run. Only if the lock
+# still holds this PPID: two starts that both passed the liveness check race on the write, and
+# the loser must not blank the winner's live lock.
 if [ -d "$STATE_DIR" ]; then
   mv "$STATE_DIR" "$RUN_ROOT/state.prev.$(date +%s)" \
-    || { echo "cannot rotate state: $STATE_DIR" >&2; : > "$RUN_ROOT/lock"; exit 1; }
+    || { echo "cannot rotate state: $STATE_DIR" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
 fi
-mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; : > "$RUN_ROOT/lock"; exit 1; }
+mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
 ```
 
 Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker").
