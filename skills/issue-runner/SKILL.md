@@ -19,6 +19,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner --status` — read-only: resolve `STATE_DIR` (the State block through its `STATE_DIR=` line: the four assignments plus the absolute-path check on `RUN_ROOT` — never lock, rotate, or initialize), report the session pointer whenever `$RUN_ROOT` exists (`$RUN_ROOT/session` absent or blank → `no session id recorded`; otherwise print the id and whether it equals `$CLAUDE_CODE_SESSION_ID` — `matches this session` / `recorded by another session`, or `current session id unavailable` when the variable is unset), print a per-issue table for the issues in `scope.txt` — never the directory listing, which after a re-entry may hold dirs from outside the scope — (number, `status`, `error`, title from `details.json`; for `implementing` issues also the `progress` line **and its age** from the file's mtime — `step=8.1 iter=2 pr=#123 (age 12m)`, computed with the `stat` fallback in Step 3 item 4 — or `no progress recorded` when the file is absent or empty; for `blocked`/`done`/`failed`/`closed-externally` issues also the `outcome` and `pr` from `result.json`, or `no result recorded` when the file is absent or unreadable), and exit. The age is what lets a human see a stall building before `--hang-minutes` fires. No state dir → say so, naming the resolved path it looked at.
 - `/issue-runner --max-parallel N` — concurrency cap (default 5); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --hang-minutes N` — hung-implementer threshold (default 30): an in-flight implementer whose `progress` file has not changed for more than N minutes is stopped and classified through Step 3 item 5 — `done` if its PR merged and the issue closed, `blocked` if the PR merged but the issue is still open (confirm and close by hand), `closed-externally` if the issue closed without merge proof, otherwise `failed` with `implementer hung (no completion)` (Step 3 item 4)
+- `/issue-runner --lock-ttl-minutes N` — run-lock heartbeat threshold (default 120): the State block refuses a second run when the existing `$RUN_ROOT/lock`'s PID is alive **or** its mtime is younger than N minutes — the orchestrator refreshes that mtime on every pass through the Step 3 loop and after every `AskUserQuestion` once state is initialized (State section), so a genuinely running orchestration's lock never goes stale on either signal
 - `/issue-runner --max-codex-iterations N` — Codex gate cap passed to every implementer (default 2)
 - `/issue-runner --max-retries N` — cap on Step 4 re-dispatches per issue, self-resolved and user-authorized alike (default 2). Under it the orchestrator retries coordination/context blockers on its own; at it every further blocker on that issue goes to the user with the full retry history, and only the user can authorize more
 - `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
@@ -61,7 +62,15 @@ mkdir -p "$RUN_ROOT" && true > "$RUN_ROOT/.write-probe" && rm -f "$RUN_ROOT/.wri
 }
 
 # One run per repo. $PPID is the Claude Code process hosting this session — it
-# dies with the session, so a crashed run's lock reads stale and is taken over.
+# dies with the session, so a crashed run's lock normally reads stale and is taken
+# over. PID liveness alone assumes every Bash call's parent is that same long-lived
+# process; a platform that interposes a wrapper shell breaks the assumption (kill -0
+# reads dead even while the orchestrating session is genuinely alive between calls),
+# and PID reuse can make a dead run's PID false-positive as live. A heartbeat catches
+# the first failure mode: liveness is PID-alive OR this file's mtime younger than
+# LOCK_TTL_MINUTES, and the orchestrator refreshes that mtime on every pass through
+# the Step 3 loop and after every AskUserQuestion once state is initialized (below),
+# so a genuinely running orchestration's lock never goes stale on either signal.
 # A live lock means an orchestration may still be running in this repo — another
 # session's, or this very process's own run cut off mid-turn with its background
 # implementers still alive: stop and tell the user (REFERENCE.md says how to
@@ -70,8 +79,35 @@ mkdir -p "$RUN_ROOT" && true > "$RUN_ROOT/.write-probe" && rm -f "$RUN_ROOT/.wri
 # Never proceed without the lock and a fresh state dir. Every write below is fatal on
 # failure — a root that turned unwritable after the probe, or a state dir this session
 # cannot move — rather than let the run continue lockless on stale state.
-if [ -f "$RUN_ROOT/lock" ] && kill -0 "$(cat "$RUN_ROOT/lock" 2>/dev/null)" 2>/dev/null; then
-  echo "live issue-runner in this repo (lock: $RUN_ROOT/lock)" >&2; exit 1
+LOCK_TTL_MINUTES=${LOCK_TTL_MINUTES:-120}
+if [ -f "$RUN_ROOT/lock" ]; then
+  LOCK_PID=$(cat "$RUN_ROOT/lock" 2>/dev/null)
+  PID_ALIVE=false
+  [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null && PID_ALIVE=true
+  # An empty lock (a failure path below truncates rather than deletes, so a same-
+  # session retry never reads as concurrent) never reads as a fresh heartbeat either —
+  # both signals require a recorded PID.
+  HEARTBEAT_FRESH=false
+  [ -n "$LOCK_PID" ] && [ -z "$(find "$RUN_ROOT/lock" -mmin +"$LOCK_TTL_MINUTES" 2>/dev/null)" ] && HEARTBEAT_FRESH=true
+  # Same session re-entering its own unfinished run (the resume-pointer rule below)
+  # bypasses the heartbeat signal only: a resumed process gets a fresh $PPID (so
+  # PID_ALIVE is already false whenever this matters), and if the crash was recent a
+  # heartbeat that still reads fresh would otherwise refuse the very session that owns
+  # this lock. A genuinely live PID stays refused regardless of session match — that is
+  # this same process's own run cut off mid-turn with implementers still running, and
+  # REFERENCE.md's confirm-and-delete recipe is the intended recovery, not a bypass.
+  if [ "$PID_ALIVE" = false ] && [ "$HEARTBEAT_FRESH" = true ] \
+     && [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] && [ "$(cat "$RUN_ROOT/session" 2>/dev/null)" = "$CLAUDE_CODE_SESSION_ID" ]; then
+    HEARTBEAT_FRESH=false
+  fi
+  if [ "$PID_ALIVE" = true ] || [ "$HEARTBEAT_FRESH" = true ]; then
+    # GNU stat first, BSD/macOS stat as the fallback (same portability concern as REPO_KEY).
+    LOCK_MTIME=$(stat -c %Y "$RUN_ROOT/lock" 2>/dev/null || stat -f %m "$RUN_ROOT/lock")
+    AGE_MIN=$(( ($(date +%s) - LOCK_MTIME + 59) / 60 ))   # round up, same convention as the hang check
+    PID_WORD=dead; [ "$PID_ALIVE" = true ] && PID_WORD=alive
+    echo "live issue-runner in this repo (lock: $RUN_ROOT/lock): pid $LOCK_PID $PID_WORD, last heartbeat ${AGE_MIN} min ago" >&2
+    exit 1
+  fi
 fi
 echo $PPID > "$RUN_ROOT/lock" || { echo "cannot write lock: $RUN_ROOT/lock" >&2; exit 1; }
 
@@ -112,9 +148,17 @@ printf '%s\n' "${CLAUDE_CODE_SESSION_ID:-}" > "$RUN_ROOT/session.tmp.$PPID" && m
   || { echo "cannot write session pointer: $RUN_ROOT/session" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; rm -f "$RUN_ROOT/session.tmp.$PPID" 2>/dev/null || true; exit 1; }
 ```
 
-Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`, `summary.md` (the Step 5 summary, written when the scope shares a tracking issue and posted from there); beside `state/` in `$RUN_ROOT`: `lock` and `session` (one line, the orchestrator's `$CLAUDE_CODE_SESSION_ID`, written by the State block once per run and removed with the lock at a clean release). Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded at Step 3 item 5 for every returned implementer, and by item 4 for a hung one — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker"), `retries` (number of Step 4 re-dispatches so far; absent = 0. Step 4 increments it before every retry, self-resolved or user-authorized, and the Step 5 summary reports it), `result.json` (one JSON line the implementer writes immediately before its final message, on every exit — see gh-issue "Result file"), `branch` (written by Step 3a only when it resumes a PR on a branch outside the `/issue-N-` contract; item 5's merge proof accepts that branch), `agent` (the id the Agent tool returned at dispatch — Step 3 item 4 resolves a hung implementer's worktree by it, since a stopped agent never reports one).
+**Heartbeat.** Once the lock is held, keep its mtime fresh so the liveness check above never misreads a genuinely running orchestration as stale: touch it (guarded by the same ownership check the failure paths above use, so a lock this session no longer owns is never refreshed)
 
-`session` and `agent` are **resume pointers**: written while the run is healthy because a process killed abruptly gets no chance to write anything at failure time (REFERENCE.md rationale). Neither is ever a status input — item 4 reads `agent` only to locate a hung implementer's worktree, and the State block reads `session` only to decide whether to rotate. They exist for the recovery of a run killed mid-flight, which starts from the session id (the harness files every agent's worktree under it) and each issue's agent id.
+```bash
+[ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && touch "$RUN_ROOT/lock" 2>/dev/null
+```
+
+at the top of every pass through the Step 3 loop (item 4's "on every wake" — Step 3) and immediately after every `AskUserQuestion` call returns from this point on (Step 2's out-of-scope-edges question; Step 4's escalations) — `Step 0` and Step 1's own `AskUserQuestion` calls (Codex/Agent-tool preflight, parked labels, dirty-tree audit) all run before this block, so there is no lock yet to touch.
+
+Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`, `summary.md` (the Step 5 summary, written when the scope shares a tracking issue and posted from there); beside `state/` in `$RUN_ROOT`: `lock` (the orchestrating process's `$PPID`; its mtime is the heartbeat above) and `session` (one line, the orchestrator's `$CLAUDE_CODE_SESSION_ID`, written by the State block once per run and removed with the lock at a clean release). Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded at Step 3 item 5 for every returned implementer, and by item 4 for a hung one — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker"), `retries` (number of Step 4 re-dispatches so far; absent = 0. Step 4 increments it before every retry, self-resolved or user-authorized, and the Step 5 summary reports it), `result.json` (one JSON line the implementer writes immediately before its final message, on every exit — see gh-issue "Result file"), `branch` (written by Step 3a only when it resumes a PR on a branch outside the `/issue-N-` contract; item 5's merge proof accepts that branch), `agent` (the id the Agent tool returned at dispatch — Step 3 item 4 resolves a hung implementer's worktree by it, since a stopped agent never reports one).
+
+`session` and `agent` are **resume pointers**: written while the run is healthy because a process killed abruptly gets no chance to write anything at failure time (REFERENCE.md rationale). Neither is ever a status input — item 4 reads `agent` only to locate a hung implementer's worktree, and the State block reads `session` only to decide whether to bypass the heartbeat signal in the lock's liveness check and whether to rotate. They exist for the recovery of a run killed mid-flight, which starts from the session id (the harness files every agent's worktree under it) and each issue's agent id.
 
 `result.json` carries exactly these keys (the key set is lint-checked against gh-issue's copy):
 
@@ -174,7 +218,7 @@ Fail closed: treat anything other than a reply whose only non-blank line is exac
 
 **Dirty-tree audit.** `git status --porcelain=v1 -uall`. If anything is reported, show every line and ask: stash / commit / discard / proceed-as-is. Never start orchestration on a dirty tree without an explicit choice. Keep the output as a snapshot for Step 5's clean check.
 
-**Initialize state** (scope ≥ 2): validate `HANG_MINUTES` first (Step 3's `case`; a bad value must exit before the lock is taken), then run the State block, write `scope.txt` and `gh_issue_skill_path`, then save each issue's details. If the State block printed `same session re-entering its unfinished run`, tell the user so: the dir may still hold `issue-N/` dirs from that run outside the new scope — leave them untouched; every per-issue walk below is keyed on `scope.txt`, never the directory listing.
+**Initialize state** (scope ≥ 2): validate `HANG_MINUTES` and `LOCK_TTL_MINUTES` first (Step 3's `case`; a bad value must exit before the lock is taken — `LOCK_TTL_MINUTES` doubly so, since the State block's own liveness check uses it), then run the State block, write `scope.txt` and `gh_issue_skill_path`, then save each issue's details. If the State block printed `same session re-entering its unfinished run`, tell the user so: the dir may still hold `issue-N/` dirs from that run outside the new scope — leave them untouched; every per-issue walk below is keyed on `scope.txt`, never the directory listing.
 
 ```bash
 for N in $SCOPE; do
@@ -187,7 +231,7 @@ done
 
 **Primary source — the `## Blocked by` section** emitted by `/issue-plan`: every bullet referencing `#X` is an edge N→X; a literal "None - can start immediately" means no deps. **Fallback heuristic** for issues without that section — scan body + comments for inline phrases: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
 
-**Out-of-scope edges are never dropped silently.** For each edge pointing outside `scope.txt`, ask the user: **extend** (pull the prerequisite into scope: append it to `scope.txt` and save its `details.json` as in Step 1), **drop-issue** (remove the dependent), or **override** (prerequisite satisfied externally; record in `$STATE_DIR/overrides.txt`). A prerequisite that is a tracking issue (fetch its body first — `gh issue view "$X" --json body -q .body` — and apply Step 1's test) is never extended into scope — it has nothing to merge, so it could never reach `done` — print the `Excluded #P` line and offer only **override** *(recommended)* or **drop-issue**.
+**Out-of-scope edges are never dropped silently.** For each edge pointing outside `scope.txt`, ask via `AskUserQuestion`: **extend** (pull the prerequisite into scope: append it to `scope.txt` and save its `details.json` as in Step 1), **drop-issue** (remove the dependent), or **override** (prerequisite satisfied externally; record in `$STATE_DIR/overrides.txt`). Touch the lock heartbeat once the question returns (State section) — state is initialized by this point, unlike Step 0/1's own questions. A prerequisite that is a tracking issue (fetch its body first — `gh issue view "$X" --json body -q .body` — and apply Step 1's test) is never extended into scope — it has nothing to merge, so it could never reach `done` — print the `Excluded #P` line and offer only **override** *(recommended)* or **drop-issue**.
 
 **Conflict edges.** Two in-scope issues that touch the same files must not run in parallel — each merges to the default branch independently. Derive them from the first source that covers the scope:
 
@@ -210,12 +254,12 @@ To override an order, the user re-invokes with explicit numbers in the desired o
 
 ### Step 3 — execute
 
-Set `MAX_PARALLEL` (default 5) and `HANG_MINUTES` (default 30, from `--hang-minutes`). `HANG_MINUTES` is validated at Step 1, **before the State block takes the run lock** — reject anything but a positive integer: `case $HANG_MINUTES in ''|*[!0-9]*|0*) echo "--hang-minutes must be a positive integer" >&2; exit 1;; esac` — because `find -mmin` with a bad value errors silently and hang detection would be off with no message, and an exit after the lock is taken would strand it (the host PID stays alive, so a corrected re-run in the same session would read as a concurrent run). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`) or paused (`blocked`, plus any `pending` issue waiting on a `blocked` ancestor — item 6's blocked-chain case):
+Set `MAX_PARALLEL` (default 5), `HANG_MINUTES` (default 30, from `--hang-minutes`), and `LOCK_TTL_MINUTES` (default 120, from `--lock-ttl-minutes` — the run-lock heartbeat threshold the State block's liveness check uses). Both `HANG_MINUTES` and `LOCK_TTL_MINUTES` are validated at Step 1, **before the State block takes the run lock** — reject anything but a positive integer: `case $HANG_MINUTES in ''|*[!0-9]*|0*) echo "--hang-minutes must be a positive integer" >&2; exit 1;; esac` and the same pattern for `LOCK_TTL_MINUTES`/`--lock-ttl-minutes` — because `find -mmin` with a bad value errors silently and detection would be off with no message, and an exit after the lock is taken would strand it (the host PID stays alive, so a corrected re-run in the same session would read as a concurrent run); `LOCK_TTL_MINUTES` doubly so, since the State block's own lock-liveness check runs `find -mmin` against it before the loop this paragraph otherwise describes ever starts. Heartbeat: touch `$RUN_ROOT/lock` (State section) at the top of every pass through this loop — including every wake in item 4, below — so a live run's lock never reads stale to a concurrent liveness check. Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`) or paused (`blocked`, plus any `pending` issue waiting on a `blocked` ancestor — item 6's blocked-chain case):
 
 1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Any `pending` issue with a `closed-externally` dep → `skipped`, error `"dependency closed externally without merge proof: #X"` — the dep is terminal but its work is unverified, so dependents must not build on it (and must not be mislabeled as a cycle). Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
 2. **Ready set** = `pending` ∧ all deps `done` ∧ not in flight.
 3. **Fill slots** up to `MAX_PARALLEL` with dispatches (Step 3a); mark `implementing`.
-4. **Wait** for any in-flight agent to complete. The wait is event-driven — a completion re-invokes you — so also arm a wake-up, or a stall is never noticed while no sibling completes: a `Monitor` until-loop over the check below, or a `run_in_background` Bash `sleep` of well under `HANG_MINUTES` whose exit re-invokes you (a foreground loop is capped by the Bash tool's timeout and never reaches the threshold). On every wake — completion or timer — first drain any received result through item 5, then run the hang check over each issue still in flight. An implementer is **hung** when all three hold: its agent is still running (no result received — confirm with the host's agent list immediately before stopping it; a result that arrives wins and goes through item 5); the issue is `implementing` (a `blocked` issue has no agent in flight — its implementer already returned, so its stale file never counts); and its `progress` file has not changed for more than `HANG_MINUTES` — re-run the check right before the stop, since a step-boundary write can land in between:
+4. **Wait** for any in-flight agent to complete. The wait is event-driven — a completion re-invokes you — so also arm a wake-up, or a stall is never noticed while no sibling completes: a `Monitor` until-loop over the check below, or a `run_in_background` Bash `sleep` of well under `HANG_MINUTES` whose exit re-invokes you (a foreground loop is capped by the Bash tool's timeout and never reaches the threshold). On every wake — completion or timer — first touch the lock heartbeat (`$RUN_ROOT/lock`; State section), then drain any received result through item 5, then run the hang check over each issue still in flight. An implementer is **hung** when all three hold: its agent is still running (no result received — confirm with the host's agent list immediately before stopping it; a result that arrives wins and goes through item 5); the issue is `implementing` (a `blocked` issue has no agent in flight — its implementer already returned, so its stale file never counts); and its `progress` file has not changed for more than `HANG_MINUTES` — re-run the check right before the stop, since a step-boundary write can land in between:
 
    ```bash
    P="$STATE_DIR/issue-$N/progress"
@@ -365,7 +409,7 @@ Per-issue guidance (retry context, scope limits, "do not edit X" lists) always g
 
 ### Step 4 — handle blocked / failed issues
 
-Set `MAX_RETRIES` (default 2; `--max-retries`). Read the agent's error message and the issue's retry count, `$STATE_DIR/issue-N/retries`: absent or empty = 0; a non-numeric file is a corrupted counter — treat it as at the cap, and before any retry rewrite it from the number of `## Retry K` sections in `guidance.md` rather than guess the spend.
+Set `MAX_RETRIES` (default 2; `--max-retries`). Read the agent's error message and the issue's retry count, `$STATE_DIR/issue-N/retries`: absent or empty = 0; a non-numeric file is a corrupted counter — treat it as at the cap, and before any retry rewrite it from the number of `## Retry K` sections in `guidance.md` rather than guess the spend. Touch the lock heartbeat (State section) immediately after every `AskUserQuestion` in this step returns — an escalation can wait indefinitely on a human, and the loop's own top-of-pass touch does not run again until Step 4 resolves.
 
 **Under the cap, try to resolve it yourself first** — you hold run-wide context the implementer lacks: the DAG, the other issues' status, freshly merged PRs, the whole repo. If the blocker is coordination or context (e.g. "dependency #X just merged — read its changes from the default branch", a question answerable from another issue's body or the code), write the answer to `$STATE_DIR/issue-N/guidance.md` as the next `## Retry K` section (the first escalation below says what it carries) and retry the implementer without involving the user.
 
@@ -438,4 +482,4 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 - **Single-issue scope → inline fast path.** No orchestrator state, no DAG, no Step 5. The run still isolates in a worktree, but gh-issue's interactive mode owns it (creates it in Step 4, removes it in Step 9).
 - **The orchestrator never hand-manages worktrees.** In an orchestrated run, isolation comes only from dispatching implementers with the Agent tool; the parent touches worktrees solely in Step 5 cleanup. (The single-issue fast path is not orchestrated — gh-issue creates and removes its own worktree directly.)
 - **The orchestrator never enters a worktree.** In an orchestrated run all in-worktree work (fixes, re-reviews, merges) belongs to implementer subagents, so the parent's cwd and `git status` stay trustworthy and Step 5 cleanup is safe.
-- **Single-host state, one run per repo.** State is namespaced per repo (`${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`), so runs in different repos are isolated; within a repo, the PID lock (`$RUN_ROOT/lock`) refuses a second concurrent run. Never delete a live lock to force one (the own-process exception in REFERENCE.md aside).
+- **Single-host state, one run per repo.** State is namespaced per repo (`${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`), so runs in different repos are isolated; within a repo, the lock (`$RUN_ROOT/lock`) refuses a second concurrent run whenever its PID is alive **or** its heartbeat mtime is younger than `--lock-ttl-minutes` (State section). Never delete a live lock to force one (the own-process exception in REFERENCE.md aside).

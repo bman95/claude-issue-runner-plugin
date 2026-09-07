@@ -74,6 +74,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress and per-issue outcomes (read-only)
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --hang-minutes N             # hung-implementer threshold: progress file unchanged for more than N minutes (default 30)
+/issue-runner:issue-runner --lock-ttl-minutes N         # run-lock heartbeat threshold: refuse a second run while the lock's PID is alive or its mtime is younger than N minutes (default 120)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
 /issue-runner:issue-runner --max-retries N              # Step 4 re-dispatches per issue before every blocker escalates to you (default 2)
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
@@ -103,7 +104,7 @@ The `gh-issue` implementer skill is bundled — no separate installation.
 ## Known limitations
 
 - **Trust the issue authors.** Implementers consume issue bodies and comments verbatim as their task spec and, in orchestrated mode, hold merge authority (`gh pr merge` with no human gate). Do **not** point `/issue-runner` at a repo whose issues can be authored by untrusted parties — a malicious issue body is prompt-injection executed as instructions by an agent that can merge to your default branch. The pipeline is safe when you author the issues yourself (via `/issue-plan`); the spec instructs implementers to treat issue content as data, but that is a mitigation, not a sandbox.
-- **Single-host.** State lives at `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated; within a repo, a PID lock refuses a second concurrent run (a crashed run's lock reads stale and is taken over).
+- **Single-host.** State lives at `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`, namespaced by repo root, so runs in **different** repos are isolated; within a repo, a lock refuses a second concurrent run while its PID is alive **or** its heartbeat mtime is younger than `--lock-ttl-minutes` (default 120) — a crashed run's lock ages past both signals and is taken over.
 - **Explicit intent recommended.** Ask for `issue-plan`, `issue-runner`, or `gh-issue` by name when you want a mutating GitHub workflow; Codex can then select the matching bundled skill.
 - **Re-runs resume open PRs.** Dispatch detects an existing open PR for an issue (head branch matches `/issue-<N>-`) and continues on its branch instead of opening a duplicate — including the **draft** PR an orchestrated implementer opens right after planning, so a run killed before implementation (or a host that lost its local state) resumes from its plan. Close the PR first for a from-scratch retry (`gh pr close <P> --delete-branch`, so the remote branch goes too).
 - **No automated tests.** Behavior is validated by production runs documented in `CHANGELOG.md`; `scripts/lint.sh` additionally syntax-checks the embedded bash recipes (`bash -n`) and guards recipe drift across the skill files, but nothing exercises the workflows end-to-end.
