@@ -22,7 +22,7 @@ For troubleshooting and the rationale behind the defensive recipes, see [REFEREN
 - `/issue-runner --no-codex-gate` — run without the Codex certification gate: every implementer merges on local fresh-eyes convergence alone, recorded in each PR body exactly like the credit/quota degradation
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass; conflict edges from `Files likely touched:` intersection are still computed (Step 2)
 
-Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** for an issue instead of opening a duplicate (Step 3a resume check). Re-invoke with **only** the unfinished issue numbers — full scope would re-implement completed issues. Close the old PR first only when you want a from-scratch retry.
+Re-runs are fresh orchestrations, but dispatch **resumes an existing open PR** for an issue instead of opening a duplicate (Step 3a resume check). Re-invoke with **only** the unfinished issue numbers — full scope would re-implement completed issues. Close the old PR first only when you want a from-scratch retry (`gh pr close <P> --delete-branch`: the remote branch must go too, or the fresh run's push is rejected).
 
 ## State
 
@@ -145,12 +145,20 @@ Set `MAX_PARALLEL` (default 5). Mark every issue `pending`, then loop until all 
 **Resume check (before every dispatch).** The branch contract (`<type>/issue-<N>-<slug>`, gh-issue Step 4) makes an issue's in-flight work discoverable:
 
 ```bash
-gh pr list --state open --json number,headRefName \
-  --jq ".[] | select(.headRefName | test(\"/issue-$N-\")) | \"#\(.number) \(.headRefName)\""
+# 1. Branch contract — PRs this skill opened, including the draft checkpoint an
+#    implementer opens right after planning (gh-issue Step 4): a draft is an open PR.
+gh pr list --state open --json number,headRefName,isDraft \
+  --jq ".[] | select(.headRefName | test(\"/issue-$N-\")) | \"#\(.number) \(.headRefName) draft=\(.isDraft)\""
+
+# 3. Orphan branch — pushed by a checkpoint whose `gh pr create` never ran
+#    (gh-issue Step 4). There is no PR to match, so probe the remote directly.
+#    Exit 2 = no such branch (the normal case); a hit still needs classifying (below).
+git ls-remote --exit-code --heads origin "*/issue-$N-*" || true
 ```
 
-- **No match** → dispatch the template below as-is (fresh branch, new PR).
-- **One match** (`#P` on branch `B`) → resume, don't duplicate. If `git worktree list --porcelain` shows `B` checked out in a worktree, dispatch **without** `isolation: worktree` and tell the agent to `cd` there first (exactly like a Step 4 retry). Otherwise keep `isolation: worktree` and add to the prompt: check out `B` (fetch first, no new branch), skip PR creation, push to PR `#P`.
+- **No match anywhere** → dispatch the template below as-is (fresh branch, new PR).
+- **Branch only** (probe 3 hit, no open PR on it) → classify it first with `gh pr list --head <B> --state all --json number,state`: a **merged** PR → not an orphan but the undeleted head branch of landed work — that merge is positive proof, so `git push origin --delete <B>` and dispatch fresh; a **closed** PR → someone rejected that work: ask the user (resume it, or delete the branch and dispatch fresh); **no PR at all** → a true orphan: resume on that branch exactly like a one-match dispatch, naming the branch and stating there is no PR yet — gh-issue Step 7 creates it. Never dispatch a fresh run over an orphan: its checkpoint guard would return the same blocker on every attempt.
+- **One match** (`#P` on branch `B`) → resume, don't duplicate. Either way the prompt names both the branch and the PR: continue on `B`, skip the Step 4 checkpoint, skip only `gh pr create` in gh-issue Step 7 (the body rewrite still applies), push to PR `#P`. If `git worktree list --porcelain` shows `B` checked out in a worktree, dispatch **without** `isolation: worktree` and tell the agent to `cd` there first (exactly like a Step 4 retry); otherwise keep `isolation: worktree` and tell it to check out `B` (fetch first, no new branch). A `draft=true` match is the normal shape of a run that died before or during implementation — its body carries the plan (gh-issue Step 4 checkpoint), and the resumed implementer starts from that plan instead of from scratch (gh-issue Step 3). Resume it exactly like any other match.
 - **Several matches** → duplicates from earlier runs: ask the user which PR to resume and close the rest.
 
 Clear any prior attempt's marker first — `rm -f "$STATE_DIR/issue-N/progress"` — so `--status` never shows a stale line as current. One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, and `<STATE_DIR>` (resolved absolute paths):
@@ -204,7 +212,7 @@ Read the agent's error message. **Try to resolve it yourself first** — you hol
 
 **Escalate to the user only** for decisions that change scope, product behavior, or accept risk: merging despite open findings, dropping or skipping an issue, picking between contradictory requirements, spending more budget. When escalating, present the blocker, the latest findings, and your recommendation. Escalations, cheapest first:
 
-- **Retry the implementer.** Write the user's guidance plus any finding text to `$STATE_DIR/issue-N/guidance.md` (append a `## Retry N` section). Re-dispatch per Step 3a **without** `isolation: worktree`, adding to the prompt: the existing worktree path (`cd` there first; continue on the same branch) and the existing PR number (push to the same PR). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree.
+- **Retry the implementer.** Write the user's guidance plus any finding text to `$STATE_DIR/issue-N/guidance.md` (append a `## Retry N` section). Re-dispatch per Step 3a **without** `isolation: worktree`, adding to the prompt: the existing worktree path (`cd` there first; continue on the same branch; skip the Step 4 checkpoint) and the existing PR number (push to the same PR — or, if the checkpoint never created one, that there is no PR yet and Step 7 creates it). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree.
 - **Hand off to `/codex:rescue`** for a fresh investigation; pass the worktree path and the latest review log.
 - **Mark `failed`** and let the cascade skip dependents.
 - **Bump the Codex cap and re-run** — only for a converged-but-unverified cap-stop: `/issue-runner <N> --max-codex-iterations M`. The re-run's resume check picks up the existing PR and branch.
@@ -239,7 +247,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, and surface anything new — never auto-discard. Then release the run lock: `rm -f "$RUN_ROOT/lock"`.
 
-**Summary table**: number, status, title, error — and for every `failed` issue (hung ones included) the last `progress` line, e.g. `last progress: step=8.1 iter=2 pr=#123`, or `no progress recorded` when absent or empty. It says where the implementer stopped, not what it finished. Also aggregate, per issue and as totals, the Phase 1 iterations and Codex gate passes (0–2) each implementer reports (gh-issue Step 10), plus any gate degradations/waivers — so review-loop caps get tuned from data, not folklore. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
+**Summary table**: number, status, title, error — and for every `failed` issue (hung ones included) the last `progress` line, e.g. `last progress: step=8.1 iter=2 pr=#123`, or `no progress recorded` when absent or empty. It says where the implementer stopped, not what it finished. For every issue that is not `done` (`blocked`/`failed`/`skipped`/`closed-externally`), look for its open PR with the Step 3a branch-contract query (`gh pr list --state open --json number,headRefName,isDraft` filtered on `/issue-<N>-` — it needs no worktree, which is exactly what a crashed run lacks) and add the PR number and its draft state. Every orchestrated PR that *returns* unfinished is a draft (gh-issue readies it only at Step 9 and reverts it on any blocker below that line), so `isDraft` alone does not say how far it got — read `gh pr view <P> --json isDraft,body` and the branch: a body still carrying `## Plan` **and** a branch holding only the checkpoint commit (`git fetch origin "$DEFAULT_BRANCH" <B>` — both, or a stale base inflates the count — then `git rev-list --count "origin/$DEFAULT_BRANCH..origin/<B>"` = 1) → `draft (checkpoint)`; any other draft → `draft (implemented, not ready)`. Neither is ever ready-to-merge; GitHub refuses to merge a draft anyway. A non-draft unfinished PR is one of two things, and `isDraft` distinguishes neither: a run that reported `checkpoint: refused` (drafts unavailable), or a run that died inside gh-issue's ready→merge window (a crash is not a blocker; nothing reverted it) — label both from the body and branch exactly as above, and treat the second as the one unfinished PR a human could merge by hand: say so. Probe 3 of Step 3a also surfaces orphan branches (pushed, no PR) — list them as `branch only (no PR)`. Also aggregate, per issue and as totals, the Phase 1 iterations and Codex gate passes (0–2) each implementer reports (gh-issue Step 10), plus any gate degradations/waivers, `checkpoint: refused` lines and "no checks reported after `gh pr ready`" outcomes — so review-loop caps get tuned from data, not folklore. Repeated checkpoint refusals are a run-level note: drafts are unavailable on this repo, so the crash-recovery checkpoint does not work here. Group `blocked` (paused on user input) and `closed-externally` (closed out-of-band, branch kept for review) separately from `failed` (terminal). Treat any `failed` **or `closed-externally`** as a non-zero outcome in your closing message — a `closed-externally` issue needs a human to confirm whether its work was really merged.
 
 ## Hard rules
 
