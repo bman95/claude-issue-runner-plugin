@@ -15,8 +15,6 @@ Pre-1.0. The skill works on real-world runs but the spec is still tightening bas
 
 The native Codex plugin lives under `codex/issue-runner/`. Its Codex-specific skills are isolated from the original Claude skills under the repository's top-level `skills/`, which remain unchanged. Add `codex/issue-runner/` as a local plugin source in Codex, install **Issue Runner**, and start a new thread so the bundled skills are discovered. You can then ask Codex naturally:
 
-Orchestrated runs (`issue-runner` on two or more issues, or `--plan`) keep their state under `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner`, which a default `workspace-write` sandbox cannot write and a running session cannot grant: create that directory once and launch Codex with `codex --add-dir "${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner"` (or list it under `sandbox_workspace_write.writable_roots` in `config.toml`); otherwise the run refuses to start with `run root is not writable`.
-
 ```
 Use issue-plan to turn this feature into runnable GitHub issues.
 Use issue-runner on issues 42, 43, and 44.
@@ -24,6 +22,8 @@ Use gh-issue to implement issue 42 end to end.
 ```
 
 Codex selects skills from natural-language requests; the Claude-style slash commands shown below remain useful aliases when running the Claude edition.
+
+Orchestrated runs (`issue-runner` on two or more issues, or `--plan`) keep their state under `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner`, which a default `workspace-write` sandbox cannot write and a running session cannot grant: create that directory once and launch Codex with `codex --add-dir "${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner"` (or list it under `sandbox_workspace_write.writable_roots` in `config.toml`); otherwise the run refuses to start with `run root is not writable`.
 
 ## Claude Code installation
 
