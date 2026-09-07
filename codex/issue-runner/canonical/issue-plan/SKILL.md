@@ -38,12 +38,14 @@ Present the breakdown as a numbered list — title, blocked-by, one-line scope �
 
 ## 4. Publish
 
-**Tracking issue first.** Before any slice, `gh issue create` one tracking issue titled `Plan: <short name>` — the durable home of the planning work, which otherwise disappears at publish time. Its body:
+The Step 3 approval covers everything published here: the tracking issue (its creation and the later edit) and the slices.
+
+**Tracking issue first.** Before any slice, `gh issue create` one tracking issue titled `Plan: <short name>` — the durable home of the planning work, which otherwise disappears at publish time. Write its body to a file and create from it (`--body-file`), so the later edit reuses the same text. The body:
 
 ```markdown
 ## Input
 
-The original input, verbatim: the inline idea or plan text; for a file, its path followed by its contents; for an issue, `#N` followed by its body.
+> The original input, quoted verbatim — every line prefixed with `> `: the inline idea or plan text; for a file, its path, then its contents; for an issue, `#N` and its title, then its body.
 
 ## Decisions
 
@@ -56,7 +58,7 @@ The original input, verbatim: the inline idea or plan text; for a file, its path
 (filled in after the slices are published)
 ```
 
-Never put a `## What to build` section in it: `## Slices` without `## What to build` is how `/issue-runner` Step 1 recognizes a tracking issue and keeps it out of scope — it is never implemented. After the slices are published, `gh issue edit <tracking> --body-file` the same body with `## Slices` filled in from the real numbers, one line per slice in dependency order: `- #N — title (blocked by #M)` or `- #N — title`.
+Never put a `## What to build` section in it: a line that is exactly `## Slices` and no line that is exactly `## What to build` is how `/issue-runner` Step 1 recognizes a tracking issue and keeps it out of scope — it is never implemented. The `> ` quoting under `## Input` is what keeps that true: an input that is itself an issue or plan in this format carries `## What to build`, `## Blocked by` and `Files likely touched:` lines, and quoted they can never read as this issue's own. After the slices are published, replace `## Slices` in the body file with the real numbers — one line per slice in dependency order, `- #N — title (blocked by #M)` or `- #N — title` — and `gh issue edit <tracking> --body-file` it. If publishing stops partway, make that edit anyway with the slices that exist plus `(publishing stopped at slice K)`, and say so; the tracking issue is out of the runner's scope from the moment it is created. A re-run of `/issue-plan` for the same plan continues on that tracking issue (edit it) rather than creating a second one.
 
 **Then the slices**, in dependency order (blockers first, so you can reference real issue numbers). One `gh issue create` per slice with this body — it is the contract with `/issue-runner` (`## Blocked by` is its primary DAG source) and with `gh-issue` (the checklist is the implementer's definition of done):
 
@@ -86,7 +88,7 @@ End-to-end behavior of this slice, described as outcome, not layer-by-layer impl
 Files likely touched: `src/config.ts`, `src/api/widgets.ts`
 ```
 
-`Part of #<tracking>` is **mandatory** and always the **first** line of the body, on a line of its own, outside every contract section: `/issue-runner` and `gh-issue` parse the `##` sections and the last line exactly as before, and it is not a `## Blocked by` bullet, so it never becomes a dependency edge. `/issue-runner` Step 5 reads it to find the tracking issue and posts the run summary there when every issue in its scope names the same one; the `gh-issue` implementer follows it like any other issue reference and finds the decision log behind its spec.
+`Part of #<tracking>` is **mandatory** and always the **first** line of the body, on a line of its own with nothing else on it (`/issue-runner` matches the trimmed line against `^Part of #[0-9]+$`), outside every contract section: `/issue-runner` and `gh-issue` parse the `##` sections and the last line exactly as before, and it is not a `## Blocked by` bullet, so it never becomes a dependency edge. `/issue-runner` Step 5 reads it to find the tracking issue and posts the run summary there when every issue in its scope names the same one; the `gh-issue` implementer follows it like any other issue reference and finds the decision log behind its spec.
 
 `Files likely touched:` is **mandatory** and always the last line of the body: the repo-relative paths this slice edits or creates, comma-separated, from your Step 1 exploration; a directory scope ends with `/` (`src/api/`); no globs — a pattern is matched literally and never intersects anything. `/issue-runner` Step 2 intersects these lines pairwise to derive conflict edges deterministically — two slices naming the same path, or one naming a directory that contains the other's path, are serialized. The line's cost model is asymmetric: any in-scope issue **without** it sends the whole run through the LLM refinement pass, while a path **omitted** from it lets two implementers merge over each other — so list every path the slice will touch. `gh-issue` Step 2 also seeds the implementer's codebase exploration with it.
 
@@ -94,4 +96,4 @@ Files likely touched: `src/config.ts`, `src/api/widgets.ts`
 
 ## 5. Hand off
 
-Show the tracking issue and the published slice numbers, and offer to run `/issue-runner` on the slices right away (all, or the subset the user picks). The run's summary and telemetry land on the tracking issue as a comment (issue-runner Step 5), so the plan and its outcome stay together.
+Show the tracking issue and the published slice numbers, and offer to run `/issue-runner` on the slices right away (all, or the subset the user picks). For runs of two or more slices, the run's summary and telemetry land on the tracking issue as a comment (issue-runner Step 5), so the plan and its outcome stay together. Close the tracking issue by hand once every slice has merged — the runner excludes it from every no-argument run until then, and says so each time.

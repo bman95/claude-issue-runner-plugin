@@ -139,6 +139,35 @@ for f in "$SKILL_PLAN" "$CANON_PLAN"; do
     *) err "body template's last line is not 'Files likely touched:' in ${f#"$ROOT"/} (got: '$tmpl_last')" ;;
   esac
 done
+# The runner recognizes a tracking issue by a `## Slices` line with no
+# `## What to build` line (issue-runner Step 1) and finds it from each slice's
+# first body line, `Part of #<tracking>` (Step 5). Pin both in the planner's
+# templates: the tracking template (the ```markdown block containing `## Slices`)
+# must not contain `## What to build`; the slice template's first non-blank line
+# must begin with `Part of #`.
+for f in "$SKILL_PLAN" "$CANON_PLAN"; do
+  track="$(awk '
+    /^```markdown[[:space:]]*$/ { inb=1; slices=0; wtb=0; next }
+    inb && /^```[[:space:]]*$/  { inb=0; if (slices) { print (wtb ? "bad" : "ok"); exit }; next }
+    inb && /^## Slices$/        { slices=1 }
+    inb && /^## What to build$/ { wtb=1 }
+  ' "$f")"
+  case "$track" in
+    ok)  ok "tracking-issue template has '## Slices' and no '## What to build': ${f#"$ROOT"/}" ;;
+    bad) err "tracking-issue template contains '## What to build' in ${f#"$ROOT"/}" ;;
+    *)   err "no tracking-issue template (markdown block containing '## Slices') in ${f#"$ROOT"/}" ;;
+  esac
+  slice_first="$(awk '
+    /^```markdown[[:space:]]*$/ { inb=1; hit=0; first=""; next }
+    inb && /^```[[:space:]]*$/  { inb=0; if (hit) { print first; exit }; next }
+    inb && /^## What to build/  { hit=1 }
+    inb && NF && first==""      { first=$0 }
+  ' "$f")"
+  case "$slice_first" in
+    'Part of #'*) ok "slice template starts with 'Part of #': ${f#"$ROOT"/}" ;;
+    *) err "slice template's first line is not 'Part of #' in ${f#"$ROOT"/} (got: '$slice_first')" ;;
+  esac
+done
 
 # 6. Retired command names ------------------------------------------------------
 if grep -rn 'to-issues' "$ROOT/skills" ; then
