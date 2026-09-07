@@ -280,9 +280,24 @@ decode_unicode_escapes() {
 # to the subshell's stdout rather than accumulated in a bash variable, so
 # reassembly itself stays linear instead of trading one quadratic loop for
 # another.
+#
+# Same pass also neutralizes a heading-injection risk: assistant text and
+# the dispatch prompt are copied verbatim, so an implementer's own prose
+# (quoting its PR report, or this script's own docs) can contain a line
+# starting with `#`/`##`/`###`. SKILL.md Step 4 recovers a corrupted
+# `retries` counter by counting literal `## Retry K` sections in this same
+# guidance.md file, so an unrelated verbatim `##`-line could silently
+# corrupt that bookkeeping. Escape a leading `#` run to `\#...` (a line
+# this script itself never emits, so the three literal section headers
+# below are exempted by exact match) rather than trusting verbatim text to
+# never collide with a heading this file's other readers parse structurally.
 MAX_DECODE_LINE_LEN=4000
 DIGEST_BODY="$(
   while IFS= read -r dline || [ -n "$dline" ]; do
+    case "$dline" in
+      "### Dispatch prompt"|"### Assistant activity"|"### Final messages (last 3, in full)") ;;
+      "#"*) dline="\\$dline" ;;
+    esac
     if [ "${#dline}" -gt "$MAX_DECODE_LINE_LEN" ]; then
       printf '%s\n' "$dline"
     else
