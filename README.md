@@ -69,11 +69,11 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner                              # all open issues (label-filtered)
 /issue-runner:issue-runner 42 43 44                     # specific issue numbers
 /issue-runner:issue-runner --plan                       # build the DAG and exit
-/issue-runner:issue-runner --status                     # print the last run's state table (read-only)
+/issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress (read-only)
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
-/issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement
+/issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement (file-scope conflict edges still computed)
 /issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
 ```
 
@@ -81,14 +81,14 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 
 ## Architecture
 
-- **Planner** (`skills/issue-plan/SKILL.md`): absorb the idea → adaptive interrogation (human decisions settled up front) → tracer-bullet vertical slices → publish issues with `## What to build` / `## Acceptance criteria` / `## Blocked by` — the contract the runner and implementer parse.
-- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, dirty-tree audit) → dependency DAG (`## Blocked by` primary, heuristics + LLM refinement as fallback) → parallel dispatch → two-tier blocker escalation (parent first, human last) → cleanup. The orchestrator never enters a worktree.
+- **Planner** (`skills/issue-plan/SKILL.md`): absorb the idea → adaptive interrogation (human decisions settled up front) → tracer-bullet vertical slices → publish issues with `## What to build` / `## Acceptance criteria` / `## Blocked by` / `Files likely touched:` — the contract the runner and implementer parse.
+- **Orchestrator** (`skills/issue-runner/SKILL.md`): scope (label filters, dirty-tree audit) → dependency DAG (`## Blocked by` primary, heuristics as fallback; conflict edges from `Files likely touched:` intersection, LLM refinement as fallback) → parallel dispatch → two-tier blocker escalation (parent first, human last) → cleanup. The orchestrator never enters a worktree.
 - **Implementer** (`skills/gh-issue/SKILL.md`): understand → explore (Explore subagent) → plan → branch + draft PR carrying the plan (orchestrated: the checkpoint that survives a crash) → implement → PR body → layered review → mark ready → merge. The review runs fresh-eyes reviewer subagents locally (no Codex spend) and uses `codex review` only as a final certification gate (1–2 passes per PR), with a credit/quota degradation path.
 - **Reference** (`skills/issue-runner/REFERENCE.md`): troubleshooting and the rationale behind the defensive recipes (worktree locks, branch deletion after squash merges, duplicate PRs on re-runs).
 
 ## Requirements
 
-- **Codex** with collaboration and shell tools, or **Claude Code** with Agent and Bash. Implementers need permission to create worktrees and use `git`/`gh`.
+- **Codex** with collaboration and shell tools, or **Claude Code** with Agent and Bash — reaching subagents too: Claude Code on the web and `claude -p` currently hand subagents a toolset without `Agent`, so implementers cannot spawn their fresh-eyes reviewers there; the orchestrator probes this in Step 0 and asks before proceeding with a recorded inline review. Implementers need permission to create worktrees and use `git`/`gh`.
 - **GitHub CLI (`gh`)** authenticated against the target repository.
 - **`codex` CLI** for the review gate — required for unattended orchestrated runs: if `codex` is not installed the orchestrator asks up front (or pass `--no-codex-gate`); only credit/quota exhaustion degrades gracefully mid-run.
 - **Git >= 2.5** (worktrees).
