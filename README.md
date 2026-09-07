@@ -95,7 +95,7 @@ A single-issue scope skips orchestration entirely and runs the `gh-issue` proced
 - **GitHub CLI (`gh`)** authenticated against the target repository.
 - **`codex` CLI** for the review gate — required for unattended orchestrated runs: if `codex` is not installed the orchestrator asks up front (or pass `--no-codex-gate`); only credit/quota exhaustion degrades gracefully mid-run.
 - **Git >= 2.5** (worktrees).
-- **CI that runs on draft PRs.** An orchestrated PR is a draft from planning until the merge step, so a workflow that skips drafts (`if: github.event.pull_request.draft == false`) must include `ready_for_review` in its `pull_request` `types`; otherwise the merge's checks gate sees no checks, or only `skipped` ones, and reports the merge as uncovered. A bare `on: pull_request` is fine.
+- **CI that runs on draft PRs.** An orchestrated PR is a draft from planning until the merge step, so a workflow that skips drafts (`if: github.event.pull_request.draft == false`) must list `ready_for_review` in its `pull_request` `types` **alongside** the defaults (`opened`, `synchronize`, `reopened` — a `types` list replaces them, and a workflow keyed on `ready_for_review` alone never tests a later push, draft or not); otherwise the merge's checks gate sees no checks, or only `skipped` ones, and reports the merge as uncovered. A bare `on: pull_request` is fine.
 
 The `gh-issue` implementer skill is bundled — no separate installation.
 

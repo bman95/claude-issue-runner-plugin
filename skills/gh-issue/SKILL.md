@@ -208,7 +208,7 @@ The PR body becomes the squash-commit message (Step 9), so refresh Summary / Cha
 
 **Interactive:** present the converged state and confirm with the user before merging. **Orchestrated:** converged → merge yourself; bouncing → push your fixes, refresh the PR body so the unresolved state is visible, and return a blocker citing the findings. An orchestrated PR bounced out of the review loop is still a draft (it is marked ready only below). A blocker raised below the ready line — base freshness, the checks gate — must put it back before returning, statelessly (this is a later tool call; no variable survives to it): `D=$(gh pr view "$PR_NUM" --json isDraft -q .isDraft) || D=unknown; [ "$D" = true ] || { gh pr ready --undo "$PR_NUM" || echo "WARNING: #$PR_NUM may still be mergeable — could not revert it to draft (isDraft=$D)" >&2; }` — never fail open: the undo is attempted unless draft status is positively known, and if it (or the query) fails, the blocker you return must say the PR is non-draft and mergeable by hand, so the runner's Step 5 does not lean on an invariant that did not hold; on a repo that refused drafts (`checkpoint: refused`) that failure is expected and the PR is the documented exception. So every orchestrated PR that *returns* unfinished is a draft, or its blocker says otherwise; the runner's Step 5 relies on that. The one gap is a crash, not a blocker, inside the ready→merge window — Step 5 handles that non-draft case too.
 
-**Mark the PR ready first.** The PR may still be a draft — the Step 4 checkpoint, or one an interactive resume adopted — and GitHub refuses to merge a draft. It may instead already be non-draft because an earlier attempt readied it and then crashed or blocked; the draft-provenance rules below still apply to it, so `READIED` records whether the PR *was ever* a draft, not whether this invocation flipped it. This is the only place the draft flag comes off, so everything below — base freshness, the checks gate, the merge — runs unchanged. A failed `gh pr ready` is a blocker (interactive: report it). CI keyed on `ready_for_review` has had no chance to run yet, so give it a bounded window to register — draft-era `skipped` runs appear instantly and do not count — before "no checks reported" or "all skipped" can mean "no CI":
+**Mark the PR ready first.** The PR may still be a draft — the Step 4 checkpoint, or one an interactive resume adopted — and GitHub refuses to merge a draft. It may instead already be non-draft because an earlier attempt readied it and then crashed or blocked; the draft-provenance rules below still apply to it, so `READIED` records whether the PR *was ever* a draft, not whether this invocation flipped it — and the registration poll below runs on `READIED`, so a resume never races the `ready_for_review` run an earlier attempt triggered. This is the only place the draft flag comes off, so everything below — base freshness, the checks gate, the merge — runs unchanged. A failed `gh pr ready` is a blocker (interactive: report it). CI keyed on `ready_for_review` has had no chance to run yet, so give it a bounded window to register — draft-era `skipped` runs appear instantly and do not count — before "no checks reported" or "all skipped" can mean "no CI":
 
 ```bash
 READIED=1   # "this PR was ever a draft": every orchestrated PR except one created plain at Step 7 because
@@ -216,9 +216,13 @@ READIED=1   # "this PR was ever a draft": every orchestrated PR except one creat
             # never was a draft. Shell state does not persist across tool calls — carry the value forward yourself.
 if [ "$(gh pr view "$PR_NUM" --json isDraft -q .isDraft)" = true ]; then
   if ! gh pr ready "$PR_NUM"; then echo "gh pr ready failed" >&2; exit 1; fi   # blocker — do not continue
+fi
+if [ "$READIED" -eq 1 ]; then
   # Draft-filtered CI shows up in two shapes: no check runs at all, or runs that all report
   # `skipping` (a job-level `if: !draft` still creates them, instantly). Neither is a run
-  # keyed on ready_for_review, so wait — bounded — until something else appears.
+  # keyed on ready_for_review, so wait — bounded — until something else appears. Keyed on
+  # READIED, not on the flip above: a PR an earlier attempt readied just before crashing may
+  # still be waiting for that run to register.
   for _ in 1 2 3 4 5 6; do
     TOTAL=$(gh pr checks "$PR_NUM" --json bucket -q 'length' 2>/dev/null | tail -1)
     SKIPPED=$(gh pr checks "$PR_NUM" --json bucket -q '[.[] | select(.bucket=="skipping")] | length' 2>/dev/null | tail -1)
@@ -242,7 +246,7 @@ if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ] \
 fi
 ```
 
-Base advanced but no file overlap with this PR → proceed directly. Overlap → merge `origin/$BASE_BRANCH` in, re-run the tests, push, then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
+Base advanced but no file overlap with this PR → proceed directly. Overlap → merge `origin/$BASE_BRANCH` in, re-run the tests, push, then — for a PR that was a draft (`READIED=1`) — repeat the bounded registration poll above before the checks gate: the new head has no check runs until CI registers them, and `--watch` reads that instant as "no checks reported"; the post-`--watch` counts then judge the head that actually merges. Then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
 
 **Checks gate.** `gh pr merge` enforces only *required* branch protections server-side — advisory checks (the common case on personal repos) would not stop it, so gate on CI yourself (orchestrated: write `step=9.2 pr=#P` first — `--watch` is the procedure's longest silent wait, and the marker lets whoever reads `--status` tell "waiting on CI" from an unexplained silence):
 
