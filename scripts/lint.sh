@@ -9,7 +9,8 @@
 #   1. plugin.json version == marketplace.json version
 #   2. every skills/*/SKILL.md frontmatter has name + description + version
 #   3. --max-parallel default agrees across README, SKILL arg line, and the
-#      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line
+#      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line; likewise
+#      --hang-minutes against the `\`HANG_MINUTES\` (default N` runtime phrase
 #   4. CHANGELOG has an entry for the manifest version
 #   5. the issue-body contract strings appear in both issue-plan and issue-runner,
 #      the planner's slice template ends with the `Files likely touched:` line and
@@ -109,6 +110,24 @@ elif [ "$readme_mp" != "$skill_mp" ] || [ "$skill_mp" != "$runtime_mp" ]; then
   err "--max-parallel default drift: README=$readme_mp SKILL-arg=$skill_mp SKILL-runtime=$runtime_mp"
 else
   ok "--max-parallel default agrees at all three sites ($readme_mp)"
+fi
+
+# 3b. --hang-minutes default: README arg, SKILL arg, SKILL runtime ------------
+hang_minutes_default() {
+  grep -E '\-\-hang-minutes N' "$1" | grep -oE 'default[[:space:]]+[0-9]+' \
+    | grep -oE '[0-9]+' | head -1
+}
+readme_hm="$(hang_minutes_default "$README")"
+skill_hm="$(hang_minutes_default "$SKILL_RUNNER")"
+# The Step 3 runtime phrase: `HANG_MINUTES` (default N
+runtime_hm="$(grep -E '`HANG_MINUTES` \(default [0-9]+' "$SKILL_RUNNER" \
+  | grep -oE '`HANG_MINUTES` \(default [0-9]+' | grep -oE '[0-9]+' | head -1)"
+if [ -z "$readme_hm" ] || [ -z "$skill_hm" ] || [ -z "$runtime_hm" ]; then
+  err "could not read --hang-minutes default (README='$readme_hm' SKILL-arg='$skill_hm' SKILL-runtime='$runtime_hm')"
+elif [ "$readme_hm" != "$skill_hm" ] || [ "$skill_hm" != "$runtime_hm" ]; then
+  err "--hang-minutes default drift: README=$readme_hm SKILL-arg=$skill_hm SKILL-runtime=$runtime_hm"
+else
+  ok "--hang-minutes default agrees at all three sites ($readme_hm)"
 fi
 
 # 4. CHANGELOG entry for the manifest version ----------------------------------
