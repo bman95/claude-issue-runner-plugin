@@ -255,7 +255,11 @@ result_key_lines() {   # prints "<line-no>:<sorted,keys>" for each contract line
     printf '%s:%s\n' "$ln" "$(printf '%s' "$rest" | grep -oE '"[A-Za-z0-9_]+":' | tr -d '":' | sort -u | paste -sd, -)"
   done
 }
-keys_ref="$(result_key_lines "$SKILL_GH" | head -1 | cut -d: -f2-)"
+# First contract line of gh-issue is the reference. Taken in the shell rather
+# than via `| head -1`, which would close the pipe while the second line is
+# still being printed and litter stderr with "Broken pipe".
+gh_lines="$(result_key_lines "$SKILL_GH")"
+keys_ref="${gh_lines%%$'\n'*}"; keys_ref="${keys_ref#*:}"
 if [ -z "$keys_ref" ]; then
   err "result.json shape line (starting with '{', carrying '\"outcome\":') missing from ${SKILL_GH#"$ROOT"/}"
 else
@@ -284,7 +288,7 @@ EOF_KEYS
   # The shape line (the first contract line of each file) also carries the enum
   # values Step 5 aggregates on; it must be byte-identical across all four files.
   shapes="$(for f in "$SKILL_GH" "$SKILL_RUNNER" "$CANON_GH" "$CANON_RUNNER"; do
-    grep -E '^[[:space:]]*\{.*"outcome":' "$f" | head -1 | sed 's/^[[:space:]]*//'
+    grep -m1 -E '^[[:space:]]*\{.*"outcome":' "$f" | sed 's/^[[:space:]]*//'
   done | sort -u | grep -c .)"
   if [ "$shapes" -ne 1 ]; then
     err "result.json shape line drifted: $shapes variants across the four SKILL files (enum values must match)"
