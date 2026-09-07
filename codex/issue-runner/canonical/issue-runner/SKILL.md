@@ -85,7 +85,7 @@ fi
 mkdir -p "$STATE_DIR" || { echo "cannot create state dir: $STATE_DIR" >&2; [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$PPID" ] && : > "$RUN_ROOT/lock"; exit 1; }
 ```
 
-Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded for `blocked`/`failed`/`skipped`/`closed-externally` — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker"), `retries` (number of Step 4 re-dispatches so far; absent = 0. Step 4 increments it before every retry, self-resolved or user-authorized, and the Step 5 summary reports it), `result.json` (one JSON line the implementer writes immediately before its final message, on every exit — see gh-issue "Result file"), `branch` (written by Step 3a only when it resumes a PR on a branch outside the `/issue-N-` contract; item 5's merge proof accepts that branch).
+Run level: `dag.json` (issue → list of dep issue numbers), `scope.txt` (issue numbers in run order), `gh_issue_skill_path`. Per issue under `issue-N/`: `details.json`, `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`), `error`, optional `guidance.md`, `worktree` (recorded at Step 3 item 5 for every returned implementer — a retry needs the `blocked` one), `progress` (one line the implementer overwrites on entering each gh-issue step, e.g. `step=8.1 iter=2 pr=#123` — see gh-issue "Progress marker"), `retries` (number of Step 4 re-dispatches so far; absent = 0. Step 4 increments it before every retry, self-resolved or user-authorized, and the Step 5 summary reports it), `result.json` (one JSON line the implementer writes immediately before its final message, on every exit — see gh-issue "Result file"), `branch` (written by Step 3a only when it resumes a PR on a branch outside the `/issue-N-` contract; item 5's merge proof accepts that branch).
 
 `result.json` carries exactly these keys (the key set is lint-checked against gh-issue's copy):
 
@@ -199,7 +199,7 @@ gh pr list --state open --json number,headRefName \
 - **One match** (`#P` on branch `B`) → resume, don't duplicate. If `git worktree list --porcelain` shows `B` checked out in a worktree, dispatch **without** `isolation: worktree` and tell the agent to `cd` there first (exactly like a Step 4 retry). Otherwise keep `isolation: worktree` and add to the prompt: check out `B` (fetch first, no new branch), skip PR creation, push to PR `#P`. If `B` is outside the `/issue-N-` contract (a keyword-only match), write it to `$STATE_DIR/issue-N/branch` after the clear below — Step 3 item 5's merge proof accepts that branch alongside the contract, and nothing else.
 - **Several matches** → duplicates from earlier runs: ask the user which PR to resume and close the rest.
 
-Clear any prior attempt's files first — `rm -f "$STATE_DIR/issue-N/progress" "$STATE_DIR/issue-N/result.json" "$STATE_DIR/issue-N/branch"` — so `--status` never shows a stale line as current, item 5 never reads a prior attempt's outcome, and only a resume this dispatch names can re-create `branch`. One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, and `<STATE_DIR>` (resolved absolute paths):
+Clear any prior attempt's files first — `rm -f "$STATE_DIR/issue-N/progress" "$STATE_DIR/issue-N/result.json"`, plus `"$STATE_DIR/issue-N/branch"` whenever the resume check above ran (a fresh dispatch or a re-run's resume; a Step 4 retry with a known worktree skips the resume check and keeps `branch`) — so `--status` never shows a stale line as current, item 5 never reads a prior attempt's outcome, and only a resume this dispatch names can re-create `branch`. One `Agent` call per issue. Substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, and `<STATE_DIR>` (resolved absolute paths):
 
 ```
 subagent_type: general-purpose
@@ -262,7 +262,7 @@ Set `MAX_RETRIES` (default 2; `--max-retries`). Read the agent's error message a
   printf '%s\n' "$((RETRIES + 1))" > "$STATE_DIR/issue-$N/retries"
   ```
 
-  Then re-dispatch per Step 3a **without** `isolation: worktree`, adding to the prompt: the existing worktree path (`cd` there first; continue on the same branch) and the existing PR number (push to the same PR). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree. Its dispatch clears `result.json` (Step 3a) and the retry writes a fresh one, so item 5 classifies the retry's outcome, never the prior attempt's.
+  Then re-dispatch per Step 3a **without** `isolation: worktree`, adding to the prompt: the existing worktree path (`cd` there first; continue on the same branch) and the existing PR number (push to the same PR). The retried implementer runs its own review/codex passes and spawns its own helpers — the parent never enters the worktree. Its dispatch clears `progress` and `result.json` (Step 3a) and the retry writes fresh ones, so item 5 classifies the retry's outcome, never the prior attempt's; `branch` is kept — the retry continues on the branch checked out in the worktree, and item 5's merge proof still needs the recorded one when that branch is outside the contract.
 - **Hand off to `/codex:rescue`** for a fresh investigation; pass the worktree path and the latest review log.
 - **Mark `failed`** and let the cascade skip dependents.
 - **Bump the Codex cap and re-run** — only for a converged-but-unverified cap-stop: `/issue-runner <N> --max-codex-iterations M`. The re-run's resume check picks up the existing PR and branch.
@@ -276,7 +276,7 @@ DEFAULT_BRANCH=$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/de
 [ -n "$DEFAULT_BRANCH" ] || DEFAULT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 ```
 
-For each `done` issue (worktree path comes from `result.json`'s `worktree`, or from the agent's `worktree:` line when the file is absent):
+For each `done` issue (worktree path from `$STATE_DIR/issue-N/worktree`, recorded at Step 3 item 5):
 
 ```bash
 WT_BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)
