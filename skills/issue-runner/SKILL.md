@@ -142,7 +142,7 @@ Fail closed: treat anything other than a reply whose only non-blank line is exac
 
 **Dirty-tree audit.** `git status --porcelain=v1 -uall`. If anything is reported, show every line and ask: stash / commit / discard / proceed-as-is. Never start orchestration on a dirty tree without an explicit choice. Keep the output as a snapshot for Step 5's clean check.
 
-**Initialize state** (scope ≥ 2): run the State block, write `scope.txt` and `gh_issue_skill_path`, then save each issue's details:
+**Initialize state** (scope ≥ 2): validate the numeric flags first (`MAX_PARALLEL`, `HANG_MINUTES` — Step 3's `case`; a bad value must exit before the lock is taken), then run the State block, write `scope.txt` and `gh_issue_skill_path`, then save each issue's details:
 
 ```bash
 for N in $SCOPE; do
@@ -168,7 +168,7 @@ Persist `dag.json`. **Print the plan**: one line per issue (number, deps, title)
 
 ### Step 3 — execute
 
-Set `MAX_PARALLEL` (default 5) and `HANG_MINUTES` (default 30, from `--hang-minutes`; reject anything but a positive integer up front — `case $HANG_MINUTES in ''|*[!0-9]*|0*) echo "--hang-minutes must be a positive integer" >&2; exit 1;; esac` — because `find -mmin` with a bad value errors silently and hang detection would be off with no message). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`) or paused (`blocked`, plus any `pending` issue waiting on a `blocked` ancestor — item 6's blocked-chain case):
+Set `MAX_PARALLEL` (default 5) and `HANG_MINUTES` (default 30, from `--hang-minutes`). Both are parsed and validated at Step 1, **before the State block takes the run lock** — reject anything but a positive integer: `case $HANG_MINUTES in ''|*[!0-9]*|0*) echo "--hang-minutes must be a positive integer" >&2; exit 1;; esac` — because `find -mmin` with a bad value errors silently and hang detection would be off with no message, and an exit after the lock is taken would strand it (the host PID stays alive, so a corrected re-run in the same session would read as a concurrent run). Mark every issue `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`) or paused (`blocked`, plus any `pending` issue waiting on a `blocked` ancestor — item 6's blocked-chain case):
 
 1. **Cascade skip.** Any `pending` issue with a `failed`/`skipped` dep → `skipped`, error `"dependency failed: #X"`. Any `pending` issue with a `closed-externally` dep → `skipped`, error `"dependency closed externally without merge proof: #X"` — the dep is terminal but its work is unverified, so dependents must not build on it (and must not be mislabeled as a cycle). Repeat until stable. A `blocked` dep pauses its dependents (they stay `pending`); it does not skip them.
 2. **Ready set** = `pending` ∧ all deps `done` ∧ not in flight.
@@ -187,15 +187,18 @@ Set `MAX_PARALLEL` (default 5) and `HANG_MINUTES` (default 30, from `--hang-minu
 
    **No `progress` file** (absent or empty): the threshold has nothing to measure, so fall back to the relative-silence judgement — it has produced nothing long after its siblings finished and well past the scale of its issue. A missing file is the normal state right after dispatch (Step 3a clears it, and the implementer reads the skill before its first step write), so the fallback is slow by design; it exists for an implementer that died before its first boundary or runs a gh-issue copy without the marker.
 
-   **Consequence, whichever rule fired.** Stop the agent (`TaskStop`), then wait — a bounded number of polls of the host's agent list — until it is **gone**: not listed, or listed in any non-running state. A stop request returns before the agent's in-flight tool call necessarily has, and that call may be `gh pr merge`; classifying while it can still finish re-creates the merged-reads-`failed` bug. Still running after the polls → surface that rather than classify. Once it is gone, resolve the worktree it never got to report and record it so Step 4 and Step 5 can find it. A retry or resume dispatch already has the path in `$STATE_DIR/issue-N/worktree` — reuse it. Otherwise resolve from `git worktree list --porcelain` by two keys, agent id first: the entry whose `locked` line names the id recorded at dispatch (`$STATE_DIR/issue-N/agent`, `locked claude agent agent-<id> …`) is exact for this dispatch; the `/issue-N-` branch contract is only the fallback, because it exists only from gh-issue Step 4 on and a leftover worktree from an earlier attempt can carry the same prefix:
+   **Consequence, whichever rule fired.** Stop the agent (`TaskStop`), then wait — a bounded number of polls of the host's agent list — until it is **gone**: not listed, or listed in any non-running state. A stop request returns before the agent's in-flight tool call necessarily has, and that call may be `gh pr merge`; classifying while it can still finish re-creates the merged-reads-`failed` bug. Still running after the polls → surface that rather than classify. Once it is gone, resolve the worktree it never got to report and record it so Step 4 and Step 5 can find it. A retry or resume dispatch already has the path in `$STATE_DIR/issue-N/worktree` — reuse it **only while that directory still exists**: a recorded path that is gone (Step 4 re-dispatched into a fresh isolated worktree and Step 3a never replaces the old value) must not shadow the live worktree, or a merged retry reads `closed-externally`/`failed` and its real worktree is lost. Otherwise resolve from `git worktree list --porcelain` by two keys, agent id first: the entry whose `locked` line names the id recorded at dispatch (`$STATE_DIR/issue-N/agent`, `locked claude agent agent-<id> …`) is exact for this dispatch; the `/issue-N-` branch contract is only the fallback, because it exists only from gh-issue Step 4 on and a leftover worktree from an earlier attempt can carry the same prefix:
 
    ```bash
-   AG=$(cat "$STATE_DIR/issue-$N/agent" 2>/dev/null); AG=${AG#agent-}   # bare id, whichever form was recorded
-   WT=$(git worktree list --porcelain | awk -v pat="/issue-$N-" -v ag=" agent-$AG " -v have="$AG" '
-     /^worktree /{w=substr($0,10)}
-     have!=""&&/^locked /&&index($0,ag){a=w}   # space-delimited: exact id, not a prefix of a longer one
-     /^branch /&&index($0,pat)&&b==""{b=w}
-     END{print (a!=""?a:b)}')
+   WT=$(cat "$STATE_DIR/issue-$N/worktree" 2>/dev/null); [ -d "$WT" ] || WT=""   # a recorded path counts only while it exists
+   if [ -z "$WT" ]; then
+     AG=$(cat "$STATE_DIR/issue-$N/agent" 2>/dev/null); AG=${AG#agent-}   # bare id, whichever form was recorded
+     WT=$(git worktree list --porcelain | awk -v pat="/issue-$N-" -v ag=" agent-$AG " -v have="$AG" '
+       /^worktree /{w=substr($0,10)}
+       have!=""&&/^locked /&&index($0,ag){a=w}   # space-delimited: exact id, not a prefix of a longer one
+       /^branch /&&index($0,pat)&&b==""{b=w}
+       END{print (a!=""?a:b)}')
+   fi
    [ -n "$WT" ] && printf '%s\n' "$WT" > "$STATE_DIR/issue-$N/worktree"
    ```
 
