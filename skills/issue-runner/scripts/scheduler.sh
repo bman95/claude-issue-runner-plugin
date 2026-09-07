@@ -70,8 +70,10 @@ if [ ! -r "$DAG" ]; then
   exit 1
 fi
 
-# All issue numbers in dag.txt, in file order.
-ISSUES=$(awk -F: '{gsub(/^[ \t]+|[ \t]+$/,"",$1); if ($1 != "") print $1}' "$DAG")
+# All issue numbers in dag.txt, in file order, deduped: a duplicate line (an
+# unsanitized scope with a repeated number reaching Step 2's dag.txt write)
+# must never process — and so never dispatch or skip — the same issue twice.
+ISSUES=$(awk -F: '{gsub(/^[ \t]+|[ \t]+$/,"",$1); if ($1 != "" && !seen[$1]++) print $1}' "$DAG")
 
 # deps_of N -> space-separated dependency issue numbers (possibly empty).
 deps_of() {

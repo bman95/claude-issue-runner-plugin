@@ -106,6 +106,42 @@ fixture "done: every issue terminal" \
   $'1:\n2: 1' "1=done 2=done" "" \
   "done"
 
+# --- Edge cases (review findings) -------------------------------------------
+
+# A duplicate line in dag.txt (an unsanitized scope reaching Step 2's write)
+# must never process the same issue twice — one dispatch, not two.
+fixture "dag.txt dedup: a repeated issue number dispatches once" \
+  $'1:\n1:\n2: 1' "1=pending 2=pending" "" \
+  "dispatch 1"
+
+# run-paused takes priority over even a genuine cycle: never declare one
+# while the host is paused (item 6's own stated order).
+fixture "run-paused suppresses a genuine cycle" \
+  $'1: 2\n2: 1' "1=pending 2=pending" 1 \
+  "run-paused"
+
+# Self-dependency is a degenerate true cycle: no infinite loop, cites itself.
+fixture "self-dependency is a true cycle" \
+  "1: 1" "1=pending" "" \
+  "cycle 1 1"
+
+# Two disjoint true cycles in one DAG: each reports its own offending dep.
+fixture "multiple disjoint true cycles" \
+  $'1: 2\n2: 1\n3: 4\n4: 3' "1=pending 2=pending 3=pending 4=pending" "" \
+  $'cycle 1 2\ncycle 2 1\ncycle 3 4\ncycle 4 3'
+
+# A dependent with both a failed and a closed-externally dep: failed/skipped
+# takes priority (checked first), per item 1's own ordering.
+fixture "failed dep takes priority over a closed-externally dep" \
+  $'1:\n2:\n3: 1 2' "1=failed 2=closed-externally 3=pending" "" \
+  $'skip 3 dependency failed: #1\ndone'
+
+# dag.txt names an issue with no issue-N/ dir at all: status_of() defaults it
+# to pending rather than erroring, and it is ready when it has no deps itself.
+fixture "issue with no status dir at all defaults to pending" \
+  $'1:\n2: 1' "2=pending" "" \
+  "dispatch 1"
+
 fixture "paused: a lone blocked issue with no dependent still needs Step 4" \
   "1:" "1=blocked" "" \
   "paused"
