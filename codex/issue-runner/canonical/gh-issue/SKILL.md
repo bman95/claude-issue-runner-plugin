@@ -52,7 +52,7 @@ The progress marker says where you *are*; the orchestrator also needs to know ho
 {"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|n/a","security_lens":true,"blocker":null}
 ```
 
-- `outcome` — `merged` only after Step 9's own verification (`gh pr view --json state` reports `MERGED`); `ready` only after Step 9's own verification under a `Merge mode: no-merge` dispatch — the checks gate passed and the PR was marked ready, but `gh pr merge` was deliberately never called (Step 9's no-merge branch); `blocker` when you return a blocker (spec ambiguity, a bouncing review loop, a cap-stop, failing checks, an unavailable gate, unauthorized inline review); `failed` when an environmental failure the parent cannot resolve stops you (credentials, an irresolvable merge conflict, a refused push — Step 6's; a refused Step 4 checkpoint push is `checkpoint: refused` and never fails the run).
+- `outcome` — `merged` only after Step 9's own verification (`gh pr view --json state` reports `MERGED`); `ready` only after Step 9's own verification under a `Merge mode: no-merge` dispatch — the checks gate passed and the PR was marked ready, but `gh pr merge` was deliberately never called (Step 9's no-merge branch); `blocker` when you return a blocker (spec ambiguity, a bouncing review loop, a cap-stop, failing checks, an unavailable gate, unauthorized inline review, Step 9's base-freshness conflict or its post-merge test failure); `failed` when an environmental failure the parent cannot resolve stops you (credentials, an irresolvable merge conflict outside Step 9's base-freshness recipe — that one is a `blocker`, see there — a refused push — Step 6's; a refused Step 4 checkpoint push is `checkpoint: refused` and never fails the run).
 - `pr` — the PR number; `null` before Step 7 opened one.
 - `branch`, `worktree` — `git rev-parse --abbrev-ref HEAD` and `git rev-parse --show-toplevel`, the same value the `worktree:` line carries.
 - `phase1_iterations` — Phase 1 iterations run (`0` if never entered); `phase1_inline` — `true` when Phase 1 ran inline by the implementing context, `false` when fresh-eyes subagents reviewed (this edition has no inline Phase 1 path, so it is always `false` here); `phase1_state` — `converged`, `cap-stop` (the Phase 1 cap reached with Apply-class findings still arriving), or `bouncing` (a stop-and-ask convergence failure); `null` when Phase 1 was never entered.
@@ -258,19 +258,24 @@ fi
 
 A workflow that skips drafts (`if: github.event.pull_request.draft == false`) without `ready_for_review` in its `types` never executes on this PR — either no check runs exist, or every run reports `skipped` — and the checks gate below cannot tell either from real coverage on its own; the target repo's CI must run on drafts or include that event type (README, Requirements). `READIED` and the `TOTAL`/`SKIPPED`/`NEVER_RERAN` counts the checks gate takes after `--watch` make its verdict honest about it.
 
-**Base freshness next.** The review judged this diff against its branch point; a sibling PR may have merged into `$BASE_BRANCH` since — a semantic-conflict window no textual merge check catches:
+**Base freshness next.** The review judged this diff against its branch point; a sibling PR may have merged into `$BASE_BRANCH` since — a semantic-conflict window no textual merge check catches, and file overlap is not a reliable signal for it: sibling PR A renames a function in `a.ts`, this PR calls the old name from `b.ts`, the two diffs never touch a common file, and this PR's tests never run against main+A. So merge and re-test whenever the base moved at all, never gated on overlap (issue #15):
 
 ```bash
 git fetch origin "$BASE_BRANCH"
 MB=$(git merge-base HEAD "origin/$BASE_BRANCH")
-if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ] \
-   && git diff --name-only "$MB" "origin/$BASE_BRANCH" \
+if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ]; then
+  if git diff --name-only "$MB" "origin/$BASE_BRANCH" \
       | grep -qxFf <(git diff --name-only "$MB" HEAD); then
-  git merge "origin/$BASE_BRANCH"   # then re-run the tests and push before the checks gate
+    echo "base freshness: file overlap with $BASE_BRANCH — a textual conflict is likely" >&2   # warning only, never gates the merge below
+  fi
+  if ! git merge "origin/$BASE_BRANCH"; then
+    CONFLICTS=$(git diff --name-only --diff-filter=U)   # capture before --abort erases the conflicted state
+    git merge --abort
+  fi
 fi
 ```
 
-Base advanced but no file overlap with this PR → proceed directly. Overlap → merge `origin/$BASE_BRANCH` in, re-run the tests, push, then — for a PR that was a draft (`READIED=1`) — repeat the bounded registration poll above before the checks gate: the new head has no check runs until CI registers them, and `--watch` reads that instant as "no checks reported"; the post-`--watch` counts then judge the head that actually merges. Then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
+Base unchanged → proceed directly. Base advanced → merge `origin/$BASE_BRANCH` in unconditionally, regardless of overlap; the file-overlap check above only warns that a *textual* conflict is likely — it never decides whether to merge, and its absence never skips the merge either. A conflict that does not resolve cleanly is never force-resolved: capture the conflicting paths (`git diff --name-only --diff-filter=U`) **before** `git merge --abort`, which erases them, then stop — interactive: ask the user how to proceed, naming the files; orchestrated: revert to draft (`gh pr ready --undo`, above) and return a blocker naming the conflicting files (`$CONFLICTS`). Do not attempt automatic conflict resolution. A clean merge → re-run the project's tests; a failure here is exactly a failing check, never a green light to merge over it — interactive asks; orchestrated pushes the merge commit (so the unresolved state is visible on the PR), reverts to draft (`gh pr ready --undo`, above), and returns a blocker citing the failing tests. Only a clean merge with passing tests continues: push, then — for a PR that was a draft (`READIED=1`) — repeat the bounded registration poll above before the checks gate: the new head has no check runs until CI registers them, and `--watch` reads that instant as "no checks reported"; the post-`--watch` counts then judge the head that actually merges. Then proceed to the checks gate. Freshness runs **before** the gate so `--watch` below covers the commit that actually merges — never push after the gate has passed.
 
 **Checks gate.** `gh pr merge` enforces only *required* branch protections server-side — advisory checks (the common case on personal repos) would not stop it, so gate on CI yourself (orchestrated: write `step=9.2 pr=#P` first — `--watch` is the procedure's longest silent wait, and the marker lets whoever reads `--status` tell "waiting on CI" from an unexplained silence):
 
