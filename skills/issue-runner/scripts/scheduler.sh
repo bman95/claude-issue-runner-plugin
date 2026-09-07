@@ -239,7 +239,15 @@ has_blocked_ancestor() {
       echo yes
       return
     fi
-    queue="$queue $(deps_of "$cur")"
+    # Re-normalize through a word-split `echo`, not a plain concatenation: once
+    # $queue has been drained to "" (the common case at the last real node),
+    # "$queue $(deps_of "$cur")" is a lone space when deps_of also returns ""
+    # (a leaf, or a dangling dependency reference with no dag.txt line of its
+    # own) — non-empty by `[ -n ]`, but `set --` on it then leaves zero
+    # positional params, and `cur=$1` dies under `set -u`. `echo` collapses
+    # that back to a true empty string, matching deps_of()'s own normalization.
+    # shellcheck disable=SC2086 # word-splitting on purpose
+    queue=$(echo $queue $(deps_of "$cur"))
   done
   echo no
 }

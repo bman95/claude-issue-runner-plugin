@@ -30,6 +30,11 @@ err()  { printf 'FAIL: %s\n' "$1" >&2; fail=1; }
 #   STATUSES   - "N=status" pairs, space-separated; N gets issue-N/status=status
 #   PAUSED     - "1" to create RUN_ROOT/paused, "" otherwise
 #   EXPECTED   - expected stdout, one action per line ($'...\n...')
+#
+# Also asserts stderr is empty: the script is meant to run silently on every
+# well-formed (or gracefully-degraded) input, so any stray stderr output —
+# a shell error message from an unbound variable, for instance — is itself a
+# failure even when stdout happens to still look right.
 fixture() {
   local name="$1" dag="$2" statuses="$3" paused="$4" expected="$5"
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -44,14 +49,18 @@ fixture() {
   done
   [ "$paused" = 1 ] && : > "$run/paused"
 
-  local actual
-  actual="$(bash "$SCHEDULER" "$run/state")"
-  if [ "$actual" = "$expected" ]; then
+  local actual actual_err
+  actual="$(bash "$SCHEDULER" "$run/state" 2>"$run/stderr")"
+  actual_err="$(cat "$run/stderr")"
+  if [ "$actual" = "$expected" ] && [ -z "$actual_err" ]; then
     ok "$name"
   else
-    err "$name: expected:"
-    printf '%s\n' "$expected" | sed 's/^/  expected> /' >&2
-    printf '%s\n' "$actual" | sed 's/^/  actual  > /' >&2
+    err "$name:"
+    [ "$actual" != "$expected" ] && {
+      printf '%s\n' "$expected" | sed 's/^/  expected> /' >&2
+      printf '%s\n' "$actual" | sed 's/^/  actual  > /' >&2
+    }
+    [ -n "$actual_err" ] && printf '%s\n' "$actual_err" | sed 's/^/  stderr  > /' >&2
   fi
 }
 
@@ -141,6 +150,16 @@ fixture "failed dep takes priority over a closed-externally dep" \
 fixture "issue with no status dir at all defaults to pending" \
   $'1:\n2: 1' "2=pending" "" \
   "dispatch 1"
+
+# A dependency chain that bottoms out at a number with no dag.txt line of its
+# own (Step 2's contract says every edge is resolved before the file is
+# written, but a malformed dag.txt must still degrade cleanly, not crash):
+# has_blocked_ancestor's BFS must not choke on the resulting empty deps_of()
+# once its queue is otherwise drained — see scheduler.sh's queue
+# re-normalization comment.
+fixture "dangling dependency reference does not crash the ancestor search" \
+  $'1: 2\n2: 4' "1=pending 2=pending" "" \
+  $'cycle 1 2\ncycle 2 4'
 
 fixture "paused: a lone blocked issue with no dependent still needs Step 4" \
   "1:" "1=blocked" "" \
