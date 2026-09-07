@@ -44,7 +44,7 @@ Fields: `step=<id>` always (`1`–`10`; `8.1 iter=K` per Phase 1 iteration, `8.2
 
 - **Best-effort and free.** One local write, no API calls; `2>/dev/null` comes *before* the file redirect so even the redirect's own error is silenced, and `|| true` means a missing directory or unwritable path never fails a step. Interactive runs (no state path in play) write nothing.
 - **Never surfaces in the deliverable.** It is not mentioned in the PR body, `## Review notes`, or any commit message, and it lives outside the repository so nothing is ever staged.
-- **Informational only.** The orchestrator reads it for `--status` and post-mortems; it never treats it as evidence of merge or convergence — those come from GitHub (`gh pr view --json state`) and the review loop's own verdict, and a crashed implementer leaves the file at whatever step it last entered. The one thing it does act on is the file's **mtime**: an implementer whose marker has not moved for longer than the runner's `--hang-minutes` (default 30) is stopped as hung, so keep writing it at every boundary — and during a long Step 5, refresh it per commit.
+- **Informational only.** The orchestrator reads it for `--status` and post-mortems; it never treats it as evidence of merge or convergence — those come from GitHub (`gh pr view --json state`) and the review loop's own verdict, and a crashed implementer leaves the file at whatever step it last entered. The one thing it does act on is the file's **mtime**: an implementer whose marker has not moved for longer than the runner's `--hang-minutes` threshold is stopped as hung, so keep writing it at every boundary — and during a long Step 5, refresh it per commit.
 
 ## Workflow
 
