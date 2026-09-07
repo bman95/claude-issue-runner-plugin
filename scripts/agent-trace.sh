@@ -97,7 +97,12 @@ mkdir -p "$(dirname "$GUIDANCE")"
 # newlines, so per-line substring scanning is safe). Each assistant JSONL
 # record carries exactly one content block (thinking, text, or tool_use —
 # the harness streams them one block per line), which is what makes the
-# targeted `index()` scans below sufficient without a real JSON parser. ---
+# targeted `index()` scans below sufficient without a real JSON parser.
+# Verified against real subagent transcripts (hundreds of records, no
+# multi-block lines found); this is an observed property of the harness's
+# streaming format, not a documented guarantee — a line that ever carried
+# more than one block would only have its first block matched here, with
+# the rest of that line silently skipped rather than erroring. ---
 AWK_PROG='
 function jsonstr(rest,    i, n, c, c2, out) {
   n = length(rest); out = ""; i = 1
@@ -181,6 +186,35 @@ END {
 '
 DIGEST_BODY="$(awk "$AWK_PROG" "$TRANSCRIPT")"
 
+# jsonstr() (above) leaves \uXXXX escapes as literal 6-character sequences —
+# decoding a JSON \u escape into real UTF-8 needs bit-level codepoint math
+# that isn't portable across awk implementations (gawk vs mawk vs BSD awk),
+# so it is done here instead: bash's own printf builtin already implements
+# \uHHHH universal-character-name expansion (bash >= 4.2), so feeding it the
+# literal "\uHHHH" text as a format string decodes it correctly and
+# portably. Common in real transcripts (em dashes, curly quotes are
+# routinely \u-escaped) — left undecoded, they show up as raw JSON syntax
+# in the guidance a replacement implementer reads. An invalid or truncated
+# escape (bad hex, or fewer than 4 hex digits) is left exactly as-is rather
+# than guessed at.
+decode_unicode_escapes() {
+  local s="$1" out="" prefix rest hex suffix char
+  while [[ "$s" == *'\u'[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]* ]]; do
+    prefix="${s%%\\u*}"
+    rest="${s#*\\u}"
+    hex="${rest:0:4}"
+    suffix="${rest:4}"
+    if printf -v char '\u'"$hex" 2>/dev/null; then
+      out="$out$prefix$char"
+    else
+      out="$out${prefix}\\u${hex}"
+    fi
+    s="$suffix"
+  done
+  printf '%s%s' "$out" "$s"
+}
+DIGEST_BODY="$(decode_unicode_escapes "$DIGEST_BODY")"
+
 # Branch and PR references: best-effort grep over the digest body just
 # built (dispatch prompt + assistant text + tool commands already cover the
 # transcript's content, so no second pass over the raw jsonl is needed).
@@ -197,7 +231,10 @@ REFS="$(printf '%s\n' "$DIGEST_BODY" \
   echo "recovered by scripts/agent-trace.sh because in-place resume was"
   echo "unavailable for this implementer. This is a digest of what it did,"
   echo "not what it thought — chain-of-thought is not recoverable and is"
-  echo "never included; tool_result bodies are never included either."
+  echo "never included. Tool_result bodies (the densest source of secrets"
+  echo "and environment dumps in a transcript) are never included either —"
+  echo "but assistant text below is copied verbatim and can still reproduce"
+  echo "anything the implementer itself echoed into its own prose."
   echo
   printf '%s\n' "$DIGEST_BODY"
   echo "### Branch / PR references"
