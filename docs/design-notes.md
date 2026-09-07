@@ -72,8 +72,8 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 **Context.** Token budgets cannot be enforced from a skill spec — the harness meters tokens, and neither the orchestrator nor the implementers can observe their own consumption. "Stop when you've spent X" is not implementable as prose.
 
 **Options.**
-1. Do nothing; cost control stays with the caps that exist (`--max-parallel`, `--max-codex-iterations`, Phase 1 iteration cap).
-2. What's feasible today: agent-count *estimates* at `--plan` time (issues × expected agents per issue: implementer + Explore + 2 reviewers × iterations + gate passes), and per-run aggregation of actuals — iteration counts and gate passes are already in every implementer's Step 10 report; the orchestrator can sum them into the Step 5 summary.
+1. Do nothing; cost control stays with the caps that exist (`--max-parallel`, `--max-codex-iterations`, `--max-retries`, Phase 1 iteration cap).
+2. What's feasible today: agent-count *estimates* at `--plan` time (issues × expected agents per issue: implementer + Explore + 2 reviewers × iterations + gate passes), and per-run aggregation of actuals — iteration counts and gate passes are already in every implementer's Step 10 report, and Step 4 retries in `$STATE_DIR/issue-N/retries`; the orchestrator can sum them into the Step 5 summary.
 3. Real budget enforcement — requires harness support (a per-Agent-call token ceiling or a session meter readable from the session). Track upstream; not buildable here.
 
 **Recommendation.** Option 2 now (the per-run aggregation half is added as of this pass; the `--plan` estimate is cheap to add), option 3 when the harness grows a meter. The estimate's value is pre-flight sticker shock — "this run will dispatch ~40 agents" before dispatching any — which is the decision point a budget would have guarded anyway.
