@@ -47,7 +47,9 @@
 #   wait             nothing ready to dispatch, but an implementer is still
 #                    in flight (status=implementing) — wait for it (item 4)
 #   done             every issue is terminal (done/failed/skipped/
-#                    closed-externally) — exit the Step 3 loop
+#                    closed-externally/ready — the last only under
+#                    --no-merge, terminal with no Step 4 escalation of
+#                    its own) — exit the Step 3 loop
 #
 # `run-paused` takes priority over the blocked-chain/cycle distinction (item 6
 # checks it first): while RUN_ROOT/paused exists, no cycle is ever declared,
