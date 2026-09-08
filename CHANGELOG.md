@@ -2,6 +2,37 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [0.11.0] - 2026-09-08
+
+### Crash-resilient, budget-aware orchestration: recovery, pause, and a documented scheduler
+
+An 18-issue backlog batch, orchestrated by `/issue-runner` on itself. Theme: a run should never lose already-converged work to a host crash or a host-level credit/usage-limit stop, an ambiguous merge should never be mistaken for proof, and the scheduling logic should be testable in isolation rather than living only as prose. This release also folds in a Codex plugin edition and a Codex-gate model change that had already landed on `main` without a changelog entry.
+
+**issue-runner (0.9.0 → 0.10.0):**
+- **Durable, precondition-checked run root.** State moves from `/tmp` to `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`, so a run survives a reboot. A launch-time writability check fails closed with a relaunch instruction (e.g. `codex --add-dir` / `writable_roots`) instead of silently falling back to `/tmp`.
+- **Agent-tool preflight.** Step 0 probes for the `Agent` tool up front (some hosts, e.g. Claude Code on the web, hand out a toolset without it) and authorizes gh-issue's inline-review degradation path for the whole run, instead of every implementer discovering the gap mid-review.
+- **Crash recovery in place.** A documented `## Recovery` procedure resumes killed implementers from their own transcripts (`ListAgents`/`SendMessage`, resetting the `progress` mtime so hang-detection doesn't misfire on a just-reconnected agent) before falling back to the branch/PR resume check, with a transcript trace digest (`scripts/agent-trace.sh`) as the last resort when an agent truly can't be resumed. A same-session re-entry over a run it never released keeps that run's state (compares the `session` pointer against `$CLAUDE_CODE_SESSION_ID`) instead of rotating it away.
+- **Clean pause on a host budget stop.** When an `Agent` dispatch itself fails with a credit/usage-limit class of error, the run writes `$RUN_ROOT/paused` and stops filling new slots rather than misclassifying in-flight issues as `failed`/`skipped`; `--status` surfaces it directly. The run lock also carries a heartbeat (`--lock-ttl-minutes`, default 120, refreshed every Step 3 pass) so liveness doesn't depend solely on `$PPID`.
+- **Hang detection and retry discipline.** A step-boundary `progress` file lets `--hang-minutes` (default 30) stop a silently-stalled implementer mechanically instead of by wall-clock guesswork; `--max-retries` (default 2) caps orchestrator-driven retries per issue and forces escalation past the cap.
+- **Structured results, not parsed prose.** Whenever a dispatch supplies a state path, the implementer writes `result.json` (outcome, PR, telemetry) immediately before its final message; the orchestrator reads it first — authoritative for `--status` and Step 5's telemetry — falling back to prose only when the file is missing or unreadable. Merge proof stays anchored to git + GitHub (`headRefOid == HEAD`), never trusted blindly from the file's own claim.
+- **A tested scheduler.** Step 3's cascade-skip/ready-set/blocked-vs-cycle logic is extracted into `skills/issue-runner/scripts/scheduler.sh`, with `test-scheduler.sh` as golden fixtures wired into CI, so scheduling changes are regression-tested instead of re-derived from prose each time.
+- **`--no-merge` / `--merge-ready`.** Implementers can stop at a ready-to-merge PR for a human gate (`ready` status/outcome, verified against GitHub rather than trusted from `result.json`); a follow-up `--merge-ready` run merges what was left ready and continues dependents. Step 5 also tells apart a still-unfinished PR's three shapes — `draft (checkpoint)`, `draft (implemented, not ready)`, `branch only (no PR)` via a new orphan-branch probe — instead of reporting only `isDraft`.
+- **Deterministic conflict edges.** When every in-scope issue carries a `Files likely touched:` line, conflicting edges are computed by file-path intersection instead of an LLM guess; the LLM refinement pass is now a fallback for issues without that line.
+- **Tests re-run on any base advance.** The pre-merge freshness check no longer gates the re-test on file overlap; any base movement — including one detected right before a `--merge-ready` merge — re-runs tests before merging.
+- **Cost visible before dispatch.** The plan printout carries an agent-count estimate (min–max Claude agents, Codex gate passes); Step 5 recomputes it and prints the run's actual counts beside it, with an explicit best-effort caveat.
+- **Tracking-issue aware** (paired with issue-plan below): a tracking issue is excluded from scope, and when every in-scope issue shares one, the Step 5 summary posts there too.
+
+**gh-issue (0.7.1 → 0.8.0):**
+- **Draft-PR checkpoint.** On a fresh orchestrated branch, Step 4 pushes it and opens a **draft** PR carrying the plan before writing any code, so a run that dies before implementation leaves its distilled context on GitHub. Draft is load-bearing — GitHub refuses to merge a draft PR outright — so Step 9 must explicitly ready it before base-freshness and the checks gate.
+- **Progress marker and result file.** Whenever a dispatch supplies a state path, the run writes a best-effort `progress` marker per step boundary and the `result.json` above on exit — read as data by the orchestrator, authoritative for its telemetry, but never proof of merge on their own.
+- **Codex gate model: `gpt-5.6-terra` → `gpt-5.6-sol`.** The certification gate is the last independent check before an unattended merge, so it now runs on the frontier reviewer instead of the cheaper mid-tier one — roughly double the per-pass cost of the prior pin, spent deliberately on the highest-leverage review in the pipeline. Uses the explicit `-sol` id, same discipline as the `-terra` pin it replaces.
+
+**issue-plan (0.2.0 → 0.3.0):**
+- **Mandatory `Files likely touched:`.** Every published slice ends with a repo-relative file list — the input that issue-runner's deterministic conflict-edge pass depends on.
+- **Tracking issue.** Before publishing any slice, `/issue-plan` now unconditionally creates a tracking issue (`Plan: <name>`) carrying the interview's decisions and a running slice list, updated as each slice publishes; a continuation reconciles it from GitHub, never from the list alone.
+
+**Codex plugin edition (new).** `codex/issue-runner/` packages the three skills for the Codex CLI as a separate plugin, with its own manifest and a new README "Codex installation" section. gh-issue and issue-plan are ported in full; **issue-runner is not yet** — the crash recovery, host-pause handling, lock heartbeat, scheduler script, and agent-count estimate above are Claude-edition-only for now, a gap to close in a follow-up issue.
+
 ## [0.10.0] - 2026-07-12
 
 ### Portable context: carry the whole plugin in one environment variable

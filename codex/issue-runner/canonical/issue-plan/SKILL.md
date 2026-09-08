@@ -1,6 +1,6 @@
 ---
 name: issue-plan
-version: 0.2.0
+version: 0.3.0
 disable-model-invocation: true
 description: "Turns an idea, plan, or spec into ready-to-run GitHub issues: interviews only where the input has gaps, slices the work into tracer-bullet vertical slices, and publishes a tracking issue (input, interview decisions, slice list) plus one issue per slice in the format /issue-runner parses (What to build / Acceptance criteria / Blocked by / Files likely touched). Trigger: the user types /issue-plan. Do not auto-invoke."
 ---
