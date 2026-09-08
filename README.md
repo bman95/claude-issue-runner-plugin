@@ -72,7 +72,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner 42 43 44                     # specific issue numbers
 /issue-runner:issue-runner --plan                       # build the DAG, print an agent-count estimate, and exit
 /issue-runner:issue-runner --status                     # print the last run's state table, with in-flight progress and per-issue outcomes (read-only)
-/issue-runner:issue-runner --max-parallel N             # concurrency cap (default 5)
+/issue-runner:issue-runner --max-parallel N             # concurrency cap (default 3)
 /issue-runner:issue-runner --hang-minutes N             # hung-implementer threshold: progress file unchanged for more than N minutes (default 30)
 /issue-runner:issue-runner --lock-ttl-minutes N         # run-lock heartbeat threshold: refuse a second run while the lock's PID is alive or its mtime is younger than N minutes (default 120)
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
