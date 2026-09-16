@@ -29,8 +29,10 @@ fail=0
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# Hermetic git: no user/system config (hooksPath, autocrlf, templates, signing).
-export HOME="$TMP" GIT_CONFIG_NOSYSTEM=1
+# Hermetic git: no user/system config (hooksPath, autocrlf, templates, signing) —
+# $HOME, the system file, and the XDG/global paths git also reads.
+export HOME="$TMP" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+unset XDG_CONFIG_HOME
 
 ok()   { printf 'ok:   %s\n' "$1"; }
 err()  { printf 'FAIL: %s\n' "$1" >&2; fail=1; }
@@ -97,6 +99,9 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       worktree=<contract>  write this to the working tree uncommitted (an edit in
 #                            progress — must be ignored)
 #       cwd=<subdir>         run the block from this subdirectory of the worktree
+#       delete=1             the feature branch deletes the contract (MODE=changed must report it)
+#       nofetch=1            origin is unreachable when the block runs (the clone keeps a cached origin/main)
+#       strict=1             run the block under an inherited `bash -e -o pipefail`
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the block there — exactly the shape gh-issue Steps 3/5/8/9
@@ -104,7 +109,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
@@ -112,6 +117,9 @@ fixture() {
       advance=*)  advance="${opt#advance=}"; advance_set=1 ;;
       worktree=*) worktree="${opt#worktree=}"; worktree_set=1 ;;
       cwd=*)      cwd="${opt#cwd=}" ;;
+      delete=1)   delete=1 ;;
+      nofetch=1)  nofetch=1 ;;
+      strict=1)   strict=1 ;;
     esac
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -134,6 +142,7 @@ fixture() {
       mkdir -p .issue-runner; printf '%s\n' "$branch_contract" > .issue-runner/validation
       git add .issue-runner/validation
     fi
+    [ "$delete" -eq 1 ] && git rm -q .issue-runner/validation
     git commit -q -m change
     if [ "$advance_set" -eq 1 ]; then
       # main moves on after the fork: a clone elsewhere lands a new contract on origin.
@@ -147,10 +156,15 @@ fixture() {
     if [ "$worktree_set" -eq 1 ]; then
       mkdir -p .issue-runner; printf '%s\n' "$worktree" > .issue-runner/validation
     fi
+    if [ "$nofetch" -eq 1 ]; then
+      git fetch -q origin main   # a cached origin/main exists, then the remote goes away
+      git remote set-url origin "$run/gone.git"
+    fi
   ) >"$run/setup.log" 2>&1 || { err "$name: fixture setup failed:"; cat "$run/setup.log" >&2; return; }
 
   local actual_exit
-  (cd "$run/wt/$cwd" && MODE="$mode" GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" bash "$TMP/block.sh") >"$run/out" 2>&1
+  local -a shell=(bash); [ "$strict" -eq 1 ] && shell=(bash -e -o pipefail)
+  (cd "$run/wt/$cwd" && MODE="$mode" GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" "${shell[@]}" "$TMP/block.sh") >"$run/out" 2>&1
   actual_exit=$?
   if [ "$actual_exit" -eq "$expected_exit" ] && grep -qF -- "$expected_text" "$run/out"; then
     ok "$name"
@@ -196,6 +210,10 @@ fixture "row 42: full not declared → nothing to run" full \
   'preflight: true' - 0 "validation: full not declared"
 fixture "row 42: MODE=check reports a declared full" check \
   $'preflight: true\nfull: true' - 0 "full declared)"
+fixture "row 42: full not declared is exit 0 under an inherited -e/pipefail too" full \
+  'preflight: true' - 0 "validation: full not declared" strict=1
+fixture "row 42: full command not found (127 → 4)" full \
+  $'preflight: true\nfull: ./no-such-script-42' - 4 "validation: full command not runnable (exit 127)"
 
 # --- Row 43: invalid contract / command not runnable --------------------------
 fixture "row 43: stray key line is invalid (exit 3)" preflight \
@@ -204,6 +222,8 @@ fixture "row 43: missing preflight is invalid (exit 3)" preflight \
   'full: true' - 3 "preflight lines=0"
 fixture "row 43: duplicate preflight is invalid (exit 3)" preflight \
   $'preflight: true\npreflight: false' - 3 "preflight lines=2"
+fixture "row 43: duplicate full is invalid (exit 3)" preflight \
+  $'preflight: true\nfull: true\nfull: false' - 3 "full lines=2"
 fixture "row 43: empty command is invalid (exit 3)" preflight \
   'preflight:' - 3 "validation: invalid contract"
 fixture "row 43: CRLF line endings are invalid (exit 3)" preflight \
@@ -212,8 +232,8 @@ fixture "row 43: invalid contract is judged before full runs too" full \
   $'full: true\nbogus' - 3 "validation: invalid contract"
 fixture "row 43: MODE=check rejects an invalid contract (exit 3)" check \
   'bogus' - 3 "validation: invalid contract"
-fixture "row 43: unknown MODE is rejected, never a silent pass (exit 3)" ful \
-  'preflight: true' - 3 "validation: unknown MODE 'ful'"
+fixture "row 43: unknown MODE is rejected, never a silent pass (exit 6 — its own class, not the contract's)" ful \
+  'preflight: true' - 6 "validation: unknown MODE 'ful'"
 fixture "row 43: command not found (127 → 4)" preflight \
   'preflight: ./no-such-script-42' - 4 "validation: preflight command not runnable (exit 127)"
 fixture "row 43: command not executable (126 → 4)" preflight \
@@ -223,7 +243,9 @@ fixture "row 43: base branch missing on origin (exit 2)" preflight \
 fixture "row 43: MODE=check exits 2 too, never fallback" check \
   - - 2 "validation: cannot resolve the base branch" base=nope
 fixture "row 43: every gh call fails → exit 2, never fallback" preflight \
-  'preflight: true' - 2 "validation: cannot resolve the base branch: no origin/?" ghfail=all
+  'preflight: true' - 2 "validation: cannot resolve the base branch: cannot fetch origin/?" ghfail=all
+fixture "row 43: origin unreachable → exit 2, never the cached (possibly stale) origin/main" preflight \
+  'preflight: true' - 2 "validation: cannot resolve the base branch: cannot fetch origin/main" nofetch=1
 
 # --- Row 44: the base branch's copy runs; the PR's own edit is inert -----------
 fixture "row 44: branch edit ignored, base copy runs (pass)" preflight \
@@ -248,6 +270,8 @@ fixture "row 44: MODE=changed, branch edit → changed (exit 5, diff printed)" c
   'preflight: true' 'preflight: exit 9' 5 "+preflight: exit 9"
 fixture "row 44: MODE=changed, branch adds a contract → changed (exit 5)" changed \
   - 'preflight: true' 5 "validation: contract changed in this PR"
+fixture "row 44: MODE=changed, branch deletes the contract → changed (exit 5)" changed \
+  'preflight: true' - 5 "validation: contract changed in this PR" delete=1
 fixture "row 44: MODE=changed ignores an uncommitted edit (HEAD is what merges)" changed \
   'preflight: true' - 0 "validation: contract unchanged in this PR" 'worktree=preflight: exit 9'
 fixture "row 44: MODE=changed, a sibling's change on the base tip is not this PR's" changed \
