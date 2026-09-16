@@ -37,7 +37,8 @@
 #      ready-set / blocked-chain-vs-cycle state machine
 #  13. this repository's own .issue-runner/validation parses under the grammar
 #      gh-issue's "Validation contract" recipe applies (comment/blank lines,
-#      exactly one `preflight:` line, at most one `full:` line, nothing else)
+#      exactly one `preflight:` line, at most one `full:` line, LF endings,
+#      nothing else)
 #  14. scripts/test-validation-contract.sh passes — the fixtures for that
 #      recipe, extracted from skills/gh-issue/SKILL.md and asserted
 #      byte-identical in the Codex edition's canonical copy
@@ -399,7 +400,9 @@ if [ -f "$CONTRACT_FILE" ]; then
   stray="$(grep -vE '^[[:space:]]*(#|$)' "$CONTRACT_FILE" | grep -vE '^(preflight|full):[[:space:]]*[^[:space:]]' || true)"
   n_pre="$(grep -cE '^preflight:[[:space:]]*[^[:space:]]' "$CONTRACT_FILE")"
   n_full="$(grep -cE '^full:[[:space:]]*[^[:space:]]' "$CONTRACT_FILE")"
-  if [ -n "$stray" ] || [ "$n_pre" -ne 1 ] || [ "$n_full" -gt 1 ]; then
+  if grep -q $'\r' "$CONTRACT_FILE"; then
+    err ".issue-runner/validation has CRLF line endings (the recipe rejects them: the command would run with a trailing CR)"
+  elif [ -n "$stray" ] || [ "$n_pre" -ne 1 ] || [ "$n_full" -gt 1 ]; then
     err ".issue-runner/validation is invalid (preflight lines=$n_pre, full lines=$n_full, first stray line: $(printf '%s\n' "$stray" | head -1))"
   else
     ok ".issue-runner/validation parses (preflight declared; full $([ "$n_full" -eq 1 ] && echo declared || echo not declared))"

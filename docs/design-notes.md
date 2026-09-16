@@ -99,4 +99,4 @@ Rejected: writing a guessed file at Step 0 or by an implementer. A guessed polic
 
 **Recommendation.** Option 2 or 3 once #41 settles how planning reads project/design context; until then option 1 plus the Step 0 notice, which is cheap and never wrong.
 
-**Implemented — notice only (issue #42).** `/issue-runner` Step 0 reports presence or absence of `.issue-runner/validation` on the default branch and validates the grammar of a present file (asking before dispatch when it is invalid, since every implementer would otherwise return a `validation contract invalid` blocker); gh-issue consumes the merge-base copy at Steps 5, 8 and 9 and `--merge-ready`'s refresh re-runs it; nothing writes the file.
+**Implemented — notice only (issue #42).** `/issue-runner` Step 0 reports presence or absence of `.issue-runner/validation` on the default branch and validates the grammar of a present file (stopping before dispatch when it is invalid, since every implementer would otherwise return a `validation contract invalid` blocker); gh-issue consumes the merge-base copy at Steps 5, 8 and 9 and `--merge-ready`'s refresh re-runs it; nothing writes the file.
