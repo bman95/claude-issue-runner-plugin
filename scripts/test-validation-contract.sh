@@ -65,12 +65,15 @@ fi
 
 # Stub `gh`: the block asks it for the PR's base branch (`gh pr view`) or the
 # default branch (`gh repo view`); both answer with $GH_STUB_BRANCH, unless
-# GH_STUB_FAIL=pr (only `gh pr view` fails — no PR yet) or =all (no gh at all).
+# GH_STUB_FAIL=pr (only `gh pr view` fails — no PR yet), =prempty (`gh pr view`
+# succeeds but prints nothing — the branch's only PR is closed or merged) or =all
+# (no gh at all).
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 case "${GH_STUB_FAIL:-} $1" in
   "all "*|"pr pr") exit 1 ;;
+  "prempty pr") exit 0 ;;
 esac
 printf '%s\n' "${GH_STUB_BRANCH:-main}"
 EOF
@@ -93,7 +96,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #   EXPECTED_TEXT   - a substring that must appear in stdout+stderr
 #   OPTS            - any of:
 #       base=<name>          what the stub gh reports as the base branch (default main)
-#       ghfail=pr|all        make `gh pr view` (or every gh call) fail
+#       ghfail=pr|prempty|all  make `gh pr view` fail, print nothing, or every gh call fail
 #       advance=<contract>   after the fork, commit this contract to main and push it —
 #                            the base tip then differs from the merge-base ("-" removes it)
 #       worktree=<contract>  write this to the working tree uncommitted (an edit in
@@ -186,6 +189,8 @@ fixture "row 39: this repository's own contract passes the grammar" check \
   "$(cat "$ROOT/.issue-runner/validation")" - 0 "validation: contract ok"
 fixture "row 39: no PR yet — gh pr view fails, gh repo view resolves the base" preflight \
   'preflight: true' - 0 "validation: preflight passed" ghfail=pr
+fixture "row 39: only a closed PR on the branch — gh pr view prints nothing, gh repo view resolves the base" preflight \
+  'preflight: true' - 0 "validation: preflight passed" ghfail=prempty
 
 # --- Row 40: contract absent → fallback, never an error ------------------------
 fixture "row 40: no contract on the base branch" preflight \
@@ -272,6 +277,12 @@ fixture "row 44: MODE=changed, branch adds a contract → changed (exit 5)" chan
   - 'preflight: true' 5 "validation: contract changed in this PR"
 fixture "row 44: MODE=changed, branch deletes the contract → changed (exit 5)" changed \
   'preflight: true' - 5 "validation: contract changed in this PR" delete=1
+fixture "row 44: MODE=changed from a subdirectory still sees the edit (a pathspec is cwd-relative)" changed \
+  'preflight: true' 'preflight: exit 9' 5 "validation: contract changed in this PR" cwd=sub
+fixture "row 44: MODE=changed from a subdirectory still sees the deletion" changed \
+  'preflight: true' - 5 "validation: contract changed in this PR" delete=1 cwd=sub
+fixture "row 44: MODE=changed from a subdirectory, untouched → unchanged" changed \
+  'preflight: true' - 0 "validation: contract unchanged in this PR" cwd=sub
 fixture "row 44: MODE=changed ignores an uncommitted edit (HEAD is what merges)" changed \
   'preflight: true' - 0 "validation: contract unchanged in this PR" 'worktree=preflight: exit 9'
 fixture "row 44: MODE=changed, a sibling's change on the base tip is not this PR's" changed \
