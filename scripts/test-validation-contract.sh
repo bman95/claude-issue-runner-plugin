@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 #
 # Fixtures for gh-issue's "Validation contract" recipe — the ```bash block in
-# skills/gh-issue/SKILL.md that discovers `.issue-runner/validation` at the
-# merge-base with the base branch and runs its `preflight:` / `full:` command.
+# skills/gh-issue/SKILL.md that discovers `.issue-runner/validation` on the base
+# branch's tip and runs its `preflight:` / `full:` command (or, with
+# MODE=changed, reports whether the PR itself edited the file).
 # `docs/scenarios.md` rows 39–44 are the human-readable contract; this script
 # is their executable form for the part that is pure shell: discovery, the
-# grammar, the exit-status classes, and the trust rule (the merge-base copy
-# runs — never the working tree's, never the base tip's).
+# grammar, the exit-status classes, and the trust rule (the base branch's copy
+# runs — never the working tree's; the PR's own edit is judged against the
+# merge-base).
 #
 # The block is extracted from the skill file itself, so the recipe under test
 # is exactly the one implementers run — and the Codex edition's canonical copy
 # must carry it byte-for-byte (lint's bash -n pass covers only skills/). The
 # block's own `gh` calls resolve the base branch; a stub `gh` on PATH answers
-# them here, so those lines execute under test too.
+# (or refuses) them here, so those lines execute under test too.
 #
 # Run directly, or from scripts/lint.sh (and so from CI). Dependency-free:
 # bash + git + coreutils. Exits non-zero on the first-or-any failure.
@@ -26,6 +28,9 @@ CANON_GH="$ROOT/codex/issue-runner/canonical/gh-issue/SKILL.md"
 fail=0
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+# Hermetic git: no user/system config (hooksPath, autocrlf, templates, signing).
+export HOME="$TMP" GIT_CONFIG_NOSYSTEM=1
 
 ok()   { printf 'ok:   %s\n' "$1"; }
 err()  { printf 'FAIL: %s\n' "$1" >&2; fail=1; }
@@ -57,9 +62,16 @@ else
 fi
 
 # Stub `gh`: the block asks it for the PR's base branch (`gh pr view`) or the
-# default branch (`gh repo view`); both answer with $GH_STUB_BRANCH.
+# default branch (`gh repo view`); both answer with $GH_STUB_BRANCH, unless
+# GH_STUB_FAIL=pr (only `gh pr view` fails — no PR yet) or =all (no gh at all).
 mkdir -p "$TMP/bin"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "${GH_STUB_BRANCH:-main}"\n' > "$TMP/bin/gh"
+cat > "$TMP/bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "${GH_STUB_FAIL:-} $1" in
+  "all "*|"pr pr") exit 1 ;;
+esac
+printf '%s\n' "${GH_STUB_BRANCH:-main}"
+EOF
 chmod +x "$TMP/bin/gh"
 export PATH="$TMP/bin:$PATH"
 
@@ -69,15 +81,17 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 
 # fixture NAME MODE MAIN_CONTRACT BRANCH_CONTRACT EXPECTED_EXIT EXPECTED_TEXT [OPTS...]
 #   NAME            - test label
-#   MODE            - check | preflight | full | anything else (the block rejects it)
+#   MODE            - check | changed | preflight | full | anything else (the block rejects it)
 #   MAIN_CONTRACT   - content of .issue-runner/validation on the base branch at
 #                     the fork point, or "-" for no contract at all
 #   BRANCH_CONTRACT - content committed to the same path on the feature branch
-#                     (the PR's own edit — must be ignored), or "-" for none
+#                     (the PR's own edit — inert for the run; MODE=changed reports it),
+#                     or "-" for none
 #   EXPECTED_EXIT   - the block's exit status
 #   EXPECTED_TEXT   - a substring that must appear in stdout+stderr
 #   OPTS            - any of:
 #       base=<name>          what the stub gh reports as the base branch (default main)
+#       ghfail=pr|all        make `gh pr view` (or every gh call) fail
 #       advance=<contract>   after the fork, commit this contract to main and push it —
 #                            the base tip then differs from the merge-base ("-" removes it)
 #       worktree=<contract>  write this to the working tree uncommitted (an edit in
@@ -90,10 +104,11 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main advance="" advance_set=0 worktree="" worktree_set=0 cwd="" opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
+      ghfail=*)   ghfail="${opt#ghfail=}" ;;
       advance=*)  advance="${opt#advance=}"; advance_set=1 ;;
       worktree=*) worktree="${opt#worktree=}"; worktree_set=1 ;;
       cwd=*)      cwd="${opt#cwd=}" ;;
@@ -101,10 +116,11 @@ fixture() {
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
   rm -rf "$run"; mkdir -p "$run"
-  git init -q --bare "$run/origin.git"
+  git init -q --bare "$run/origin.git" && git -C "$run/origin.git" symbolic-ref HEAD refs/heads/main
   init_main "$run/wt"
   (
-    cd "$run/wt" || exit 1
+    set -e   # any setup failure is a fixture failure, never a silent pass
+    cd "$run/wt"
     gitc
     printf 'x\n' > README; mkdir -p sub; printf 'z\n' > sub/file; git add README sub/file; git commit -q -m base
     if [ "$main_contract" != "-" ]; then
@@ -121,12 +137,12 @@ fixture() {
     git commit -q -m change
     if [ "$advance_set" -eq 1 ]; then
       # main moves on after the fork: a clone elsewhere lands a new contract on origin.
-      git clone -q "$run/origin.git" "$run/other" && cd "$run/other" && gitc || exit 1
+      git clone -q --branch main "$run/origin.git" "$run/other" && cd "$run/other" && gitc
       if [ "$advance" = "-" ]; then git rm -q .issue-runner/validation; else
         mkdir -p .issue-runner; printf '%s\n' "$advance" > .issue-runner/validation; git add .issue-runner/validation
       fi
       git commit -q -m advance && git push -q origin main
-      cd "$run/wt" || exit 1
+      cd "$run/wt"
     fi
     if [ "$worktree_set" -eq 1 ]; then
       mkdir -p .issue-runner; printf '%s\n' "$worktree" > .issue-runner/validation
@@ -134,7 +150,7 @@ fixture() {
   ) >"$run/setup.log" 2>&1 || { err "$name: fixture setup failed:"; cat "$run/setup.log" >&2; return; }
 
   local actual_exit
-  (cd "$run/wt/$cwd" && MODE="$mode" GH_STUB_BRANCH="$base" bash "$TMP/block.sh") >"$run/out" 2>&1
+  (cd "$run/wt/$cwd" && MODE="$mode" GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" bash "$TMP/block.sh") >"$run/out" 2>&1
   actual_exit=$?
   if [ "$actual_exit" -eq "$expected_exit" ] && grep -qF -- "$expected_text" "$run/out"; then
     ok "$name"
@@ -154,6 +170,8 @@ fixture "row 39: MODE=check reports the contract without running it" check \
   'preflight: exit 7' - 0 "validation: contract ok (preflight declared; full not declared)"
 fixture "row 39: this repository's own contract passes the grammar" check \
   "$(cat "$ROOT/.issue-runner/validation")" - 0 "validation: contract ok"
+fixture "row 39: no PR yet — gh pr view fails, gh repo view resolves the base" preflight \
+  'preflight: true' - 0 "validation: preflight passed" ghfail=pr
 
 # --- Row 40: contract absent → fallback, never an error ------------------------
 fixture "row 40: no contract on the base branch" preflight \
@@ -164,6 +182,10 @@ fixture "row 40: MODE=check on an absent contract is the same fallback" check \
 # --- Row 41: preflight failure ------------------------------------------------
 fixture "row 41: preflight fails (exit 7 → 1)" preflight \
   'preflight: exit 7' - 1 "validation: preflight failed (exit 7): exit 7"
+fixture "row 41: a command exiting 3 is a plain failure — it cannot forge the block's own exits" preflight \
+  'preflight: exit 3' - 1 "validation: preflight failed (exit 3)"
+fixture "row 41: a command exiting 2 is a plain failure too" preflight \
+  'preflight: exit 2' - 1 "validation: preflight failed (exit 2)"
 
 # --- Row 42: optional full validation -----------------------------------------
 fixture "row 42: full declared and passes" full \
@@ -196,8 +218,14 @@ fixture "row 43: command not found (127 → 4)" preflight \
   'preflight: ./no-such-script-42' - 4 "validation: preflight command not runnable (exit 127)"
 fixture "row 43: command not executable (126 → 4)" preflight \
   'preflight: ./README' - 4 "validation: preflight command not runnable (exit 126)"
+fixture "row 43: base branch missing on origin (exit 2)" preflight \
+  'preflight: true' - 2 "validation: cannot resolve the base branch" base=nope
+fixture "row 43: MODE=check exits 2 too, never fallback" check \
+  - - 2 "validation: cannot resolve the base branch" base=nope
+fixture "row 43: every gh call fails → exit 2, never fallback" preflight \
+  'preflight: true' - 2 "validation: cannot resolve the base branch: no origin/?" ghfail=all
 
-# --- Row 44: only the merge-base copy is trusted ------------------------------
+# --- Row 44: the base branch's copy runs; the PR's own edit is inert -----------
 fixture "row 44: branch edit ignored, base copy runs (pass)" preflight \
   'preflight: true' 'preflight: exit 9' 0 "validation: preflight passed"
 fixture "row 44: branch edit ignored, base copy runs (fail)" preflight \
@@ -206,18 +234,26 @@ fixture "row 44: branch-added contract with none on base → fallback" preflight
   - 'preflight: exit 9' 0 "validation: fallback (no contract"
 fixture "row 44: uncommitted working-tree edit ignored" preflight \
   'preflight: true' - 0 "validation: preflight passed" 'worktree=preflight: exit 9'
-fixture "row 44: base tip advanced after the fork — the merge-base copy runs, not the tip's" preflight \
-  'preflight: true' - 0 "validation: preflight passed" 'advance=preflight: exit 9'
-fixture "row 44: contract added to base after the fork → still the fork point's fallback" preflight \
-  - - 0 "validation: fallback (no contract" 'advance=preflight: exit 9'
-fixture "row 44: contract removed from base after the fork → the fork point's copy still runs" preflight \
-  'preflight: exit 9' - 1 "validation: preflight failed (exit 9)" advance=-
+fixture "row 44: base tip advanced after the fork — the tip's copy runs (a fix on the base takes effect)" preflight \
+  'preflight: exit 9' - 0 "validation: preflight passed" 'advance=preflight: true'
+fixture "row 44: contract added to base after the fork → it runs" preflight \
+  - - 1 "validation: preflight failed (exit 9)" 'advance=preflight: exit 9'
+fixture "row 44: contract removed from base after the fork → fallback" preflight \
+  'preflight: exit 9' - 0 "validation: fallback (no contract" advance=-
 
-# --- Base unresolvable: an environment failure, never a fallback ---------------
-fixture "base unresolvable: remote exists, branch missing (exit 2)" preflight \
-  'preflight: true' - 2 "validation: cannot resolve the base branch" base=nope
-fixture "base unresolvable: MODE=check exits 2 too, never fallback" check \
-  - - 2 "validation: cannot resolve the base branch" base=nope
+# --- Row 44: MODE=changed — did this PR edit the contract? ---------------------
+fixture "row 44: MODE=changed, untouched → unchanged (exit 0)" changed \
+  'preflight: true' - 0 "validation: contract unchanged in this PR"
+fixture "row 44: MODE=changed, branch edit → changed (exit 5, diff printed)" changed \
+  'preflight: true' 'preflight: exit 9' 5 "+preflight: exit 9"
+fixture "row 44: MODE=changed, branch adds a contract → changed (exit 5)" changed \
+  - 'preflight: true' 5 "validation: contract changed in this PR"
+fixture "row 44: MODE=changed ignores an uncommitted edit (HEAD is what merges)" changed \
+  'preflight: true' - 0 "validation: contract unchanged in this PR" 'worktree=preflight: exit 9'
+fixture "row 44: MODE=changed, a sibling's change on the base tip is not this PR's" changed \
+  'preflight: true' - 0 "validation: contract unchanged in this PR" 'advance=preflight: exit 9'
+fixture "row 44: MODE=changed, base missing → exit 2, never unchanged" changed \
+  'preflight: true' 'preflight: exit 9' 2 "validation: cannot resolve the base branch" base=nope
 
 if [ "$fail" -ne 0 ]; then
   printf '\ntest-validation-contract: FAILED\n' >&2
