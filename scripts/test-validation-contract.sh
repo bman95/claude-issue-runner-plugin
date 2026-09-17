@@ -107,7 +107,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       strict=1             run the block under an inherited `bash -e -o pipefail`
 #       outside=1            run the block from a directory that is in no repository at all
 #       corrupt=1            the contract's blob is missing from the clone's object store (the ref is intact)
-#       lock=1               origin/main is lock-held (a sibling's fetch in flight) for the first ~1.5 s of the run
+#       lock=1               origin/main is lock-held (a sibling's fetch in flight) for the first ~0.5 s of the run
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the block there — exactly the shape gh-issue Steps 3/5/8/9
@@ -185,9 +185,11 @@ fixture() {
   fi
   if [ "$lock" -eq 1 ]; then
     # A sibling implementer's fetch holds the shared ref's lock while the block starts
-    # (the ref must move for git to take it: pair with advance=); it lets go 1.5 s later.
+    # (the ref must move for git to take it: pair with advance=); it lets go 0.5 s later —
+    # the block's first try (at ~0.1 s) hits it, its second (at ~1.1 s) succeeds, and the
+    # third is a cushion against a scheduling stall on either side.
     mkdir -p "$run/wt/.git/refs/remotes/origin" && : > "$run/wt/.git/refs/remotes/origin/main.lock"
-    ( sleep 1.5; rm -f "$run/wt/.git/refs/remotes/origin/main.lock" ) &
+    ( sleep 0.5; rm -f "$run/wt/.git/refs/remotes/origin/main.lock" ) &
   fi
   (cd "$from" && MODE="$mode" GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" "${shell[@]}" "$TMP/block.sh") >"$run/out" 2>&1
   actual_exit=$?
