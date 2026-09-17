@@ -87,7 +87,7 @@ Two keys, each `key: <command>` on its own line, plus `#` comment lines and blan
 ```bash
 MODE=${MODE:-preflight}   # check | changed | preflight | full
 set +e +o pipefail   # the block reads every exit status itself; an inherited -e/pipefail would turn "no full: line" (grep -c exits 1) into a silent exit 1
-TOP=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$TOP" ] && cd "$TOP" || { echo "validation: cannot resolve the worktree root" >&2; exit 2; }   # a pathspec (the MODE=changed diff) is cwd-relative: from a subdirectory it would match nothing and read as "unchanged"; the emptiness test matters: `cd ""` is a no-op that exits 0 in bash
+TOP=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$TOP" ] && cd "$TOP" || { echo "validation: cannot resolve the worktree root" >&2; exit 2; }   # a pathspec (the MODE=changed diff) is cwd-relative: from a subdirectory it would match nothing and read as "unchanged"; chained on rev-parse's own status, never on its output: `cd ""` is a no-op that exits 0 in bash
 case $MODE in check|changed|preflight|full) ;; *) echo "validation: unknown MODE '$MODE'" >&2; exit 6 ;; esac
 CONTRACT_PATH=.issue-runner/validation
 BASE_BRANCH=$(gh pr view --json baseRefName,state -q 'select(.state=="OPEN") | .baseRefName' 2>/dev/null) && [ -n "$BASE_BRANCH" ] \
