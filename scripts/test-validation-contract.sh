@@ -107,6 +107,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       strict=1             run the block under an inherited `bash -e -o pipefail`
 #       outside=1            run the block from a directory that is in no repository at all
 #       corrupt=1            the contract's blob is missing from the clone's object store (the ref is intact)
+#       lock=1               origin/main is lock-held (a sibling's fetch in flight) for the first ~1.5 s of the run
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the block there — exactly the shape gh-issue Steps 3/5/8/9
@@ -114,7 +115,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 lock=0 opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
@@ -127,6 +128,7 @@ fixture() {
       strict=1)   strict=1 ;;
       outside=1)  outside=1 ;;
       corrupt=1)  corrupt=1 ;;
+      lock=1)     lock=1 ;;
     esac
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -180,6 +182,12 @@ fixture() {
     # No repository here, and none discovered above it either: $TMP is a ceiling
     # for git's discovery, whatever TMPDIR is nested in.
     from="$run/nowhere"; mkdir -p "$from"; export GIT_CEILING_DIRECTORIES="$TMP"
+  fi
+  if [ "$lock" -eq 1 ]; then
+    # A sibling implementer's fetch holds the shared ref's lock while the block starts
+    # (the ref must move for git to take it: pair with advance=); it lets go 1.5 s later.
+    mkdir -p "$run/wt/.git/refs/remotes/origin" && : > "$run/wt/.git/refs/remotes/origin/main.lock"
+    ( sleep 1.5; rm -f "$run/wt/.git/refs/remotes/origin/main.lock" ) &
   fi
   (cd "$from" && MODE="$mode" GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" "${shell[@]}" "$TMP/block.sh") >"$run/out" 2>&1
   actual_exit=$?
@@ -288,6 +296,8 @@ fixture "row 44: contract added to base after the fork → it runs" preflight \
   - - 1 "validation: preflight failed (exit 9)" 'advance=preflight: exit 9'
 fixture "row 44: contract removed from base after the fork → fallback" preflight \
   'preflight: exit 9' - 0 "validation: fallback (no contract" advance=-
+fixture "row 44: a sibling's fetch holds the shared ref's lock — retried, the tip's copy still runs" preflight \
+  'preflight: exit 9' - 0 "validation: preflight passed" 'advance=preflight: true' lock=1
 
 # --- Row 44: MODE=changed — did this PR edit the contract? ---------------------
 fixture "row 44: MODE=changed, untouched → unchanged (exit 0)" changed \
