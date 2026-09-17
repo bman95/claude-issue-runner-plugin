@@ -109,6 +109,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       corrupt=1            the contract's blob is missing from the clone's object store (the ref is intact)
 #       corrupt=tree         the contract's directory tree object is missing (ls-tree itself fails, never "no contract")
 #       lock=1               origin/main is lock-held (a sibling's fetch in flight) for the first ~0.5 s of the run
+#       nul=1                the base contract is `preflight: tr<NUL>ue` (a shell variable would read `true`)
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the block there — exactly the shape gh-issue Steps 3/5/8/9
@@ -116,7 +117,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 lock=0 opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 lock=0 nul=0 opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
@@ -131,6 +132,7 @@ fixture() {
       corrupt=1)  corrupt=1 ;;
       corrupt=tree) corrupt=tree ;;
       lock=1)     lock=1 ;;
+      nul=1)      nul=1 ;;
     esac
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -144,6 +146,7 @@ fixture() {
     printf 'x\n' > README; mkdir -p sub; printf 'z\n' > sub/file; git add README sub/file; git commit -q -m base
     if [ "$main_contract" != "-" ]; then
       mkdir -p .issue-runner; printf '%s\n' "$main_contract" > .issue-runner/validation
+      if [ "$nul" -eq 1 ]; then printf 'preflight: tr\0ue\n' > .issue-runner/validation; fi
       git add .issue-runner/validation; git commit -q -m contract
     fi
     git remote add origin "$run/origin.git"; git push -q origin main
@@ -263,6 +266,10 @@ fixture "row 43: empty command is invalid (exit 3)" preflight \
   'preflight:' - 3 "validation: invalid contract"
 fixture "row 43: CRLF line endings are invalid (exit 3)" preflight \
   $'preflight: true\r' - 3 "CRLF line endings"
+fixture "row 43: a command that is only a # comment is invalid (exit 3), never a passed placeholder" preflight \
+  'preflight: # TODO' - 3 "invalid contract"
+fixture "row 43: a NUL byte in the contract is invalid (exit 3), never the byte-stripped command" preflight \
+  'preflight: true' - 3 "NUL byte" nul=1
 fixture "row 43: invalid contract is judged before full runs too" full \
   $'full: true\nbogus' - 3 "validation: invalid contract"
 fixture "row 43: MODE=check rejects an invalid contract (exit 3)" check \

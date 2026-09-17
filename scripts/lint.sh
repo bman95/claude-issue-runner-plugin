@@ -397,10 +397,12 @@ fi
 # a typo here would block every implementer run on this repo at Step 5.
 CONTRACT_FILE="$ROOT/.issue-runner/validation"
 if [ -f "$CONTRACT_FILE" ]; then
-  stray="$(grep -vE '^[[:space:]]*(#|$)' "$CONTRACT_FILE" | grep -vE '^(preflight|full):[[:space:]]*[^[:space:]]' || true)"
-  n_pre="$(grep -cE '^preflight:[[:space:]]*[^[:space:]]' "$CONTRACT_FILE")"
-  n_full="$(grep -cE '^full:[[:space:]]*[^[:space:]]' "$CONTRACT_FILE")"
-  if grep -q $'\r' "$CONTRACT_FILE"; then
+  stray="$(grep -vE '^[[:space:]]*(#|$)' "$CONTRACT_FILE" | grep -vE '^(preflight|full):[[:space:]]*[^[:space:]#]' || true)"
+  n_pre="$(grep -cE '^preflight:[[:space:]]*[^[:space:]#]' "$CONTRACT_FILE")"
+  n_full="$(grep -cE '^full:[[:space:]]*[^[:space:]#]' "$CONTRACT_FILE")"
+  if [ "$(tr -d '\000' < "$CONTRACT_FILE" | wc -c)" -ne "$(wc -c < "$CONTRACT_FILE")" ]; then
+    err ".issue-runner/validation contains a NUL byte (the recipe rejects it: a shell variable would drop it and run a different command)"
+  elif grep -q $'\r' "$CONTRACT_FILE"; then
     err ".issue-runner/validation has CRLF line endings (the recipe rejects them: the command would run with a trailing CR)"
   elif [ -n "$stray" ] || [ "$n_pre" -ne 1 ] || [ "$n_full" -gt 1 ]; then
     err ".issue-runner/validation is invalid (preflight lines=$n_pre, full lines=$n_full, first stray line: $(printf '%s\n' "$stray" | head -1))"
