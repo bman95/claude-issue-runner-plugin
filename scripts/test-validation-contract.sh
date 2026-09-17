@@ -105,6 +105,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       delete=1             the feature branch deletes the contract (MODE=changed must report it)
 #       nofetch=1            origin is unreachable when the block runs (the clone keeps a cached origin/main)
 #       strict=1             run the block under an inherited `bash -e -o pipefail`
+#       outside=1            run the block from a directory that is in no repository at all
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the block there — exactly the shape gh-issue Steps 3/5/8/9
@@ -112,7 +113,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
@@ -123,6 +124,7 @@ fixture() {
       delete=1)   delete=1 ;;
       nofetch=1)  nofetch=1 ;;
       strict=1)   strict=1 ;;
+      outside=1)  outside=1 ;;
     esac
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -165,10 +167,16 @@ fixture() {
     fi
   ) >"$run/setup.log" 2>&1 || { err "$name: fixture setup failed:"; cat "$run/setup.log" >&2; return; }
 
-  local actual_exit
+  local actual_exit from="$run/wt/$cwd"
   local -a shell=(bash); [ "$strict" -eq 1 ] && shell=(bash -e -o pipefail)
-  (cd "$run/wt/$cwd" && MODE="$mode" GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" "${shell[@]}" "$TMP/block.sh") >"$run/out" 2>&1
+  if [ "$outside" -eq 1 ]; then
+    # No repository here, and none discovered above it either: $TMP is a ceiling
+    # for git's discovery, whatever TMPDIR is nested in.
+    from="$run/nowhere"; mkdir -p "$from"; export GIT_CEILING_DIRECTORIES="$TMP"
+  fi
+  (cd "$from" && MODE="$mode" GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" "${shell[@]}" "$TMP/block.sh") >"$run/out" 2>&1
   actual_exit=$?
+  unset GIT_CEILING_DIRECTORIES
   if [ "$actual_exit" -eq "$expected_exit" ] && grep -qF -- "$expected_text" "$run/out"; then
     ok "$name"
   else
@@ -251,6 +259,10 @@ fixture "row 43: every gh call fails → exit 2, never fallback" preflight \
   'preflight: true' - 2 "validation: cannot resolve the base branch: cannot fetch origin/?" ghfail=all
 fixture "row 43: origin unreachable → exit 2, never the cached (possibly stale) origin/main" preflight \
   'preflight: true' - 2 "validation: cannot resolve the base branch: cannot fetch origin/main" nofetch=1
+fixture "row 43: run outside any repository → exit 2 at the worktree-root guard (cd \"\" is a no-op in bash)" preflight \
+  'preflight: true' - 2 "validation: cannot resolve the worktree root" outside=1
+fixture "row 43: run from inside .git (no work tree there) → exit 2 at the guard, never a run in the wrong directory" preflight \
+  'preflight: true' - 2 "validation: cannot resolve the worktree root" cwd=.git
 
 # --- Row 44: the base branch's copy runs; the PR's own edit is inert -----------
 fixture "row 44: branch edit ignored, base copy runs (pass)" preflight \
