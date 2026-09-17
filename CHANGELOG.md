@@ -16,7 +16,7 @@ Issue #42. "Run the tests" meant whatever an implementer inferred from CLAUDE.md
 
 **issue-runner:**
 - **Step 0 validation-contract preflight.** Reports whether the base branch carries a contract or the run will use the conventions fallback, and stops on a grammar-invalid file before any dispatch. It never creates or edits the file.
-- **`--merge-ready` refresh re-runs the contract's validation** — preflight, then `full` when declared; fallback: the project's tests — instead of "the project's tests"; a failing validation, an invalid contract or a not-runnable command all leave the issue `ready` and noted, never merged over.
+- **`--merge-ready` refresh re-runs the contract's validation** — preflight, then `full` — the block reports it not declared when there is none; fallback: the project's tests — instead of "the project's tests"; a failing validation, an invalid contract or a not-runnable command all leave the issue `ready` and noted, never merged over.
 
 **docs/tests:**
 - README `## Validation contract` section; REFERENCE.md rationale entry; design-notes note 6 on bootstrapping the contract in a repository that does not have one yet (coordinate with #41).

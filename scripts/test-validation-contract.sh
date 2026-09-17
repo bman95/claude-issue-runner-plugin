@@ -106,6 +106,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       nofetch=1            origin is unreachable when the block runs (the clone keeps a cached origin/main)
 #       strict=1             run the block under an inherited `bash -e -o pipefail`
 #       outside=1            run the block from a directory that is in no repository at all
+#       corrupt=1            the contract's blob is missing from the clone's object store (the ref is intact)
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the block there — exactly the shape gh-issue Steps 3/5/8/9
@@ -113,7 +114,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
@@ -125,6 +126,7 @@ fixture() {
       nofetch=1)  nofetch=1 ;;
       strict=1)   strict=1 ;;
       outside=1)  outside=1 ;;
+      corrupt=1)  corrupt=1 ;;
     esac
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -164,6 +166,11 @@ fixture() {
     if [ "$nofetch" -eq 1 ]; then
       git fetch -q origin main   # a cached origin/main exists, then the remote goes away
       git remote set-url origin "$run/gone.git"
+    fi
+    if [ "$corrupt" -eq 1 ]; then
+      # The commit and tree stay; only the contract's blob goes (a loose object here —
+      # `rm` without -f, so a packed one fails the setup loudly instead of passing).
+      B=$(git rev-parse "origin/main:.issue-runner/validation"); rm ".git/objects/${B:0:2}/${B:2}"
     fi
   ) >"$run/setup.log" 2>&1 || { err "$name: fixture setup failed:"; cat "$run/setup.log" >&2; return; }
 
@@ -263,6 +270,8 @@ fixture "row 43: run outside any repository → exit 2 at the worktree-root guar
   'preflight: true' - 2 "validation: cannot resolve the worktree root" outside=1
 fixture "row 43: run from inside .git (no work tree there) → exit 2 at the guard, never a run in the wrong directory" preflight \
   'preflight: true' - 2 "validation: cannot resolve the worktree root" cwd=.git
+fixture "row 43: contract blob missing from the object store → exit 2, never fallback (cat-file -e fails alike for absent and unreadable)" preflight \
+  'preflight: true' - 2 "validation: cannot resolve the base branch: cannot read .issue-runner/validation from origin/main" corrupt=1
 
 # --- Row 44: the base branch's copy runs; the PR's own edit is inert -----------
 fixture "row 44: branch edit ignored, base copy runs (pass)" preflight \
