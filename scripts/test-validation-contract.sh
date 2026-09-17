@@ -107,6 +107,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       strict=1             run the block under an inherited `bash -e -o pipefail`
 #       outside=1            run the block from a directory that is in no repository at all
 #       corrupt=1            the contract's blob is missing from the clone's object store (the ref is intact)
+#       corrupt=tree         the contract's directory tree object is missing (ls-tree itself fails, never "no contract")
 #       lock=1               origin/main is lock-held (a sibling's fetch in flight) for the first ~0.5 s of the run
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
@@ -128,6 +129,7 @@ fixture() {
       strict=1)   strict=1 ;;
       outside=1)  outside=1 ;;
       corrupt=1)  corrupt=1 ;;
+      corrupt=tree) corrupt=tree ;;
       lock=1)     lock=1 ;;
     esac
   done
@@ -169,10 +171,13 @@ fixture() {
       git fetch -q origin main   # a cached origin/main exists, then the remote goes away
       git remote set-url origin "$run/gone.git"
     fi
-    if [ "$corrupt" -eq 1 ]; then
+    if [ "$corrupt" = 1 ]; then
       # The commit and tree stay; only the contract's blob goes (a loose object here —
       # `rm` without -f, so a packed one fails the setup loudly instead of passing).
       B=$(git rev-parse "origin/main:.issue-runner/validation"); rm ".git/objects/${B:0:2}/${B:2}"
+    elif [ "$corrupt" = tree ]; then
+      # The directory's tree object goes instead: `ls-tree` cannot list the path at all.
+      B=$(git rev-parse "origin/main:.issue-runner"); rm ".git/objects/${B:0:2}/${B:2}"
     fi
   ) >"$run/setup.log" 2>&1 || { err "$name: fixture setup failed:"; cat "$run/setup.log" >&2; return; }
 
@@ -282,6 +287,8 @@ fixture "row 43: run from inside .git (no work tree there) → exit 2 at the gua
   'preflight: true' - 2 "validation: cannot resolve the worktree root" cwd=.git
 fixture "row 43: contract blob missing from the object store → exit 2, never fallback (cat-file -e fails alike for absent and unreadable)" preflight \
   'preflight: true' - 2 "validation: cannot resolve the base branch: cannot read .issue-runner/validation from origin/main" corrupt=1
+fixture "row 43: contract directory tree missing from the object store → exit 2 at ls-tree, never fallback" preflight \
+  'preflight: true' - 2 "validation: cannot resolve the base branch: cannot read the tree of origin/main" corrupt=tree
 
 # --- Row 44: the base branch's copy runs; the PR's own edit is inert -----------
 fixture "row 44: branch edit ignored, base copy runs (pass)" preflight \
