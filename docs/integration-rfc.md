@@ -1,0 +1,302 @@
+# RFC: integration-aware Issue Runner without a CI/CD engine
+
+**Status:** proposed (issue #43). Design only — nothing in this document is implemented, and nothing in it changes what any skill does today. It builds on the validation contract (issue #42: `.issue-runner/validation`, gh-issue's "Validation contract" section) and on `docs/design-notes.md` notes 2 (full merge queue, parked) and 6 (bootstrapping the validation contract); it reconciles with both rather than replacing either.
+
+## 1. Summary
+
+Issue Runner's notion of completion is "merged with proof": an issue is `done` when a merged PR on its branch carries the worktree's `HEAD`. It says nothing about whether the revision that merge produced has since been built, deployed to a shared validation environment, or validated as a system. This RFC adds that awareness in the narrowest shape that keeps the plugin out of the CI/CD business:
+
+- **Two lifecycles, not one.** The issue/PR lifecycle stays exactly as it is and stays the runner's. A second, *integrated-revision* lifecycle — `pending` / `running` / `green` / `failed` / `superseded`, keyed by a base-branch commit, never by an issue number — belongs to the project's CI/CD. The runner never writes it and never derives an issue status from it.
+- **One adapter file, two commands.** A project that wants the runner to participate declares `.issue-runner/integration` on its base branch — the validation contract's grammar and trust rule, in a second file so older plugin versions ignore it instead of rejecting every PR — with `hint: <command>` (the runner tells the project what it knows: a run started, a PR merged, the run is over, validate now) and `status: <command>` (the project tells the runner, in a closed vocabulary, the state of the revision containing a merge). Both are optional; either alone works; without the file nothing changes.
+- **Hints are advice with a bounded shelf life.** Project CI/CD keeps its own quiet window and maximum wait and validates on its own timers whether or not a hint ever arrives; a hint can only shorten a wait or extend it up to that maximum. A runner that crashes, pauses or never ran leaves CI exactly as autonomous as it is today.
+- **`--max-parallel` is capacity.** Batches are defined in time by the project's window, informed by the run's remaining and near-complete counts — never by the number of implementer slots.
+- **Observation is reporting.** `--status` and the Step 5 summary show the integration state of every candidate that contains this run's merges; a `failed` candidate is surfaced as loudly as a host pause, and acted on by a human. Nothing here gates a merge, retries an issue or reverts anything.
+
+## 2. Problem and constraints
+
+The issue's constraints, restated as the rules this design is checked against:
+
+1. `--max-parallel` is capacity, not a deployment batch size (§9).
+2. Project CI/CD remains authoritative for build, deployment, environment reservation and E2E execution (§4).
+3. Issue Runner may coordinate, observe and provide lifecycle hints; it never becomes a generic CI executor (§4, §6, §8).
+4. CI must keep working correctly when Issue Runner is not running (§6.3, §7.4).
+5. No indiscriminate cancellation of an in-progress deployment or migration merely because a newer revision exists (§7.3).
+6. A newer revision may supersede a pending candidate before expensive validation starts (§3.2, §7.3).
+7. A short coalescing window plus a bounded maximum wait, never a fixed number of PRs (§7).
+8. A later production promotion reuses the already-built, already-validated artifact (§12).
+9. No Link21-specific — no project-specific — implementation (§13).
+
+Two invariants the plugin already holds carry over unchanged and are cited wherever they bite: **status decisions come from GitHub and git, never from text an agent or a tool prints** (REFERENCE.md's merge-proof, progress-file and `result.json` rationales), and **the trusted copy of any project policy is the base branch's tip, never the working tree, an issue, a PR or `guidance.md`** (the validation contract's discovery rule).
+
+## 3. Two lifecycles
+
+### 3.1 The issue/PR lifecycle (exists, unchanged)
+
+Per issue, `$STATE_DIR/issue-N/status` holds one of `pending` / `implementing` / `blocked` / `done` / `failed` / `skipped` / `closed-externally` / `ready` (issue-runner SKILL.md, State section; `docs/scenarios.md` notation line). `done` means exactly one thing: a merged PR on the implementer's branch whose `headRefOid` is the worktree's `HEAD` (Step 3 item 5; rows 5, 6, 11, 14). `ready` means an open, non-draft PR that cleared the checks gate under `--no-merge` (row 35). The runner owns every transition, and the scheduler script computes the deterministic ones.
+
+This RFC adds no value to that vocabulary and no transition to that machine. In particular, **`done` stays "merged", not "integrated"**: the moment a merge is proven, the issue is `done`, its worktree is torn down at Step 5, and its dependents dispatch — whatever the revision containing it is doing in CI (§8.3 explains why).
+
+### 3.2 The integrated-revision lifecycle (new, observed, project-owned)
+
+A **candidate** is a commit on the base branch that the project's CI/CD chose to validate as a system: a build, a deployment to a shared environment, an E2E run — whatever "validated" means there. A candidate is identified by its commit oid and nothing else: not by an issue number, not by a PR, not by a run. A candidate normally contains several merges (§7), possibly some made by hand (§10).
+
+States, the closed vocabulary the `status` command speaks (§5.4):
+
+| State | Meaning | Who moves it there |
+|---|---|---|
+| `pending` | The revision is the current tip-in-waiting: it will be validated once the project's quiet window closes, unless a newer revision replaces it first. | CI, on a push to the base branch |
+| `running` | Validation of this revision is in progress (building, deploying, testing). | CI, when the window closes or on a `flush` |
+| `green` | Validation of this revision passed. | CI |
+| `failed` | Validation of this revision failed. | CI |
+| `superseded` | A newer revision replaced this one before its validation started; the newer candidate is the one to look at. | CI, on a newer push while this one was `pending` |
+| `unknown` | The adapter has no record of this revision (too old, never a candidate, before the adapter existed). | the adapter, on a query |
+
+Transitions: `pending → running`, `pending → superseded`, `running → green | failed`. The RFC recommends — and only recommends, since this is the project's policy (§4) — that `running` is never superseded: constraint 5. A project that knows its early phases are cheap to abandon may cancel a `running` candidate before its deployment starts; that is its adapter's decision, invisible to the runner, which only ever sees the resulting states.
+
+The runner reads these states through `status` and writes what it read to `$STATE_DIR/issue-N/integration` (`<state> <candidate-oid> <ISO-8601 UTC timestamp>`, one line, overwritten on every observation). That file is **informational only**, exactly like `progress`: its content is never an input to a status decision, never merge proof, never a reason to retry, and a stale or missing one changes nothing about the run.
+
+### 3.3 How the two relate
+
+Many-to-one, and in both directions:
+
+- Several issues' merges land in one candidate (coalescing, §7). The per-issue view is *the newest candidate that contains this issue's merge commit*: a `merged` revision whose own state is `superseded` is followed (bounded, §5.4) to the candidate that replaced it, because that candidate contains the merge too.
+- One issue's merge appears in every later candidate. Its "integration state" therefore has a time dimension the issue state does not: `green` today, `failed` after an unrelated merge tomorrow. The runner reports the state at the time it looked, timestamped, and says how to look again (`--status`).
+
+| | Issue/PR lifecycle | Integrated-revision lifecycle |
+|---|---|---|
+| Unit | one issue, one PR, one branch | one base-branch commit |
+| Owner | Issue Runner (statuses written under `$STATE_DIR`) | project CI/CD (state kept by its adapter) |
+| Proof | GitHub + git (`headRefOid == HEAD`) | the project's own validation |
+| Terminal for the run | `done`, `failed`, `skipped`, `closed-externally`, `ready` | none — a candidate can be `green` and later replaced |
+| Drives dispatch | yes (the scheduler's ready set) | no (§8.3) |
+| Reported | summary table, `--status` | summary "Integration" section, `--status` |
+
+## 4. Responsibility boundary
+
+**Project CI/CD owns**, and this design never touches: triggering on pushes to the base branch; building; choosing, reserving and releasing environments; deploying; running E2E or any other system validation; deciding what a candidate is and when its window closes; cancellation and supersession policy; retries of its own jobs; promotion; and the store that remembers candidate states. It runs the same with or without the runner.
+
+**Issue Runner owns**: knowing which merges belong to a run and where the run is in its lifecycle (how many issues may still merge, which are about to), telling the project that — hints, §6 — through a command the project declared; asking the project, through another declared command, what happened to the revisions its merges landed in; and reporting the answer. It never runs a build, deploys, waits for an environment, cancels a job, or holds integration state of its own beyond what it last observed.
+
+The line is the same one the validation contract drew for tests: the plugin runs a project-named command and reads a narrow, fixed-shape result (there: an exit status; here: an exit status for hints, one line from a closed vocabulary for status). Lint, unit tests, builds, containers, E2E, Docker, Kubernetes, Playwright, GitHub Actions, GitLab CI — named here only to say they are all the project's business and none of them appears in the contract.
+
+## 5. The adapter contract: `.issue-runner/integration`
+
+### 5.1 Grammar
+
+```
+# .issue-runner/integration — how this repository's CI/CD hears from, and answers, Issue Runner
+hint: ./scripts/ci/issue-runner-hint.sh
+status: ./scripts/ci/issue-runner-status.sh
+```
+
+The validation contract's grammar, verbatim: `key: <command>` lines, `#` comments and blank lines; anything else — a stray line, a duplicated key, a comment-only command, CRLF line endings, a NUL byte — makes the file invalid. Both keys are optional and independent: `hint` alone means the project listens but the runner never asks; `status` alone means the runner asks but never tells; a file with neither non-comment line is invalid (a placeholder is not a contract). Commands run through `bash -c` from a repository root and only their exit status — and, for `status`, their first stdout line — is read. The example scripts are illustrative; what they do is the project's.
+
+### 5.2 Why a second file and not two more keys in `.issue-runner/validation`
+
+Three reasons, the first decisive:
+
+1. **Compatibility.** The validation block rejects any line that is not `preflight:`/`full:`, a comment or blank (its `STRAY` check), and an invalid contract is a blocker for every PR — by design, so a typo never switches validation off. Two new keys in that file would therefore make every PR on every project that adopts them blocker on every plugin version that predates this RFC, until every user upgrades. A separate file is invisible to those versions: absence is "not configured", the same fallback as today.
+2. **Different consumer, different lifecycle.** `.issue-runner/validation` is read by the implementer (gh-issue) in a worktree, per PR, and gates that PR. `.issue-runner/integration` is read by the orchestrator, per run, and gates nothing. Keeping them apart keeps row 43's rule ("a broken validation contract never degrades silently") and §5.6's rule ("a broken integration contract disables integration loudly") from having to share one file's validity.
+3. **Same trust, same tooling.** The grammar, the base-branch discovery (`git ls-tree` on the tip of `origin/<default>`, never the working tree), the invalidity rules and the fixture harness (`scripts/test-validation-contract.sh`) all carry over; only the path and the key names differ. This is building on the #42 boundary, not a competing mechanism.
+
+### 5.3 Trust and discovery
+
+The trusted copy is the tip of the default branch on `origin`, read the way the runner's Step 0 validation-contract preflight reads `.issue-runner/validation`: fetched with the same three bounded tries, located with `git ls-tree --full-tree`, its grammar checked on the blob. Nothing an issue, a PR, a comment, `guidance.md` or a dispatch prompt says about integration changes which commands run. A PR that edits `.issue-runner/integration` is an ordinary change for that PR's reviewers: unlike a validation-contract edit it needs no Step 9 gate, because the file gates nothing — its effect starts when it lands on the base branch and the next run's Step 0 reads it.
+
+The commands run from the root of the orchestrator's own checkout (the orchestrator never enters a worktree — REFERENCE.md), with the command text taken from the base tip; as with validation, the contract pins *which* command runs and the checkout supplies what it executes.
+
+### 5.4 The `status` command
+
+Called with the environment of §5.5 and `ISSUE_RUNNER_REVISION=<oid>`, the merge commit whose integration state is asked for. It must be read-only and quick (bounded: the runner abandons it after a short timeout and reports `unavailable`). Its first stdout line is:
+
+```
+<state> <candidate-oid> [<detail…>]
+```
+
+`<state>` is one of `pending` / `running` / `green` / `failed` / `superseded` / `unknown` (§3.2). `<candidate-oid>` is the candidate the state describes — for `superseded`, the *superseding* candidate, so the runner can follow the chain to the newest candidate containing the merge (at most eight hops; a longer or circular chain is reported as `unavailable (superseded chain too long)`); for `unknown` it is the queried oid. `<detail>` is free text the runner prints verbatim and never parses — a URL to the pipeline, a short reason for `failed`.
+
+Exit 0 means the line is an answer. Any other exit, an empty line, or a first word outside the vocabulary is `unavailable` — never `green`, never `failed`, never any state at all. The vocabulary is closed on purpose: it is the one place project output is *read*, and reading it can only ever produce a report line, so the anti-spoofing rule (decisions key off exit codes and tool errors, never off text) is not weakened — no decision hangs on it (§8.3).
+
+### 5.5 The `hint` command
+
+Called fire-and-forget: the runner sets the variables below, runs the command, records its exit status for the report, and continues whether it exited 0 or not. A hint that fails to send is a line in the Step 5 summary, never a blocker and never retried — the run's correctness never depends on the project having heard it (§6.3). The command is bounded the same way as `status`; its output is ignored.
+
+Environment, versioned so an adapter can refuse what it does not understand:
+
+| Variable | Present for | Value |
+|---|---|---|
+| `ISSUE_RUNNER_HINT_VERSION` | all | `1` |
+| `ISSUE_RUNNER_HINT` | all | `run-start` / `merged` / `run-complete` / `flush` (§6.1) |
+| `ISSUE_RUNNER_RUN` | all | the run id: `$RUN_ROOT/run-id`, one line written by the State block when a run initializes (repo key plus the run's UTC start timestamp — a Codex session has no `CLAUDE_CODE_SESSION_ID`, so the session pointer cannot serve). `flush` outside a run sends `none`. |
+| `ISSUE_RUNNER_RUN_STATE` | all | `active` (more merges may follow from this run) or `complete` (none will, from this invocation) |
+| `ISSUE_RUNNER_BASE` | all | the default branch name |
+| `ISSUE_RUNNER_REVISION` | `merged`, `flush` | the merge commit oid (`merged`: from `gh pr view <P> --json mergeCommit`, the same PR the merge proof just confirmed; `flush`: the current tip of `origin/<default>`) |
+| `ISSUE_RUNNER_ISSUE`, `ISSUE_RUNNER_PR` | `merged` | the issue and PR numbers |
+| `ISSUE_RUNNER_REMAINING` | `run-start`, `merged`, `run-complete` | how many issues in scope may still merge in this invocation: those `pending` or `implementing`. Never counts `blocked` (waiting on a human, possibly forever), `ready` (waiting on a human or a later `--merge-ready`) or any terminal status. `run-complete` always sends `0`. |
+| `ISSUE_RUNNER_NEAR_COMPLETE` | `merged` | how many `implementing` issues have a `progress` marker reading `step=9` or `step=9.2` — at the merge step or waiting on the checks gate. Advisory by construction: the marker's *content* feeds this one hint and nothing else, in keeping with the rule that it never feeds a status. |
+| `ISSUE_RUNNER_REASON` | `run-complete` | `completed` (Step 5 reached with every issue terminal or paused), `paused` (host credit/usage-limit pause), `stopped` (any other exit through Step 5) |
+
+`ISSUE_RUNNER_REMAINING` is a count, not a promise: an `implementing` issue may block, fail, hang, or take an hour. That is why the project's maximum wait, not the count, decides when to stop waiting (§7).
+
+### 5.6 Outcomes at Step 0
+
+`/issue-runner` Step 0 probes the file next to the validation contract and prints one of:
+
+- `integration: not configured` — no file on the base branch. Today's behavior, unchanged; nothing else in this RFC runs. Not a notice, not a warning: most projects will never have the file (§9).
+- `integration: hint` / `integration: status` / `integration: hint, status` — which commands the run will use.
+- `integration: contract invalid (<reason>) — integration disabled for this run` — printed at Step 0 **and** repeated at the top of the Step 5 summary, and the run proceeds with neither hints nor observation. This deliberately differs from row 43 (a grammar-invalid *validation* contract stops the run before dispatch): validation gates every merge, so it must never silently turn off; integration gates nothing, and the project's CI validates on its own timers by design (§6.3), so a broken adapter file costs a run its hints and its report — loudly — and nothing else. Stopping the run instead was considered and rejected: it would make a file that cannot affect correctness able to halt work. The runner never creates or edits the file (design-notes note 6's rule applies here too).
+- `integration: unresolvable (<reason>)` — the base tip could not be fetched or read: the environment failure class, reported like the validation preflight's own `unresolvable` outcome; integration is disabled for the run for want of a trusted copy, never read from the working tree instead.
+
+## 6. Lifecycle hints
+
+### 6.1 What the runner knows that CI cannot, and when it says so
+
+CI sees pushes one at a time. The runner sees run membership: how many merges are still coming, from where, and whether the run is over. Four hints carry exactly that and nothing else:
+
+| Hint | Sent | Carries | What a project may do with it |
+|---|---|---|---|
+| `run-start` | once, when Step 3 begins its loop (after the `--merge-ready` pass, if any, and the recovery reconciliation) | `REMAINING` = the scope's non-terminal count | Open a longer quiet window for the first merge: a batch is coming. |
+| `merged` | each time Step 3 item 5 proves a merge and writes `done`; each time the `--merge-ready` pass merges (or reconciles an already-`MERGED` PR) and writes `done` | the merge oid, issue, PR, `REMAINING`, `NEAR_COMPLETE` | `REMAINING=0` → close the window now. `NEAR_COMPLETE>0` → extend the quiet window, up to the maximum wait. Otherwise nothing. |
+| `run-complete` | once, from Step 5, on every exit through it — a completed run, a paused one, a stopped one — after the summary is assembled and before the lock is released | `REMAINING=0`, `REASON` | Nothing more is coming from this invocation: close the window now. |
+| `flush` | on `/issue-runner --flush`: a read-only invocation like `--status` (no lock, no state rotation) that sends this one hint for the current base tip and exits | the base tip oid, `RUN=none` unless a run is live | Validate the tip now, whatever the window says. |
+
+Hints go from the orchestrator only. The implementer (gh-issue) sends none: it has no run-wide knowledge, and in orchestrated mode the orchestrator learns of its merge at item 5 promptly after it happens. An interactive gh-issue run and the single-issue fast path therefore send nothing — CI's own window handles a lone merge exactly as it handles a hand merge (§10). Whether gh-issue should later send a `merged` with `REMAINING=0` for that case is an open question (§14); it is not needed for correctness.
+
+### 6.2 What hints are not
+
+- Not commands. A hint never instructs CI to build, deploy, cancel or skip; it states a fact about the run. The verb is the project's.
+- Not required. A project may declare `hint:` as `true` — or not at all — and lose nothing but batching finesse.
+- Not ordered or exactly-once. A hint can be late (the runner was waiting on `--watch`), duplicated (a same-session re-entry re-proves a merge), or missing (the runner crashed). An adapter treats `(RUN, HINT, REVISION)` as an idempotency key and treats every hint as optional input to its timers.
+- Not evidence for the runner. Sending a hint changes no status and records only "sent (exit N)" for the report.
+
+### 6.3 Fail-safe: CI never depends on runner liveness
+
+The design rule every adapter must satisfy, stated once: **with no hint ever delivered, the adapter's behavior is correct and bounded.** Concretely, a project's quiet window `W` and maximum wait `M` (§7.1) run on the adapter's own clock from the first unvalidated push. A hint can close the window early (`REMAINING=0`, `run-complete`, `flush`) or extend it (`run-start`, `NEAR_COMPLETE>0`), but an extension can never move the deadline past `M` measured from that first push. So:
+
+- The runner crashes mid-run: no `run-complete` arrives; the window closes at the latest at `M`; the merges that landed are validated. Later `--status` reads what happened. A same-session re-entry (`claude --resume`, the Recovery section) may send hints again for the merges it re-proves; idempotency absorbs them.
+- The runner pauses on a host credit stop: Step 5 runs and sends `run-complete` with `REASON=paused`. If even that fails, `M`.
+- The runner is not installed, or the run is `--no-merge` and a human merges by hand: no hints, `W`/`M` alone.
+- A hint arrives for a run CI has never heard of, or a version it does not understand: ignore it (exit non-zero if it likes; the runner only records the status).
+
+The plugin can verify none of this — it is the adapter's contract with itself — so the RFC states it as the one requirement a project accepts by declaring `hint:`. Nothing else in the runner's behavior changes if a project breaks it; the run finishes the same.
+
+## 7. Coalescing
+
+### 7.1 The window, owned by the project
+
+Two project-chosen durations, living in the project's CI configuration and nowhere in the plugin: a **quiet window `W`** (validate once no new push has landed for `W` — minutes, not seconds; long enough for a sibling implementer at its checks gate to land) and a **maximum wait `M`** since the first unvalidated push (bounded, so a slow outlier or a dead runner never postpones validation indefinitely). The reference policy an adapter may implement — a recommendation, never enforced or observed by the runner:
+
+1. A push to the base branch while no candidate is `pending` creates one at that oid and starts both timers. A push while one is `pending` replaces it (the old one becomes `superseded`) and restarts `W`; `M` keeps running from the first push.
+2. Validation of the `pending` candidate starts when: `W` elapses with no push; or `M` elapses; or a `flush` or `run-complete` hint arrives; or a `merged` hint with `REMAINING=0` arrives. It moves to `running`.
+3. A `run-start` hint, or a `merged` hint with `NEAR_COMPLETE>0`, may lengthen the current `W` (say, double it) — but never past `M`.
+4. Pushes during `running` accumulate into the next `pending` candidate under the same rules. The `running` one is not cancelled (§7.3).
+5. When a `running` candidate finishes, the next `pending` one — always the newest tip, intermediates already `superseded` — is validated when its own timers say so.
+
+The window is defined in time and in the run's counts, never in a number of PRs, because merges do not arrive in countable groups: an issue blocks, a checks gate takes twenty minutes, a human merges something in between. A count is a promise the runner cannot keep; a deadline is one the adapter keeps on its own.
+
+### 7.2 The five scenarios
+
+| Scenario | Pushes and hints | Candidates and states |
+|---|---|---|
+| **One merge** | one push; then `merged (REMAINING=0)` or `run-complete`, or nothing | one candidate, `pending`; the hint closes the window at once, else `W` does; `running → green/failed`. Same as a hand merge. |
+| **Several quick merges** | three pushes within `W` of each other; three `merged` hints with `REMAINING` 2, 1, 0 | the first two candidates go `superseded` as each newer push lands; the third is validated once — at the `REMAINING=0` hint, else at `W` after the last push. Three merges, one build. |
+| **One slow outlier** | two pushes; `merged (REMAINING=1, NEAR_COMPLETE=0)`; the last issue is still implementing 40 minutes later | the `W` extension is not taken (nothing is near complete); the candidate goes `running` at `W`, at the latest at `M`. The outlier's later merge is its own candidate, validated on its own timers. The run's `run-complete` arrives whenever it does; CI never waited for it. |
+| **Continuous merges** | pushes more often than `W`, indefinitely (a large run, or several actors) | `M` decides: the candidate `pending` at `M` goes `running`, whatever lands next accumulates into the next one; no candidate in `running` is cancelled; every intermediate tip is `superseded`, never validated. Throughput is one validation per `M` at worst, never a queue that grows. |
+| **Explicit flush** | `/issue-runner --flush`, or `run-complete` | the `pending` candidate (the current tip) goes `running` immediately. If one is already `running`, the flush marks the tip `pending` with its window already closed: it starts as soon as the running one finishes. A flush never cancels. |
+
+### 7.3 Supersession and cancellation
+
+A `pending` candidate is cheap to abandon — nothing has been built — so a newer push supersedes it (constraint 6). A `running` candidate may be mid-deployment or mid-migration, and constraint 5 says a newer revision alone is no reason to stop it; the reference policy lets it finish and validates the newest tip afterwards, skipping everything in between. A project whose early phases are safely abortable may cancel in those phases; that policy is written in its adapter, and the runner neither knows nor asks. The runner never sends a "cancel" hint and this RFC defines none.
+
+### 7.4 Suggesting a short wait without waiting forever
+
+The issue asks how the runner can suggest waiting briefly for a near-complete sibling without tying batching to `--max-parallel` and without waiting forever on a slow or blocking issue. The answer is the pair `ISSUE_RUNNER_REMAINING` / `ISSUE_RUNNER_NEAR_COMPLETE` on the `merged` hint, read against `M`:
+
+- `NEAR_COMPLETE>0` says "someone is at the checks gate or merging" — the one moment the runner can honestly predict a merge within minutes, taken from the progress marker's step field, which exists precisely to say where an implementer is. The project may extend `W` on it.
+- `REMAINING` excludes `blocked` and `ready` issues by definition: an issue waiting on a human is not "still coming", so its wait never leaks into CI's.
+- Neither count can push the deadline past `M`. A near-complete implementer that bounces at its Codex gate, or hangs, costs CI at most the extension it chose, never an open-ended wait.
+
+## 8. Observation and reporting
+
+### 8.1 Where the runner records what it needs
+
+Step 3 item 5 already queries the merged PR for its `headRefOid`; the same query adds `mergeCommit` and records the oid in `$STATE_DIR/issue-N/merge-oid` when it writes `done` (the `--merge-ready` pass likewise). That oid is the `merged` hint's `REVISION` and the `status` query's key. It is written from GitHub's answer for the PR the proof matched, never from `result.json`, so the merge-proof rule (row 14: the file is a claim, never proof) is untouched.
+
+### 8.2 When the runner looks
+
+- **`--status`**: for every issue with a `merge-oid`, run `status` (when declared), follow `superseded` chains, print `#N  done  (PR #P, merge abc1234)  integration: <state> candidate def5678 <detail>`, and overwrite `issue-N/integration`. Read-only, no lock, as `--status` always is. `unavailable` prints as such.
+- **Step 5**: the same, once, after the summary table and before `run-complete` is sent, as an "Integration" section grouped by candidate in `dag.json` order — one line per candidate listing the issues it contains, so three coalesced merges read as one `running` build, not three. It ends with `re-check: /issue-runner --status`. The section is posted with the summary to the tracking issue when the summary is (row 20). A `failed` candidate containing this run's merges is also stated at the **top** of the closing message, ahead of the summary, the way a host pause is: it is the one integration outcome a human must act on.
+- **Never** in a loop. Step 5 does not wait for `pending` or `running` to resolve: a run's end is when its issues are terminal, not when a deployment finishes, and a bounded wait at Step 5 (`--await-integration <minutes>`) is listed as a possible follow-up in §14, not proposed here.
+
+### 8.3 What the runner never does with what it sees
+
+- **Never changes a status.** A `failed` candidate does not make any issue `failed`, `blocked`, or anything else; `done` is merge proof and stays so (row 14's family). The `integration` file is informational, like `progress`.
+- **Never gates dispatch** in this RFC. A dependent of a `done` issue dispatches when the scheduler says so, on the base branch as it is. The argument for gating — do not build on a revision E2E just rejected — is real, and the plugin already holds the code-level half of it: the dependent's implementer merges the base in and runs `preflight` on the sum (Step 9's base freshness, run early on a failing preflight), so a base broken at the unit level blocks at the dependent's own preflight. The system-level half (a green build that fails E2E) is what integration state adds, and pausing dispatch on it is a policy a project may want. It is deferred (§14) rather than built here because it is the first place integration state would *decide* something, and the right shape — an opt-in flag, the same run-wide pause the credit stop uses — deserves evidence from reports first.
+- **Never reverts, never retries, never re-validates.** The recovery for a red candidate is the project's and a human's: a fix-forward PR (which the runner can implement, as any other issue), a revert, a re-run of the pipeline. `--flush` is the only thing the runner offers, and it only asks.
+- **Never authorizes a merge.** No `green` anywhere shortens a review loop, skips a checks gate, or excuses a failing preflight. The validation contract's "both must hold" (preflight and CI) becomes "all three are independent": preflight, CI checks on the PR, integration of the revision.
+
+## 9. Why `--max-parallel` is not a batch size
+
+`--max-parallel` bounds how many implementers run at once: memory, host budget, Codex spend, review-slot pressure. It says nothing about when merges land:
+
+- In-flight count varies over the run with the DAG's shape — one issue at a bottleneck, `N` on a wide layer — so "wait for `N` merges" is either instant or never.
+- Implementers finish at different times: one converges in ten minutes, its sibling bounces twice at the Codex gate. A batch of `N` waits on the slowest, which is exactly the outlier problem §7.2 avoids.
+- Some issues never merge in this invocation (`blocked`, `ready`, `failed`, `skipped`), so an `N`-sized batch may not fill.
+- `--sequential` (`N=1`) would validate every merge; `--no-merge` runs merge nothing at all; `--merge-ready` merges a whole backlog in one pass with `N` irrelevant. Hand merges (§10) are outside `N` entirely.
+
+A batch is therefore whatever lands within the project's `W`/`M` window, informed by `REMAINING` and `NEAR_COMPLETE`. Changing `--max-parallel` changes how fast merges arrive, and the window absorbs that; it never changes what a batch is.
+
+## 10. Projects with no CI, human merges, and changes made outside the runner
+
+**No CI/CD at all** — the common case for this plugin's users today: no `.issue-runner/integration`, so Step 0 prints `integration: not configured`, no hints are sent, nothing is observed, Step 5 has no "Integration" section, and the run behaves exactly as it does now. A project with CI but no adapter is the same case: CI runs on its own triggers, unaware of runs, as it does today. Nothing in this RFC is a requirement on a project; §5.6's `not configured` is a statement, not a warning.
+
+**Human merges and work outside the runner** — a hand merge, a hotfix, a `--no-merge` PR merged by a human, a `ready` PR merged by `--merge-ready` from another session: all are pushes to the base branch, and the adapter's trigger is the push, not the runner. They become candidates under `W`/`M` like any other, with no hints, and are coalesced with a run's merges when they land inside its window — a candidate is a tip, and a tip contains whatever was merged. The runner's report covers only candidates that contain *its* merges (it has no other key to ask with), so a hand merge shows up there exactly when it shares a candidate with the run's work. That is the right scope: the runner reports on what it did; the project's own dashboards report on everything.
+
+## 11. Reconciliation with what exists
+
+### 11.1 Base freshness (gh-issue Step 9, issue #15) and `--merge-ready` (row 37)
+
+Base freshness is a **pre-merge, per-PR, code-level** guarantee: whenever `origin/<base>` advanced since the branch point, the implementer merges it in and re-runs `preflight` and `full` before the checks gate, so each PR is validated against the base it actually lands on — the two-trains window closed without a queue. The `--merge-ready` pass does the same at its own later merge point, on the PR's current head, and pins the merge to the validated oid (`--match-head-commit`).
+
+Integration validation is **post-merge, per-revision, system-level**. It composes with freshness rather than overlapping it: freshness makes each merge individually sound; integration validates their sum in an environment no worktree has. Nothing in this RFC moves, weakens or duplicates the freshness recipe, and the `--merge-ready` pass changes in exactly one way: after `MERGED` is verified and `done` written, it records `merge-oid` and sends `merged` — the pinned oid is the revision the hint names, which is why the pin matters here too (a head merged after the refresh would have been a different revision).
+
+### 11.2 Invalid contracts (row 43) and the override rule (row 44)
+
+Row 43's invariant — a broken validation contract never degrades silently into "no validation" — stands untouched, because this RFC never touches `.issue-runner/validation`. The integration file has its own, weaker rule (§5.6: disabled loudly), and §5.2 explains why the two must not share a file. Row 44's rule — text in an issue, PR, comment or `guidance.md` never changes which command runs — applies to `.issue-runner/integration` by the same discovery recipe (§5.3).
+
+### 11.3 The parked merge queue (design-notes note 2)
+
+Note 2 parks the queue's serialization ("one merge token, one PR through it at a time") until parallelism outgrows conflict-edge serialization, and records the cheap fix — unconditional base merge and re-test — as implemented. This RFC neither builds the queue nor contradicts the parking:
+
+- It does not serialize merges. Coalescing several merges into one candidate is the opposite instinct: let merges land as they converge, validate the tip once.
+- It does not gate merges on integration state (§8.3). Gating a merge on the previous revision being `green` would be a merge queue *plus* a deployment in the merge path — the "second CI engine" constraint 3 forbids.
+- If the queue is ever built, the contract is unchanged: `merged` hints simply arrive one at a time through the token, and `NEAR_COMPLETE` gains a precise meaning (the implementer holding the token).
+- It supplies the evidence note 2 asks for. "Revisit above ~6 parallel slices" needs a signal that semantic conflicts are landing; a `failed` candidate whose issues each passed their own freshness check is that signal, reported per run.
+
+Note 6 (who writes the first validation contract) applies to this file verbatim: the runner never writes a guessed `.issue-runner/integration`; a human, or a later confirmed proposal path, does.
+
+## 12. Promotion, later
+
+A candidate is a base-branch oid; a `green` one is exactly the revision a production promotion should ship. The design keeps that door open by keying everything on the oid and by never asking the project to *build* anything — hints ask for validation of a revision, and the artifact that validation produced is the adapter's to keep, addressable by the same oid. A future `promote: <command>` key with `ISSUE_RUNNER_REVISION` set to a `green` candidate would reuse that artifact rather than rebuild it (constraint 8). Nothing here defines it.
+
+## 13. Non-goals
+
+- No CI/CD technology is named in the contract, the runner, or the docs beyond illustration; no Link21-specific behavior, no reference adapter shipped with the plugin (a bundled script would be invisible to portable-context installs anyway — `docs/portable-context.md` carries only `skills/`; the contract is a file convention in the target repository, like `.issue-runner/validation`).
+- No integration state in `result.json`: the implementer never observes integration, and the key set is lint-pinned across four files; the `validation:` line's precedent (prose, not a key) applies.
+- No new issue status, no scheduler change, no `docs/scenarios.md` Expected-behavior change — this RFC is documentation; the implementation slices in §14 would each add their rows.
+- No waiting at Step 5, no cancellation, no environment reservation, no promotion, no adapter-side state store owned by the plugin.
+
+## 14. If accepted: implementation slices and open questions
+
+Slices, each a separate issue reconciled through `/issue-plan` (issue #41's reconciliation step, once it lands, should find this RFC and note 7 and build on them):
+
+1. **Contract discovery and hints.** Step 0 probe for `.issue-runner/integration` (§5.6); `$RUN_ROOT/run-id`; `merge-oid` recorded at Step 3 item 5 and in the `--merge-ready` pass; `run-start`, `merged`, `run-complete` hints; `--flush`. Both editions; a fixture script for the grammar and the environment table, modelled on `scripts/test-validation-contract.sh`; scenario rows for "configured", "not configured", "invalid (disabled loudly)", "hint command fails (reported, never a blocker)".
+2. **Observation.** `status` in `--status` and Step 5 (§8.2), the `integration` file, the "Integration" section and its `failed`-at-the-top rule, the `superseded` chain bound. Rows for each state and for `unavailable`.
+3. **README** "Integration contract" section next to "Validation contract", and REFERENCE.md rationale entries ("Why hints are advisory and CI keeps its own clock", "Why integration state never touches a status").
+
+Open questions, for the human who accepts or amends this RFC:
+
+- Should gh-issue's interactive Step 9 (and the single-issue fast path) send a `merged` hint with `REMAINING=0`? Cheap, and it lets a lone merge skip `W`; against it, the implementer would then read a project contract the orchestrator otherwise owns. Leaning no until a project asks.
+- An opt-in run-wide dispatch pause on a `failed` candidate containing this run's merges (§8.3), shaped like the credit pause (`$RUN_ROOT/paused` with a distinct reason). Deferred for evidence.
+- An opt-in bounded wait at Step 5 (`--await-integration <minutes>`) so an unattended run's closing message can say `green` instead of `running`. Cheap; deferred with the previous item so the two are designed together.
+- Whether `REMAINING` should also be sent when an issue goes `blocked` or `ready` (a "fewer than you thought" hint) so an adapter can close a window it extended on a now-stale count. `M` already bounds the cost of not knowing; leaning no.

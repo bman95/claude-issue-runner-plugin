@@ -23,6 +23,14 @@ Issue #42. "Run the tests" meant whatever an implementer inferred from CLAUDE.md
 - `docs/scenarios.md` rows 39–44 pin the contract (present, absent, preflight failure, `full`, invalid/not-runnable, override attempt); row 37 reworded from "re-run the tests" to the contract's validation — an Expected-behavior change, so the next release is a minor bump per the file's own rule.
 - This repository's own `.issue-runner/validation` (`preflight: bash scripts/lint.sh`, no `full`), and `scripts/test-validation-contract.sh`, run from `scripts/lint.sh`, exercising gh-issue's embedded recipe against fixtures and asserting both editions carry the same recipe byte for byte.
 
+### RFC: integration-aware Issue Runner without a CI/CD engine
+
+Issue #43. Design only — no skill behavior changes. `done` means "merged with proof" and says nothing about whether the revision was later built, deployed or validated as a system; the RFC adds that awareness without making the plugin a second CI engine.
+
+**docs:**
+- **`docs/integration-rfc.md`.** Separates the issue/PR lifecycle (the runner's, unchanged) from an integrated-revision lifecycle (`pending` / `running` / `green` / `failed` / `superseded`, keyed by a base-branch commit, owned by project CI/CD); draws the responsibility boundary; proposes a second contract file, `.issue-runner/integration`, with the validation contract's grammar and base-branch trust rule — `hint: <command>` for lifecycle hints (`run-start`, `merged` with remaining and near-complete counts, `run-complete`, `flush`) delivered through a versioned environment, `status: <command>` answering one line in a closed vocabulary — kept separate from `.issue-runner/validation` so older plugin versions ignore it instead of rejecting every PR; specifies coalescing (one merge, several quick merges, one slow outlier, continuous merges, explicit flush) on a project-owned quiet window plus a bounded maximum wait, so CI is correct with no hint ever delivered; explains why `--max-parallel` is capacity, not batch size; keeps projects with no CI on today's behavior; and reconciles with base freshness, `--merge-ready` (scenario row 37), the invalid-contract rules (row 43) and the parked merge queue (design-notes note 2).
+- **`docs/design-notes.md`** note 7 summarizes the RFC's options and recommendation; note 2's tail cross-references it as reconciled, not superseded.
+
 ## [0.11.0] - 2026-09-08
 
 ### Crash-resilient, budget-aware orchestration: recovery, pause, and a documented scheduler
