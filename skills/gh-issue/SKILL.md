@@ -399,10 +399,12 @@ NEVER_RERAN=$(gh pr checks "$PR_NUM" --json name,bucket \
 Otherwise (every other orchestrated run, and every interactive run once the user confirms) → merge:
 
 ```bash
-gh pr merge --squash --delete-branch "$PR_NUM" \
+gh pr merge --squash --delete-branch --match-head-commit "$(git rev-parse HEAD)" "$PR_NUM" \
   --subject "$(gh pr view --json title -q .title)" \
   --body "$(gh pr view --json body -q .body | awk '/^## Review notes$/{exit} {print}')"
 ```
+
+`--match-head-commit` pins the merge to the head this run validated and pushed (nothing is pushed after the checks gate, so the local `HEAD` is that head): a commit someone else pushed after the gate — a `.issue-runner/validation` edit included — was never seen by `MODE=full`, `MODE=changed` or the checks `--watch`, so GitHub refuses the merge instead of landing it. That refusal is never retried against the new head: interactive — report it; orchestrated — revert to draft (the recipe above) and return a blocker, `PR head moved after the checks gate — a human must review and merge`.
 
 Verify the merge landed: `gh pr view "$PR_NUM" --json state -q .state` must be `MERGED`, and `gh issue view <number> --json state` must be `CLOSED`. That merged PR — not the issue being closed — is the positive proof the teardown's `git branch -D` relies on.
 
