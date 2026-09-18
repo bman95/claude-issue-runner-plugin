@@ -81,3 +81,22 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 3. Real budget enforcement — requires harness support (a per-Agent-call token ceiling or a session meter readable from the session). Track upstream; not buildable here.
 
 **Recommendation.** Option 2 is done — pre-flight sticker shock ("this run will dispatch ~40 agents" before dispatching any) plus the actual-vs-estimate comparison at Step 5, which is the decision point a real budget would have guarded anyway. Option 3 stays blocked-upstream until the harness grows a meter.
+
+---
+
+## 6. Bootstrapping the validation contract
+
+**Status:** proposed
+
+**Context.** Issue #42 defines the validation contract — `.issue-runner/validation` at the repository root, `preflight: <command>` required and `full: <command>` optional, read by gh-issue from the base branch's tip on `origin` and never from the PR's working tree, the issue, `guidance.md` or PR text — and its fallback: a project without the file validates by its conventions, as before. The open question is who writes a project's *first* contract. The issue asks to explore whether `/issue-plan`, `/issue-runner`, or a dedicated setup path could inspect the repository (CLAUDE.md, README, linter and test configuration, CI workflows) and propose one for human confirmation, and forbids silently persisting a guessed policy: a contract gates every later PR, so it has to carry a trust a guess never earns.
+
+**Options.**
+1. Status quo — a human writes it by hand; README's "Validation contract" section documents the two keys, and the runner's Step 0 validation-contract preflight prints a notice pointing there when the base branch carries no file.
+2. `/issue-plan` proposes one during planning: it already inspects the repository for its conventions, so it drafts the file, the human confirms it in the Step 2 interview, and it lands as its own first slice/PR — before any implementer depends on it, so the first implementer already validates under it. Reconcile with #41 first, so planning does not grow a competing validation mechanism next to whatever it settles for reading project and design context.
+3. A dedicated setup path (e.g. `/issue-runner --init-validation`) that inspects, proposes, and writes only on explicit confirmation — as its own commit/PR, never mid-run, so the contract is on the base branch before the first implementer branches.
+
+Rejected: writing a guessed file at Step 0 or by an implementer. A guessed policy would then gate every later PR under a trust it never earned — and it would gate PRs whose authors never saw it proposed.
+
+**Recommendation.** Option 2 or 3 once #41 settles how planning reads project/design context; until then option 1 plus the Step 0 notice, which is cheap and never wrong.
+
+**Implemented — notice only (issue #42).** `/issue-runner` Step 0 reports presence or absence of `.issue-runner/validation` on the default branch and validates the grammar of a present file (stopping before dispatch when it is invalid, since every implementer would otherwise return a `validation contract invalid` blocker — on the single-issue fast path it reports and defers to gh-issue's interactive Step 3 probe, where the user may authorize the conventions fallback); gh-issue consumes the base branch's copy at Steps 3, 5, 8 and 9 and `--merge-ready`'s refresh re-runs it on the PR's current head (the worktree synced to `headRefOid` first), whether or not the base advanced; nothing writes the file.

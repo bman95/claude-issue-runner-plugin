@@ -35,6 +35,13 @@
 #  12. skills/issue-runner/scripts/test-scheduler.sh passes — the golden
 #      fixtures for scripts/scheduler.sh, the extracted Step 3 cascade-skip /
 #      ready-set / blocked-chain-vs-cycle state machine
+#  13. this repository's own .issue-runner/validation parses under the grammar
+#      gh-issue's "Validation contract" recipe applies (comment/blank lines,
+#      exactly one `preflight:` line, at most one `full:` line, LF endings,
+#      nothing else)
+#  14. scripts/test-validation-contract.sh passes — the fixtures for that
+#      recipe, extracted from skills/gh-issue/SKILL.md and asserted
+#      byte-identical in the Codex edition's canonical copy
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -265,7 +272,8 @@ done
 # 8. shellcheck over this script and the bundled scheduler scripts (advisory) ----
 if [ "$have_shellcheck" -eq 1 ]; then
   for f in "$ROOT/scripts/lint.sh" "$ROOT/skills/issue-runner/scripts/scheduler.sh" \
-           "$ROOT/skills/issue-runner/scripts/test-scheduler.sh"; do
+           "$ROOT/skills/issue-runner/scripts/test-scheduler.sh" \
+           "$ROOT/scripts/test-validation-contract.sh"; do
     rel="${f#"$ROOT"/}"
     if shellcheck "$f" >"$TMP/lint.sc" 2>&1; then
       ok "shellcheck clean: $rel"
@@ -382,6 +390,40 @@ if [ -f "$TEST_SCHEDULER" ]; then
   fi
 else
   err "$TEST_SCHEDULER not found"
+fi
+
+# 13. This repository's own validation contract parses -------------------------
+# Same grammar as the recipe in skills/gh-issue/SKILL.md ("Validation contract"):
+# a typo here would block every implementer run on this repo at Step 5.
+CONTRACT_FILE="$ROOT/.issue-runner/validation"
+if [ -f "$CONTRACT_FILE" ]; then
+  stray="$(grep -vE '^[[:space:]]*(#|$)' "$CONTRACT_FILE" | grep -vE '^(preflight|full):[[:space:]]*[^[:space:]#]' || true)"
+  n_pre="$(grep -cE '^preflight:[[:space:]]*[^[:space:]#]' "$CONTRACT_FILE")"
+  n_full="$(grep -cE '^full:[[:space:]]*[^[:space:]#]' "$CONTRACT_FILE")"
+  if [ "$(tr -d '\000' < "$CONTRACT_FILE" | wc -c)" -ne "$(wc -c < "$CONTRACT_FILE")" ]; then
+    err ".issue-runner/validation contains a NUL byte (the recipe rejects it: a shell variable would drop it and run a different command)"
+  elif grep -q $'\r' "$CONTRACT_FILE"; then
+    err ".issue-runner/validation has CRLF line endings (the recipe rejects them: the command would run with a trailing CR)"
+  elif [ -n "$stray" ] || [ "$n_pre" -ne 1 ] || [ "$n_full" -gt 1 ]; then
+    err ".issue-runner/validation is invalid (preflight lines=$n_pre, full lines=$n_full, first stray line: $(printf '%s\n' "$stray" | head -1))"
+  else
+    ok ".issue-runner/validation parses (preflight declared; full $([ "$n_full" -eq 1 ] && echo declared || echo not declared))"
+  fi
+else
+  err "$CONTRACT_FILE not found"
+fi
+
+# 14. Validation-contract recipe fixtures -----------------------------------------
+TEST_CONTRACT="$ROOT/scripts/test-validation-contract.sh"
+if [ -f "$TEST_CONTRACT" ]; then
+  if bash "$TEST_CONTRACT" >"$TMP/test-validation-contract.out" 2>&1; then
+    ok "validation-contract fixtures pass (scripts/test-validation-contract.sh)"
+  else
+    err "validation-contract fixtures failed:"
+    cat "$TMP/test-validation-contract.out" >&2
+  fi
+else
+  err "$TEST_CONTRACT not found"
 fi
 
 if [ "$fail" -ne 0 ]; then

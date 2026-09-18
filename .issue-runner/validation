@@ -1,0 +1,3 @@
+# .issue-runner/validation — what "validate this change" means in this repository
+# (contract: the "Validation contract" section of skills/gh-issue/SKILL.md; README "Validation contract").
+preflight: bash scripts/lint.sh
