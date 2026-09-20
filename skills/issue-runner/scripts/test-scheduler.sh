@@ -297,7 +297,7 @@ EXPECTED_ROW_COUNT=49
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then
-    ok "docs/scenarios.md row count unchanged ($actual_rows) — in scope here: $IN_SCOPE_ROWS; the rest is Step 3 items 3-5 / Step 3a / Step 4 / Step 5 / Step 1-2 / State, not this script"
+    ok "docs/scenarios.md row count unchanged ($actual_rows) — in scope here: $IN_SCOPE_ROWS; the rest is Step 3 items 3-5 / Step 3a / Step 4 / Step 5 / Step 1-2 / State, gh-issue, or the planner, not this script"
   else
     err "docs/scenarios.md now has $actual_rows rows (expected $EXPECTED_ROW_COUNT) — re-check whether any new row belongs in IN_SCOPE_ROWS above and add its fixture"
   fi
