@@ -42,6 +42,9 @@
 #  14. scripts/test-validation-contract.sh passes — the fixtures for that
 #      recipe, extracted from skills/gh-issue/SKILL.md and asserted
 #      byte-identical in the Codex edition's canonical copy
+#  15. skills/issue-plan/SKILL.md and the Codex edition's canonical copy are
+#      byte-identical — the planner is ported in full, and its wrapper reads
+#      the canonical copy, so any drift is a divergence between editions
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -207,7 +210,7 @@ for f in "$SKILL_PLAN" "$CANON_PLAN"; do
   esac
 done
 # Two literals must agree across files: the `Part of #P` pattern the runner matches
-# and the planner promises (issue-runner Step 5 / issue-plan Step 4), and the Step 1
+# and the planner promises (issue-runner Step 5 / issue-plan Step 5), and the Step 1
 # exclusion message (the scenarios cite it by prefix), pinned across both runner
 # editions. The exact literal must appear at every site.
 literals_ok=1
@@ -424,6 +427,13 @@ if [ -f "$TEST_CONTRACT" ]; then
   fi
 else
   err "$TEST_CONTRACT not found"
+fi
+
+# 15. issue-plan: Claude skill and Codex canonical copy byte-identical ------------
+if cmp -s "$SKILL_PLAN" "$CANON_PLAN"; then
+  ok "issue-plan skill byte-identical in both editions"
+else
+  err "issue-plan skill differs between ${SKILL_PLAN#"$ROOT"/} and ${CANON_PLAN#"$ROOT"/} (copy the Claude skill over the canonical file)"
 fi
 
 if [ "$fail" -ne 0 ]; then
