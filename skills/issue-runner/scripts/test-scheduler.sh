@@ -286,17 +286,18 @@ fi
 # Every row above is one this script actually exercises. The rest of the
 # table is Step 3 items 3/4/5 (dispatch, hang detection, result.json
 # processing), Step 3a/Step 4/Step 5 (live GitHub state, human escalation),
-# or Step 1/2/State (scope, DAG construction, the run lock) — judgement or
+# or Step 1/2/State (scope, DAG construction, the run lock), gh-issue, or the
+# planner (issue-plan reconciliation, rows 45-49) — judgement or
 # live-repo work outside a pure status-files-and-dag.txt state machine, so
 # there is nothing here to fixture. Pin the total row count so a scenarios.md
 # edit that adds or removes a row is caught here for review, not silently.
 IN_SCOPE_ROWS="1 2 3 4 29 32 34"
-EXPECTED_ROW_COUNT=44
+EXPECTED_ROW_COUNT=49
 
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then
-    ok "docs/scenarios.md row count unchanged ($actual_rows) — in scope here: $IN_SCOPE_ROWS; the rest is Step 3 items 3-5 / Step 3a / Step 4 / Step 5 / Step 1-2 / State, not this script"
+    ok "docs/scenarios.md row count unchanged ($actual_rows) — in scope here: $IN_SCOPE_ROWS; the rest is Step 3 items 3-5 / Step 3a / Step 4 / Step 5 / Step 1-2 / State, gh-issue, or the planner, not this script"
   else
     err "docs/scenarios.md now has $actual_rows rows (expected $EXPECTED_ROW_COUNT) — re-check whether any new row belongs in IN_SCOPE_ROWS above and add its fixture"
   fi
