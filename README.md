@@ -80,7 +80,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement (file-scope conflict edges still computed)
 /issue-runner:issue-runner --no-merge                   # every implementer stops at ready-to-merge instead of merging; a human (or --merge-ready) merges by hand
-/issue-runner:issue-runner --prose-gate N,…            # narrow the review triage bar for these Markdown-only prose PRs (user-authorized; revoked on any non-.md path)
+/issue-runner:issue-runner --prose-gate N,…             # narrow the review triage bar for these Markdown-only prose PRs (user-authorized; revoked on any non-.md path)
 /issue-runner:issue-runner --merge-ready                # merge every PR left ready by a prior --no-merge run and continue for what it unblocks
 /issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
 ```
