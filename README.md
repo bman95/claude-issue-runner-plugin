@@ -75,7 +75,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --max-parallel N             # concurrency cap (default 3)
 /issue-runner:issue-runner --hang-minutes N             # hung-implementer threshold: progress file unchanged for more than N minutes (default 30)
 /issue-runner:issue-runner --lock-ttl-minutes N         # run-lock heartbeat threshold: refuse a second run while the lock's PID is alive or its mtime is younger than N minutes (default 120)
-/issue-runner:issue-runner --max-codex-iterations N     # Codex gate cap per implementer (default 2)
+/issue-runner:issue-runner --max-codex-iterations N     # Codex gate passes per implementer (default 3)
 /issue-runner:issue-runner --max-retries N              # Step 4 re-dispatches per issue before every blocker escalates to you (default 2)
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement (file-scope conflict edges still computed)

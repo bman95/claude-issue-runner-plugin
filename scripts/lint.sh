@@ -10,7 +10,10 @@
 #   2. every skills/*/SKILL.md frontmatter has name + description + version
 #   3. --max-parallel default agrees across README, SKILL arg line, and the
 #      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line; likewise
-#      --hang-minutes against the `\`HANG_MINUTES\` (default N` runtime phrase
+#      --hang-minutes against the `\`HANG_MINUTES\` (default N` runtime phrase;
+#      and --max-codex-iterations across README, both editions' issue-runner
+#      arg line, gh-issue flag line and Phase 2 heading, and the Step 2
+#      estimate's `Resolve \`MAX_CODEX_ITERATIONS\` (default N` phrase
 #   4. CHANGELOG has an entry for the manifest version
 #   5. the issue-body contract strings appear in both issue-plan and issue-runner,
 #      the planner's slice template ends with the `Files likely touched:` line and
@@ -84,6 +87,9 @@ README="$ROOT/README.md"
 CHANGELOG="$ROOT/CHANGELOG.md"
 SKILL_RUNNER="$ROOT/skills/issue-runner/SKILL.md"
 SKILL_GH="$ROOT/skills/gh-issue/SKILL.md"
+# The Codex edition's canonical copies (its wrappers read these, not skills/).
+CANON_RUNNER="$ROOT/codex/issue-runner/canonical/issue-runner/SKILL.md"
+CANON_GH="$ROOT/codex/issue-runner/canonical/gh-issue/SKILL.md"
 
 # 1. Manifest version agreement -------------------------------------------------
 plugin_version="$(json_version "$PLUGIN_JSON")"
@@ -143,6 +149,38 @@ else
   ok "--hang-minutes default agrees at all three sites ($readme_hm)"
 fi
 
+# 3c. --max-codex-iterations default: README arg, both editions' issue-runner
+# arg line and gh-issue flag line, both Phase 2 headings, the Step 2 estimate --
+# Each site is `<label>|<file>|<ERE for the line>`; the value read is the first
+# "default N" on the first matching line.
+mci_default() {
+  grep -E -e "$2" "$1" | head -1 | grep -oE 'default[[:space:]]+[0-9]+' \
+    | grep -oE '[0-9]+' | head -1
+}
+mci_ref=""; mci_ok=1; mci_seen=""; mci_n=0
+while IFS='|' read -r label file pat; do
+  v="$(mci_default "$file" "$pat")"
+  mci_n=$((mci_n + 1)); mci_seen="$mci_seen $label=${v:-?}"
+  if [ -z "$v" ]; then mci_ok=0
+  elif [ -z "$mci_ref" ]; then mci_ref="$v"
+  elif [ "$v" != "$mci_ref" ]; then mci_ok=0
+  fi
+done <<EOF_MCI
+README|$README|--max-codex-iterations N
+issue-runner-arg|$SKILL_RUNNER|--max-codex-iterations N
+canonical-issue-runner-arg|$CANON_RUNNER|--max-codex-iterations N
+gh-issue-flag|$SKILL_GH|--max-codex-iterations N
+canonical-gh-issue-flag|$CANON_GH|--max-codex-iterations N
+gh-issue-Phase-2|$SKILL_GH|^#### Phase 2 .*cap \`MAX_CODEX_ITERATIONS\`, default [0-9]+
+canonical-gh-issue-Phase-2|$CANON_GH|^#### Phase 2 .*cap \`MAX_CODEX_ITERATIONS\`, default [0-9]+
+issue-runner-Step-2|$SKILL_RUNNER|Resolve \`MAX_CODEX_ITERATIONS\` \(default [0-9]+
+EOF_MCI
+if [ "$mci_ok" -eq 1 ]; then
+  ok "--max-codex-iterations default agrees at all $mci_n sites ($mci_ref)"
+else
+  err "--max-codex-iterations default drift or unreadable (? = unreadable):$mci_seen"
+fi
+
 # 4. CHANGELOG entry for the manifest version ----------------------------------
 if [ -n "$plugin_version" ]; then
   if grep -qE "^## \[${plugin_version//./\\.}\]" "$CHANGELOG"; then
@@ -154,9 +192,8 @@ fi
 
 # 5. Issue-body contract strings shared by planner and runner ------------------
 SKILL_PLAN="$ROOT/skills/issue-plan/SKILL.md"
-# The Codex edition's wrappers read these canonical copies, not skills/.
+# The Codex edition's wrapper reads this canonical copy, not skills/.
 CANON_PLAN="$ROOT/codex/issue-runner/canonical/issue-plan/SKILL.md"
-CANON_RUNNER="$ROOT/codex/issue-runner/canonical/issue-runner/SKILL.md"
 for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:' 'Part of #' '## Slices'; do
   for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
     if ! grep -qF "$s" "$f"; then
@@ -334,7 +371,6 @@ fi
 # both SKILL files and gh-issue's write recipe; prose that mentions "outcome" is
 # not one. Compared per line (not unioned per file), so a key dropped from one
 # of a file's two lines cannot hide behind the other. Values are free.
-CANON_GH="$ROOT/codex/issue-runner/canonical/gh-issue/SKILL.md"
 result_key_lines() {   # prints "<line-no>:<sorted,keys>" for each contract line of $1
   grep -nE '^[[:space:]]*\{.*"outcome":' "$1" | while IFS=: read -r ln rest; do
     printf '%s:%s\n' "$ln" "$(printf '%s' "$rest" | grep -oE '"[A-Za-z0-9_]+":' | tr -d '":' | sort -u | paste -sd, -)"
