@@ -528,7 +528,7 @@ Escalations, cheapest first:
 - **Hand off to `/codex:rescue`** for a fresh investigation; pass the worktree path and the latest review log. A dispatch like any other — deferred while `$RUN_ROOT/paused` exists (the credit/usage-limit paragraph above).
 - **Mark `failed`** and let the cascade skip dependents.
 - **Mark `done`** — only for `PR #P merged but issue still open — confirm and close by hand`, after the user confirmed PR #P is this run's and the issue is closed: re-run Step 3 item 5's proof (the same block; `CLOSED` + `MERGED_PR` non-empty) and mark `done`. Nothing else moves a `blocked` issue to `done`; a `done` set here authorizes Step 5's teardown like any other.
-- **Bump the Codex cap and re-run** — only for a Codex gate cap-stop whose findings cascade (each pass's findings are new, not re-flags; they are left unfixed under the PR's `## Review notes`): `/issue-runner <N> --max-codex-iterations M`. The re-run's resume check picks up the existing PR and branch. Its implementer counts gate passes from 1 again, up to M, so the passes a re-run buys are M, not M minus the ones already spent.
+- **Bump the Codex cap and re-run** — only for a Codex gate cap-stop whose findings cascade (each pass's findings are new, not re-flags; they are left unfixed under the PR's `## Review notes`): `/issue-runner <N> --max-codex-iterations M`. The re-run's resume check picks up the existing PR and branch. Its implementer counts gate passes from 1 again, up to M, not M minus the ones already spent. Its pass 1 re-reviews the cap-stopped head, whose findings are still unfixed, so the re-run buys M − 1 fix rounds.
 
 ### Step 5 — cleanup and summary
 
