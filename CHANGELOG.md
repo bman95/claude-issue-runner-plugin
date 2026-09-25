@@ -2,7 +2,11 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
-## [Unreleased]
+## [0.12.0] - 2026-09-25
+
+Three issues (#41–#43) that make the pipeline answer to the project instead of guessing: the project declares what "validate this change" means, the planner reconciles a new plan with the backlog and recorded decisions before it interviews, and an RFC draws where the runner's knowledge of post-merge integration should stop. This is a minor bump rather than a patch because scenario row 37's Expected behavior changed (per `docs/scenarios.md`'s own rule).
+
+Versions: issue-runner 0.10.0 → 0.11.0, gh-issue 0.8.0 → 0.9.0, issue-plan 0.3.0 → 0.4.0, Codex edition manifest 0.10.0 → 0.11.0 (each skill's version mirrored into its Codex copies).
 
 ### The project says what "validate this change" means: a validation contract
 
@@ -45,6 +49,14 @@ Issue #41. `/issue-plan` explored the codebase but never the backlog: a new plan
 - `docs/scenarios.md` rows 45–49: duplicate issue (`covered`), dependency on an existing issue (`depends`, and the runner's out-of-scope-edge question), conflicting design decision (`conflict`), unrelated backlog noise, and a fresh repository with nothing to reconcile.
 - README pitch, architecture chain and the trust-the-authors limitation; REFERENCE.md rationale entry (both editions); design-notes note 8 (judged relevance now, deterministic candidate signals later) and note 6's reconciliation with #41.
 - `scripts/lint.sh` check 15: `skills/issue-plan/SKILL.md` and `codex/issue-runner/canonical/issue-plan/SKILL.md` must be byte-identical. `test-scheduler.sh`'s pinned scenario row count moves to 49 (the new rows are planner judgement, not scheduler fixtures).
+
+### Also in this release
+
+**issue-runner:**
+- **`--max-parallel` default back to 3** (issue #31; README and both editions). The default had been 5 since 0.7.0. It is now 3, so a run starts at most three implementers at once unless `--max-parallel` raises the cap.
+
+**docs:**
+- **`docs/design-notes.md` note 9 (proposed): work that does not end in a PR.** Records the agreed design for research, audits, recurring checks and operational tasks before any of it is built: research delivers a report comment, not a PR, and is always a DAG leaf; follow-ups go through `/issue-plan`, never straight into a runnable queue; `done` for research is proven from GitHub state; security findings are handled by repository visibility, fail-closed; and operations are turned into code first. Whether the body or a label marks the kind is left to the `/issue-plan` interview.
 
 ## [0.11.0] - 2026-09-08
 

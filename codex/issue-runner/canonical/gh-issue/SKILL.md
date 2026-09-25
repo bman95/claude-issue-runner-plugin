@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.8.0
+version: 0.9.0
 description: Implements a GitHub issue end-to-end — explore, code, PR, layered review (fresh-eyes subagents, then a Codex gate), merge.
 disable-model-invocation: true
 ---
