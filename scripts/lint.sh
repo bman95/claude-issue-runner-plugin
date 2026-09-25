@@ -12,8 +12,8 @@
 #      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line; likewise
 #      --hang-minutes against the `\`HANG_MINUTES\` (default N` runtime phrase;
 #      and --max-codex-iterations across README, both editions' issue-runner
-#      arg line, gh-issue flag line and Phase 2 heading, and the Step 2
-#      estimate's `Resolve \`MAX_CODEX_ITERATIONS\` (default N` phrase
+#      arg line, gh-issue flag line, Phase 2 heading and REFERENCE cap entry,
+#      and the Step 2 estimate's `Resolve \`MAX_CODEX_ITERATIONS\` (default N` phrase
 #   4. CHANGELOG has an entry for the manifest version
 #   5. the issue-body contract strings appear in both issue-plan and issue-runner,
 #      the planner's slice template ends with the `Files likely touched:` line and
@@ -90,6 +90,8 @@ SKILL_GH="$ROOT/skills/gh-issue/SKILL.md"
 # The Codex edition's canonical copies (its wrappers read these, not skills/).
 CANON_RUNNER="$ROOT/codex/issue-runner/canonical/issue-runner/SKILL.md"
 CANON_GH="$ROOT/codex/issue-runner/canonical/gh-issue/SKILL.md"
+REF_RUNNER="$ROOT/skills/issue-runner/REFERENCE.md"
+CANON_REF_RUNNER="$ROOT/codex/issue-runner/canonical/issue-runner/REFERENCE.md"
 
 # 1. Manifest version agreement -------------------------------------------------
 plugin_version="$(json_version "$PLUGIN_JSON")"
@@ -150,7 +152,8 @@ else
 fi
 
 # 3c. --max-codex-iterations default: README arg, both editions' issue-runner
-# arg line and gh-issue flag line, both Phase 2 headings, the Step 2 estimate --
+# arg line, gh-issue flag line, Phase 2 heading and REFERENCE cap entry, and
+# the Step 2 estimate ----------------------------------------------------------
 # Each site is `<label>|<file>|<ERE for the line>`; the value read is the first
 # "default N" on the first matching line.
 mci_default() {
@@ -174,6 +177,8 @@ canonical-gh-issue-flag|$CANON_GH|--max-codex-iterations N
 gh-issue-Phase-2|$SKILL_GH|^#### Phase 2 .*cap \`MAX_CODEX_ITERATIONS\`, default [0-9]+
 canonical-gh-issue-Phase-2|$CANON_GH|^#### Phase 2 .*cap \`MAX_CODEX_ITERATIONS\`, default [0-9]+
 issue-runner-Step-2|$SKILL_RUNNER|Resolve \`MAX_CODEX_ITERATIONS\` \(default [0-9]+
+REFERENCE|$REF_RUNNER|The cap is \`--max-codex-iterations\` \(default [0-9]+
+canonical-REFERENCE|$CANON_REF_RUNNER|The cap is \`--max-codex-iterations\` \(default [0-9]+
 EOF_MCI
 if [ "$mci_ok" -eq 1 ]; then
   ok "--max-codex-iterations default agrees at all $mci_n sites ($mci_ref)"
