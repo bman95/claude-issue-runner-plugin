@@ -543,6 +543,10 @@ fi
 if [ "$(gate_launch "$SKILL_GH")" != "$(gate_launch "$CANON_GH")" ]; then
   err "gh-issue gate launch block differs between editions"; live_ok=0
 fi
+for f in "$SKILL_GH" "$CANON_GH" "$SKILL_RUNNER" "$CANON_RUNNER"; do
+  grep -qF 'Silent-reviewer fallback: inline review authorized' "$f" \
+    || { err "silent-reviewer fallback dispatch line missing from ${f#"$ROOT"/}"; live_ok=0; }
+done
 if grep -rn '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex" >/dev/null; then
   err "fixed /tmp Codex gate paths still referenced: $(grep -rln '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex" | tr '\n' ' ')"; live_ok=0
 fi
