@@ -51,8 +51,9 @@
 #  16. the prose review profile is one contract in both editions: gh-issue's
 #      Step 8 "Review profile" section and its Phase 2 prose invocation are
 #      byte-identical across editions, both carry the --review-profile flag
-#      line and the dispatch-line contract, and both runners' Step 3a write
-#      that same dispatch line
+#      line, the unknown-profile refusal and the dispatch-line contract, and
+#      both runners' Step 3a write that same dispatch line and carry the
+#      Step 4 prose-retry offer
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -501,6 +502,8 @@ for f in "$SKILL_GH" "$CANON_GH"; do
     || { err "gh-issue dispatch-line contract missing from ${f#"$ROOT"/}"; prof_ok=0; }
   grep -qF 'Optional flag: `--review-profile standard|prose`' "$f" \
     || { err "gh-issue --review-profile flag line missing from ${f#"$ROOT"/}"; prof_ok=0; }
+  grep -qF "unknown review profile '<name>' (expected standard or prose)" "$f" \
+    || { err "gh-issue unknown-profile refusal missing from ${f#"$ROOT"/}"; prof_ok=0; }
 done
 if [ "$(profile_section "$SKILL_GH")" != "$(profile_section "$CANON_GH")" ]; then
   err "gh-issue Review profile section differs between editions"; prof_ok=0
@@ -511,6 +514,8 @@ fi
 for f in "$SKILL_RUNNER" "$CANON_RUNNER"; do
   grep -qF '`- Review profile: prose (user-authorized for issue #<N>)`' "$f" \
     || { err "issue-runner Step 3a prose dispatch line missing from ${f#"$ROOT"/}"; prof_ok=0; }
+  grep -qF '**Retry under the prose profile**' "$f" \
+    || { err "issue-runner Step 4 prose-retry offer missing from ${f#"$ROOT"/}"; prof_ok=0; }
 done
 [ "$prof_ok" -eq 1 ] && ok "prose review profile: gh-issue section and invocation byte-identical in both editions; dispatch line agrees (4 files)"
 
