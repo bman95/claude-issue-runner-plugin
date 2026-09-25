@@ -8,7 +8,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
 - **Codex gate pinned to `gpt-6-sol`** (#49). In GPT-6, Sol is the workhorse tier and `gpt-6-astra` the frontier; Sol is pinned for near-Astra reliability at lower cost, Astra documented as the escalation. The id needs Codex CLI 0.155 or later, so the gate checks the CLI's model catalog first: a CLI that does not list it gets an "upgrade the Codex CLI" message, never a degraded gate.
 
 **issue-runner:**
-- **Codex preflight checks the model catalog** (#49), so an old or logged-out CLI is caught before dispatch rather than after every implementer's Phase 1. It asks the same question as a missing CLI.
+- **Codex preflight checks the model catalog** (#49), so an old or logged-out CLI is caught before dispatch rather than after every implementer's Phase 1. It asks the same question as a missing CLI, and Step 4 (Claude edition) treats an implementer's catalog blocker as the same risk blocker.
 
 ## [0.12.0] - 2026-09-25
 
