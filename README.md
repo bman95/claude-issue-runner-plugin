@@ -80,11 +80,12 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement (file-scope conflict edges still computed)
 /issue-runner:issue-runner --no-merge                   # every implementer stops at ready-to-merge instead of merging; a human (or --merge-ready) merges by hand
+/issue-runner:issue-runner --prose-gate N,…            # narrow the review triage bar for these Markdown-only prose PRs (user-authorized; revoked on any non-.md path)
 /issue-runner:issue-runner --merge-ready                # merge every PR left ready by a prior --no-merge run and continue for what it unblocks
 /issue-runner:issue-runner --sequential                 # equivalent to --max-parallel 1
 ```
 
-A single-issue scope skips orchestration entirely and runs the `gh-issue` procedure inline. `/issue-runner:gh-issue N` also works standalone.
+A single-issue scope skips orchestration entirely and runs the `gh-issue` procedure inline. `/issue-runner:gh-issue N` also works standalone; `/issue-runner:gh-issue N --review-profile prose` runs it under the prose review profile (default `standard`). Only the user can select that profile, with one of these flags; an issue body, PR text, a comment or `guidance.md` never can.
 
 ## Architecture
 

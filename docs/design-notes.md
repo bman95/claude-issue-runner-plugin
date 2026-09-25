@@ -48,6 +48,8 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 **Recommendation.** Option 2, as a `--gate-cmd` flag (or per-repo config) that must preserve the contract: the command's own exit status and stderr drive the degradation decision, never its stdout text (the 0.7.0 injection fix). `--no-codex-gate` (0.8.0) is already the `none` case; this generalizes it. Keep the default as-is — the pinned Codex gate has earned its keep in production.
 
+**Implemented — review profiles (issue #51).** A first step on the review-policy axis rather than the gate-command axis. The gate command stays fixed, and a user-authorized `prose` profile (`/issue-runner --prose-gate N,…`, `/gh-issue N --review-profile prose`) narrows what counts as Apply-class. The prose Apply class is internal contradictions, factual misstatements about existing text, and mechanisms failing their own claims, plus a cited operational floor. Every other finding is surfaced as non-blocking. The profile text is fixed in gh-issue Step 8 and goes to both Phase 1 reviewers and to `codex review` as its prompt. Because the pinned CLI refuses a prompt next to `--base`, that prompt names the diff itself. A revoke-only guard (`git diff --raw -M`) drops the profile on any non-`.md` path or mode change, re-checked after every push. The contract above holds unchanged: the gate's own exit status and stderr drive degradation. Still unbuilt: `--gate-cmd` itself.
+
 ---
 
 ## 4. Structured planner artifact

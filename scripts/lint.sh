@@ -48,6 +48,11 @@
 #  15. skills/issue-plan/SKILL.md and the Codex edition's canonical copy are
 #      byte-identical — the planner is ported in full, and its wrapper reads
 #      the canonical copy, so any drift is a divergence between editions
+#  16. the prose review profile is one contract in both editions: gh-issue's
+#      Step 8 "Review profile" section and its Phase 2 prose invocation are
+#      byte-identical across editions, both carry the --review-profile flag
+#      line and the dispatch-line contract, and both runners' Step 3a write
+#      that same dispatch line
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -476,6 +481,38 @@ if cmp -s "$SKILL_PLAN" "$CANON_PLAN"; then
 else
   err "issue-plan skill differs between ${SKILL_PLAN#"$ROOT"/} and ${CANON_PLAN#"$ROOT"/} (copy the Claude skill over the canonical file)"
 fi
+
+# 16. Prose review profile: one contract in both editions -------------------------
+# gh-issue's Step 8 "Review profile" section (authority, revoke-only guard, the
+# fixed profile text, prose triage) and the Phase 2 prose invocation must be
+# byte-identical across editions; the dispatch line the runner writes must be
+# the one gh-issue honors, in both editions.
+profile_section() {   # the "#### Review profile" section, up to the next ####
+  awk '/^#### Review profile/ {f=1; print; next} f && /^#### / {exit} f {print}' "$1"
+}
+prose_invocation() {  # the bash block that runs `codex review ... -` from the prompt file
+  awk '/^```bash$/ {buf=""; f=1; next} f && /^```$/ {if (buf ~ /codex-prompt-/) {printf "%s", buf; exit} f=0; next} f {buf = buf $0 "\n"}' "$1"
+}
+prof_ok=1
+for f in "$SKILL_GH" "$CANON_GH"; do
+  [ -n "$(profile_section "$f")" ] || { err "gh-issue Review profile section missing from ${f#"$ROOT"/}"; prof_ok=0; }
+  [ -n "$(prose_invocation "$f")" ] || { err "gh-issue prose Codex invocation missing from ${f#"$ROOT"/}"; prof_ok=0; }
+  grep -qF 'Review profile: prose (user-authorized for issue #<number>)' "$f" \
+    || { err "gh-issue dispatch-line contract missing from ${f#"$ROOT"/}"; prof_ok=0; }
+  grep -qF 'Optional flag: `--review-profile standard|prose`' "$f" \
+    || { err "gh-issue --review-profile flag line missing from ${f#"$ROOT"/}"; prof_ok=0; }
+done
+if [ "$(profile_section "$SKILL_GH")" != "$(profile_section "$CANON_GH")" ]; then
+  err "gh-issue Review profile section differs between editions"; prof_ok=0
+fi
+if [ "$(prose_invocation "$SKILL_GH")" != "$(prose_invocation "$CANON_GH")" ]; then
+  err "gh-issue prose Codex invocation differs between editions"; prof_ok=0
+fi
+for f in "$SKILL_RUNNER" "$CANON_RUNNER"; do
+  grep -qF '`- Review profile: prose (user-authorized for issue #<N>)`' "$f" \
+    || { err "issue-runner Step 3a prose dispatch line missing from ${f#"$ROOT"/}"; prof_ok=0; }
+done
+[ "$prof_ok" -eq 1 ] && ok "prose review profile: gh-issue section and invocation byte-identical in both editions; dispatch line agrees (4 files)"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2

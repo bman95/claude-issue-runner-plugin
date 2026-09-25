@@ -287,13 +287,13 @@ fi
 # table is Step 3 items 3/4/5 (dispatch, hang detection, result.json
 # processing), Step 3a/Step 4/Step 5 (live GitHub state, human escalation),
 # or Step 1/2/State (scope, DAG construction, the run lock), gh-issue (its
-# gate cap is row 50), or the planner (issue-plan reconciliation, rows 45-49) —
+# gate cap is row 50, its prose review profile rows 51-55), or the planner (issue-plan reconciliation, rows 45-49) —
 # judgement or live-repo work outside a pure status-files-and-dag.txt state
 # machine, so
 # there is nothing here to fixture. Pin the total row count so a scenarios.md
 # edit that adds or removes a row is caught here for review, not silently.
 IN_SCOPE_ROWS="1 2 3 4 29 32 34"
-EXPECTED_ROW_COUNT=50
+EXPECTED_ROW_COUNT=55
 
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
