@@ -519,6 +519,33 @@ for f in "$SKILL_RUNNER" "$CANON_RUNNER"; do
 done
 [ "$prof_ok" -eq 1 ] && ok "prose review profile: gh-issue section and invocation byte-identical in both editions; dispatch line agrees (4 files)"
 
+# 17. Reviewer and gate liveness: one contract in both editions ------------------
+# gh-issue's Step 8 "Liveness" section and the standard Phase 2 launch block
+# (per-pass files, watchdog, .exit from the same subshell) must be byte-identical
+# across editions, and no fixed /tmp gate-output name may come back.
+liveness_section() {   # the "#### Liveness" section, up to the next ####
+  awk '/^#### Liveness/ {f=1; print; next} f && /^#### / {exit} f {print}' "$1"
+}
+gate_launch() {        # the bash block that runs `codex review ... --base`
+  awk '/^```bash$/ {buf=""; f=1; next} f && /^```$/ {if (buf ~ /codex review -c model=[^ ]+ --base/) {printf "%s", buf; exit} f=0; next} f {buf = buf $0 "\n"}' "$1"
+}
+live_ok=1
+for f in "$SKILL_GH" "$CANON_GH"; do
+  [ -n "$(liveness_section "$f")" ] || { err "gh-issue Liveness section missing from ${f#"$ROOT"/}"; live_ok=0; }
+  gate_launch "$f" | grep -qF 'printf '"'"'%s\n'"'"' "$RC" >"$G.exit"' \
+    || { err "gh-issue gate launch block does not write .exit from its own subshell in ${f#"$ROOT"/}"; live_ok=0; }
+done
+if [ "$(liveness_section "$SKILL_GH")" != "$(liveness_section "$CANON_GH")" ]; then
+  err "gh-issue Liveness section differs between editions"; live_ok=0
+fi
+if [ "$(gate_launch "$SKILL_GH")" != "$(gate_launch "$CANON_GH")" ]; then
+  err "gh-issue gate launch block differs between editions"; live_ok=0
+fi
+if grep -rn '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex" >/dev/null; then
+  err "fixed /tmp Codex gate paths still referenced: $(grep -rln '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex" | tr '\n' ' ')"; live_ok=0
+fi
+[ "$live_ok" -eq 1 ] && ok "reviewer and gate liveness: gh-issue section and launch block byte-identical in both editions; no fixed /tmp gate paths"
+
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
   exit 1
