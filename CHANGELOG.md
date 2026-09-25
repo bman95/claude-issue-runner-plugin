@@ -5,7 +5,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
 ## [Unreleased]
 
 **gh-issue:**
-- **Codex gate pinned to `gpt-6-sol`** (#49). In GPT-6, Sol is the workhorse tier and `gpt-6-astra` the frontier; Sol is pinned for near-Astra reliability at lower cost, Astra documented as the escalation. The id needs Codex CLI 0.155 or later; an older CLI's unknown-model error is an "upgrade the Codex CLI" blocker, never a credit/quota degradation.
+- **Codex gate pinned to `gpt-6-sol`** (#49). In GPT-6, Sol is the workhorse tier and `gpt-6-astra` the frontier; Sol is pinned for near-Astra reliability at lower cost, Astra documented as the escalation. The id needs Codex CLI 0.155 or later, so the runner's preflight and the gate check the CLI's model catalog first: an older CLI gets an "upgrade the Codex CLI" message, never a degraded gate.
 
 ## [0.12.0] - 2026-09-25
 
