@@ -2,6 +2,11 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [Unreleased]
+
+**gh-issue:**
+- **Codex gate pinned to `gpt-6-sol`** (#49). In GPT-6, Sol is the workhorse tier and `gpt-6-astra` the frontier; Sol is pinned for near-Astra reliability at lower cost, Astra documented as the escalation. The id needs Codex CLI 0.155 or later; an older CLI's unknown-model error is an "upgrade the Codex CLI" blocker, never a credit/quota degradation.
+
 ## [0.12.0] - 2026-09-25
 
 Three issues (#41–#43) that make the pipeline answer to the project instead of guessing: the project declares what "validate this change" means, the planner reconciles a new plan with the backlog and recorded decisions before it interviews, and an RFC draws where the runner's knowledge of post-merge integration should stop. This is a minor bump rather than a patch because scenario row 37's Expected behavior changed (per `docs/scenarios.md`'s own rule).
