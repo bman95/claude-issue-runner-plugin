@@ -532,8 +532,10 @@ gate_launch() {        # the bash block that runs `codex review ... --base`
 live_ok=1
 for f in "$SKILL_GH" "$CANON_GH"; do
   [ -n "$(liveness_section "$f")" ] || { err "gh-issue Liveness section missing from ${f#"$ROOT"/}"; live_ok=0; }
-  gate_launch "$f" | grep -qF 'printf '"'"'%s\n'"'"' "$RC" >"$G.exit"' \
-    || { err "gh-issue gate launch block does not write .exit from its own subshell in ${f#"$ROOT"/}"; live_ok=0; }
+  for blk in gate_launch prose_invocation; do
+    "$blk" "$f" | grep -qF '&& printf '"'"'%s\n'"'"' "$RC" >"$G.exit"' \
+      || { err "gh-issue $blk block does not write .exit from its own subshell in ${f#"$ROOT"/}"; live_ok=0; }
+  done
 done
 if [ "$(liveness_section "$SKILL_GH")" != "$(liveness_section "$CANON_GH")" ]; then
   err "gh-issue Liveness section differs between editions"; live_ok=0
