@@ -37,7 +37,7 @@ if [ ! -f "$SCRIPT" ]; then err "classify.sh not found"; exit 1; fi
 # Answers from files in $GH_STUB (branch names have `/` replaced by `_`):
 #   issue-state          `gh issue view N`            (absent → the call fails)
 #   merged-<branch>      `gh pr list --head B --state merged`  "number oid" lines
-#   open-<branch>        `gh pr list --head B --state open`    "number isDraft headRefOid" lines
+#   open-<branch>        `gh pr list --head B --state open`    "number isDraft" lines
 #   open-all             `gh pr list --state open`             "number branch isDraft" lines
 #   all-<branch>         `gh pr list --head B --state all`     "number" lines (absent = no PR)
 #   view-<P>             `gh pr view P`                        isDraft line, then the body

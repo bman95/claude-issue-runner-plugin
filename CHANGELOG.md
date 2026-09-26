@@ -28,6 +28,10 @@ All notable changes to this plugin will be documented here. Versions follow semv
   - `pr-shape` lists open PRs with `--limit 1000` instead of gh's default of 30.
   - In `pr-shape`, an open PR whose branch is not on origin gets a `shape unknown (branch not on origin)` line instead of failing the whole call.
   - A `## Plan` heading is matched as a heading line.
+  - A usage error (exit 2, a missing `outcome` file included) is fixed and re-run; still exit 2 after one fix records `blocked` with `classification failed: …`.
+  - A failed write of the `blocker` input records `blocked` with `cannot record the implementer's error: …` and never classifies without it.
+  - `result` removes `issue-N/error` when the status carries none (`done`, `ready`), so a retry that ends there no longer shows the previous attempt's error.
+  - Step 4's "Mark `done`" writes only `done`; any other output of the re-run leaves the issue `blocked` and is reported to the user.
 
   The Codex edition calls a byte-identical copy under `canonical/issue-runner/scripts/`.
 
