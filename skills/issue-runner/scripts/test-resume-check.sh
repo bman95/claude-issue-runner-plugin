@@ -160,6 +160,19 @@ check "cross-repo, URL and emphasized forms are never dropped: unconfirmed, for 
     "keyword-unconfirmed #36 c/d draft=false worktree=-" \
     "keyword-unconfirmed #37 e/f draft=false worktree=-" \
     "branch feat/issue-7-slug $T7 orphan worktree=-")" 7
+stub_reset; stub search "$(printf '39 g/h false\n41 i/j false\n42 k/l false')"
+# shellcheck disable=SC2016 # literal backticks: markdown code in a PR body
+stub body-39 "$(printf 'Example:\n```\nCloses #7\n```\nnothing else')"
+# shellcheck disable=SC2016
+stub body-41 'Write `Closes #7` in the body'
+# shellcheck disable=SC2016
+stub body-42 "$(printf '```\nsample\n```\nFixes #7')"
+check "a closing keyword inside code is unconfirmed; one after a closed fence is a pr line" 0 \
+  "$(printf '%s\n%s\n%s\n%s' \
+    "pr #42 k/l draft=false via=keyword worktree=-" \
+    "keyword-unconfirmed #39 g/h draft=false worktree=-" \
+    "keyword-unconfirmed #41 i/j draft=false worktree=-" \
+    "branch feat/issue-7-slug $T7 orphan worktree=-")" 7
 git -C "$REPO" worktree add -q -b kw/branch "$TMP/wt-kw" main 2>/dev/null
 stub_reset; stub search "38 kw/branch true"; stub body-38 "Closes o/r#7"
 check "an unconfirmed hit carries draft= and worktree= like a pr line" 0 \

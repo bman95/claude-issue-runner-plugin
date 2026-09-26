@@ -35,7 +35,8 @@
 #                       unconfirmed, for the orchestrator to judge: the search
 #                       also matches looser text, and GitHub also closes on
 #                       forms this match does not read (`owner/repo#N`, an
-#                       issue URL, a keyword in markdown emphasis)
+#                       issue URL, a keyword in markdown emphasis); a
+#                       reference inside a code block or code span is not one
 #   3  orphan branch    `git ls-remote --exit-code --heads origin '*/issue-N-*'`:
 #                       exit 2 = no such branch, 0 = hits, anything else = the
 #                       probe failed; a failed probe is retried once
@@ -104,7 +105,11 @@ while read -r p b d; do
     continue
   fi
   body=$(gh pr view "$p" --json body --jq .body </dev/null) || die "cannot view PR #$p"
+  # Code is never a closing reference: drop fenced blocks and inline code spans
+  # first, so an example there stays unconfirmed for the orchestrator to read.
+  # shellcheck disable=SC2016 # literal backticks: markdown code fences and spans
   printf '%s\n' "$body" \
+    | awk '/^[[:space:]]*(```|~~~)/ { fence = !fence; next } !fence' | sed 's/`[^`]*`//g' \
     | grep -qiE "(^|[^[:alnum:]_])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#$N([^[:alnum:]_]|$)" \
     || { unconfirmed="${unconfirmed}$p $b $d"$'\n'; continue; }
   prs=$(printf '%s\n%s %s %s keyword\n' "$prs" "$p" "$b" "$d" | awk 'NF')
