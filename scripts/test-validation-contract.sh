@@ -216,6 +216,10 @@ fixture "row 39: an explicit base argument needs no gh at all (issue-runner Step
   'preflight: true' - 0 "validation: contract ok (preflight declared; full not declared)" ghfail=all arg=main
 fixture "row 39: an explicit base argument wins over the PR's base" check \
   'preflight: true' - 0 "validation: contract ok" base=nope arg=main
+fixture "row 39: an explicit base argument in preflight mode runs the base copy" preflight \
+  'preflight: true' 'preflight: exit 9' 0 "validation: preflight passed" ghfail=all arg=main
+fixture "row 44: an explicit base argument in changed mode still sees the PR's edit" changed \
+  'preflight: true' 'preflight: exit 9' 5 "validation: contract changed in this PR" ghfail=all arg=main
 
 # --- Row 40: contract absent → fallback, never an error ------------------------
 fixture "row 40: no contract on the base branch" preflight \

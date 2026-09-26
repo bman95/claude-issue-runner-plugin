@@ -60,7 +60,8 @@
 #  18. every bundled script under skills/*/scripts/ parses (bash -n), and every
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
-#      so does a missing Codex copy of validation-contract.sh
+#      so does a missing Codex copy of validation-contract.sh; gh-issue's
+#      "## Validation contract" section is byte-identical across editions
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -588,7 +589,13 @@ for c in "$ROOT"/codex/issue-runner/canonical/*/scripts/*; do
 done
 [ -f "$ROOT/codex/issue-runner/canonical/gh-issue/scripts/validation-contract.sh" ] \
   || { err "codex/issue-runner/canonical/gh-issue/scripts/validation-contract.sh missing (the Codex gh-issue procedure runs it)"; bundled_ok=0; }
-[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs)"
+# The procedure that runs the script (resolution, modes, outcomes) is one
+# contract too: gh-issue's "## Validation contract" section, byte-identical.
+vc_section() { awk '/^## Validation contract$/ {f=1; print; next} f && /^## / {exit} f {print}' "$1"; }
+if [ -z "$(vc_section "$SKILL_GH")" ] || [ "$(vc_section "$SKILL_GH")" != "$(vc_section "$CANON_GH")" ]; then
+  err "gh-issue '## Validation contract' section missing or differs between editions"; bundled_ok=0
+fi
+[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section byte-identical in both editions"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
