@@ -24,8 +24,9 @@
 #   6. no skill references retired command names (e.g. /to-issues)
 #   7. every ```bash block embedded in skills/*/SKILL.md parses (bash -n,
 #      after neutralizing <placeholder> tokens)
-#   8. shellcheck (if installed) over this script and the extracted blocks —
-#      findings are WARNINGS only, never failures
+#   8. shellcheck (if installed) over this script, the bundled
+#      skills/*/scripts/*.sh and the extracted blocks — findings are WARNINGS
+#      only, never failures
 #   9. the default-branch resolution one-liner is byte-identical at every site
 #  10. both SKILL files carry the /issue-< branch-contract match (placeholder
 #      spelling drift <N> vs <number> is a warning)
@@ -39,12 +40,11 @@
 #      fixtures for scripts/scheduler.sh, the extracted Step 3 cascade-skip /
 #      ready-set / blocked-chain-vs-cycle state machine
 #  13. this repository's own .issue-runner/validation parses under the grammar
-#      gh-issue's "Validation contract" recipe applies (comment/blank lines,
-#      exactly one `preflight:` line, at most one `full:` line, LF endings,
-#      nothing else)
+#      skills/gh-issue/scripts/validation-contract.sh applies (comment/blank
+#      lines, exactly one `preflight:` line, at most one `full:` line, LF
+#      endings, nothing else)
 #  14. scripts/test-validation-contract.sh passes — the fixtures for that
-#      recipe, extracted from skills/gh-issue/SKILL.md and asserted
-#      byte-identical in the Codex edition's canonical copy
+#      script, run directly
 #  15. skills/issue-plan/SKILL.md and the Codex edition's canonical copy are
 #      byte-identical — the planner is ported in full, and its wrapper reads
 #      the canonical copy, so any drift is a divergence between editions
@@ -54,6 +54,13 @@
 #      line, the unknown-profile refusal and the dispatch-line contract, and
 #      both runners' Step 3a write that same dispatch line and carry the
 #      Step 4 prose-retry offer
+#  17. reviewer and gate liveness: gh-issue's Step 8 "Liveness" section and
+#      the Phase 2 launch block are byte-identical across editions, and no
+#      fixed /tmp gate-output path comes back
+#  18. every bundled script under skills/*/scripts/ parses (bash -n), and every
+#      one with a Codex counterpart under codex/issue-runner/canonical/ is
+#      byte-identical to it (cmp); a Codex script with no original fails, and
+#      so does a missing Codex copy of validation-contract.sh
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -320,10 +327,9 @@ for skill in "$ROOT"/skills/*/SKILL.md; do
   fi
 done
 
-# 8. shellcheck over this script and the bundled scheduler scripts (advisory) ----
+# 8. shellcheck over this script and the bundled scripts (advisory) --------------
 if [ "$have_shellcheck" -eq 1 ]; then
-  for f in "$ROOT/scripts/lint.sh" "$ROOT/skills/issue-runner/scripts/scheduler.sh" \
-           "$ROOT/skills/issue-runner/scripts/test-scheduler.sh" \
+  for f in "$ROOT/scripts/lint.sh" "$ROOT"/skills/*/scripts/*.sh \
            "$ROOT/scripts/test-validation-contract.sh"; do
     rel="${f#"$ROOT"/}"
     if shellcheck "$f" >"$TMP/lint.sc" 2>&1; then
@@ -443,7 +449,8 @@ else
 fi
 
 # 13. This repository's own validation contract parses -------------------------
-# Same grammar as the recipe in skills/gh-issue/SKILL.md ("Validation contract"):
+# Same grammar as skills/gh-issue/scripts/validation-contract.sh (which reads the
+# base branch's copy; this check reads the working tree's, before it lands):
 # a typo here would block every implementer run on this repo at Step 5.
 CONTRACT_FILE="$ROOT/.issue-runner/validation"
 if [ -f "$CONTRACT_FILE" ]; then
@@ -551,6 +558,37 @@ if grep -rn '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex
   err "fixed /tmp Codex gate paths still referenced: $(grep -rln '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex" | tr '\n' ' ')"; live_ok=0
 fi
 [ "$live_ok" -eq 1 ] && ok "reviewer and gate liveness: gh-issue section and launch block byte-identical in both editions; no fixed /tmp gate paths"
+
+# 18. Bundled scripts: parse, and Codex copies byte-identical ---------------------
+# Deterministic recipes live as scripts under skills/<skill>/scripts/; the Codex
+# edition ships its copy at codex/issue-runner/canonical/<skill>/scripts/. Every
+# bundled script must parse, and every one with a Codex counterpart must be
+# byte-identical to it (cmp), so the two editions never run different recipes.
+# A Codex script with no Claude original is drift too, and so is a missing copy
+# of a script the Codex canonical procedure runs.
+bundled_ok=1; n_bundled=0; n_pairs=0
+for f in "$ROOT"/skills/*/scripts/*; do
+  [ -f "$f" ] || continue
+  rel="${f#"$ROOT"/skills/}"; n_bundled=$((n_bundled + 1))
+  case "$f" in
+    *.sh) bash -n "$f" 2>"$TMP/bundled.err" \
+            || { err "bash syntax error in skills/$rel: $(head -1 "$TMP/bundled.err")"; bundled_ok=0; } ;;
+  esac
+  c="$ROOT/codex/issue-runner/canonical/$rel"
+  [ -e "$c" ] || continue
+  n_pairs=$((n_pairs + 1))
+  cmp -s "$f" "$c" \
+    || { err "skills/$rel differs from its Codex copy codex/issue-runner/canonical/$rel (copy the Claude script over it)"; bundled_ok=0; }
+done
+for c in "$ROOT"/codex/issue-runner/canonical/*/scripts/*; do
+  [ -f "$c" ] || continue
+  rel="${c#"$ROOT"/codex/issue-runner/canonical/}"
+  [ -f "$ROOT/skills/$rel" ] \
+    || { err "codex/issue-runner/canonical/$rel has no original at skills/$rel"; bundled_ok=0; }
+done
+[ -f "$ROOT/codex/issue-runner/canonical/gh-issue/scripts/validation-contract.sh" ] \
+  || { err "codex/issue-runner/canonical/gh-issue/scripts/validation-contract.sh missing (the Codex gh-issue procedure runs it)"; bundled_ok=0; }
+[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs)"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
