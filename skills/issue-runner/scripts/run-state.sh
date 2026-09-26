@@ -25,13 +25,18 @@
 #     minutes> is `--lock-ttl-minutes` (default 120 in SKILL.md). --merge-ready
 #     keeps the previous run's state unconditionally (`--merge-ready` mode).
 #
-#   run-state.sh heartbeat <owner-pid>
+#   run-state.sh heartbeat <run-root> <owner-pid>
 #     refresh the lock's mtime, only when this session owns the lock
 #
-#   run-state.sh release [--lock-only]
+#   run-state.sh release <run-root> [--lock-only]
 #     remove the lock and the session pointer (a clean release, Step 5), or
 #     the lock alone (`--plan`: a plan never finishes the run it may have
 #     re-entered, so the pointer stays)
+#
+#   <run-root> is the absolute path `init` printed on its `run-root` line,
+#   passed literally: these two act on that run root, never re-derive it from
+#   the cwd, so a shell that drifted out of the repository root still reaches
+#   the right lock.
 #
 # Paths, derived from the repository root:
 #   REPO_KEY   <basename>-<first 8 hex of git hash-object of the root path>.
@@ -71,8 +76,7 @@
 #     released: lock session             (or `released: lock` with --lock-only)
 #     released: no lock at <path>        there was no lock to remove (the session
 #                                        pointer, without --lock-only, is still
-#                                        removed): a cwd other than the repository
-#                                        root resolves another run root — check it
+#                                        removed)
 #
 # Exit status: 0 with the lines above (a skipped heartbeat included); 1 — a
 # refusal or an environment failure: a live lock held by another run, a run
@@ -219,7 +223,6 @@ cmd_init() {
 }
 
 cmd_heartbeat() {
-  resolve_paths
   [ -f "$RUN_ROOT/lock" ] || { echo "heartbeat skipped: no lock at $RUN_ROOT/lock"; return 0; }
   if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ]; then
     session_matches || { echo "heartbeat skipped: the lock belongs to another session"; return 0; }
@@ -232,7 +235,6 @@ cmd_heartbeat() {
 }
 
 cmd_release() {
-  resolve_paths
   if [ ! -e "$RUN_ROOT/lock" ]; then
     [ "$LOCK_ONLY" = 1 ] || rm -f "$RUN_ROOT/session" 2>/dev/null || die "cannot remove $RUN_ROOT/session"
     echo "released: no lock at $RUN_ROOT/lock"
@@ -265,16 +267,19 @@ case $MODE in
     fi
     cmd_init ;;
   heartbeat)
-    [ $# -eq 1 ] || usage "usage: heartbeat <owner-pid>"
-    OWNER=$1
+    [ $# -eq 2 ] || usage "usage: heartbeat <run-root> <owner-pid>"
+    RUN_ROOT=$1 OWNER=$2
+    case $RUN_ROOT in /*) ;; *) usage "run root must be an absolute path, got '$RUN_ROOT'" ;; esac
     posint "$OWNER" || usage "owner pid must be a positive integer, got '$OWNER'"
     cmd_heartbeat ;;
   release)
     case $# in
-      0) ;;
-      1) [ "$1" = --lock-only ] || usage "unknown release option '$1' (expected --lock-only)"; LOCK_ONLY=1 ;;
-      *) usage "usage: release [--lock-only]" ;;
+      1) ;;
+      2) [ "$2" = --lock-only ] || usage "unknown release option '$2' (expected --lock-only)"; LOCK_ONLY=1 ;;
+      *) usage "usage: release <run-root> [--lock-only]" ;;
     esac
+    RUN_ROOT=$1
+    case $RUN_ROOT in /*) ;; *) usage "run root must be an absolute path, got '$RUN_ROOT'" ;; esac
     cmd_release ;;
   *) usage "unknown mode '$MODE' (expected resolve, init, heartbeat or release)" ;;
 esac

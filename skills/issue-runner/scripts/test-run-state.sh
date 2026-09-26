@@ -82,13 +82,13 @@ expect "fresh init: state dir created, no temp pointer left" \
 fresh live-pid
 export CLAUDE_CODE_SESSION_ID=sess-A
 rs init "$DEAD" 120; mkdir -p "$STATE_DIR/issue-1"
-echo "$LIVE" > "$RUN_ROOT/lock"; age_lock
+echo "$LIVE" > "$RUN_ROOT/lock"; age_lock; echo "note" > "$RUN_ROOT/paused"
 export CLAUDE_CODE_SESSION_ID=sess-B
 rs init "$DEAD" 120
 expect "live PID (old heartbeat): refused" \
   eval '[ "$RC" -eq 1 ] && errhas "live issue-runner in this repo" && errhas "pid $LIVE alive" && [ ! -s "$OUT" ]'
-expect "live PID: nothing rotated or rewritten" \
-  eval '[ -d "$STATE_DIR/issue-1" ] && [ "$(cat "$RUN_ROOT/lock")" = "$LIVE" ] && [ "$(cat "$RUN_ROOT/session")" = sess-A ]'
+expect "live PID: nothing rotated or rewritten, pause note kept" \
+  eval '[ -d "$STATE_DIR/issue-1" ] && [ "$(cat "$RUN_ROOT/lock")" = "$LIVE" ] && [ "$(cat "$RUN_ROOT/session")" = sess-A ] && [ -e "$RUN_ROOT/paused" ]'
 export CLAUDE_CODE_SESSION_ID=sess-A
 rs init "$DEAD" 120
 expect "live PID: refused even for the same session" eval '[ "$RC" -eq 1 ] && errhas "pid $LIVE alive"'
@@ -157,13 +157,13 @@ expect "rotation: backup carries the pointer it was filed under; new state empty
 fresh released
 export CLAUDE_CODE_SESSION_ID=sess-A
 rs init "$LIVE" 120; mkdir -p "$STATE_DIR/issue-3"
-rs release
+rs release "$RUN_ROOT"
 expect "release: lock and session pointer removed" \
   eval '[ "$RC" -eq 0 ] && has "released: lock session" && [ ! -e "$RUN_ROOT/lock" ] && [ ! -e "$RUN_ROOT/session" ]'
 rs init "$LIVE" 120
 expect "after a clean release, the same session starts a new run (rotates)" \
   eval '[ "$RC" -eq 0 ] && grep -q "^state rotated: " "$OUT"'
-rs release --lock-only
+rs release "$RUN_ROOT" --lock-only
 expect "release --lock-only keeps the session pointer" \
   eval '[ "$RC" -eq 0 ] && has "released: lock" && [ ! -e "$RUN_ROOT/lock" ] && [ -e "$RUN_ROOT/session" ]'
 
@@ -181,7 +181,7 @@ rs init "$LIVE" 120
 expect "init prunes state.prev.* older than 7 days, keeps newer" \
   eval '[ "$RC" -eq 0 ] && [ ! -e "$RUN_ROOT/state.prev.1" ] && [ -d "$RUN_ROOT/state.prev.2" ]'
 
-rs release; rs release
+rs release "$RUN_ROOT"; rs release "$RUN_ROOT"
 expect "release with no lock says so" eval '[ "$RC" -eq 0 ] && has "released: no lock at $RUN_ROOT/lock"'
 
 fresh fail-after-lock
@@ -198,27 +198,37 @@ expect "after that failure, a retry takes the lock" eval '[ "$RC" -eq 0 ] && [ "
 fresh heartbeat
 export CLAUDE_CODE_SESSION_ID=sess-A
 rs init "$LIVE" 120; age_lock
-rs heartbeat 1
+rs heartbeat "$RUN_ROOT" 1
 expect "heartbeat (session owns the lock): refreshed" \
   eval '[ "$RC" -eq 0 ] && has "heartbeat refreshed" && [ -z "$(find "$RUN_ROOT/lock" -mmin +1)" ]'
 age_lock
 export CLAUDE_CODE_SESSION_ID=sess-B
-rs heartbeat "$LIVE"
+rs heartbeat "$RUN_ROOT" "$LIVE"
 expect "heartbeat (another session's lock): skipped, mtime unchanged" \
   eval '[ "$RC" -eq 0 ] && grep -q "^heartbeat skipped: " "$OUT" && [ -n "$(find "$RUN_ROOT/lock" -mmin +60)" ]'
 unset CLAUDE_CODE_SESSION_ID
-rs heartbeat "$LIVE"
+rs heartbeat "$RUN_ROOT" "$LIVE"
 expect "heartbeat (no session id, lock holds the owner pid): refreshed" \
   eval '[ "$RC" -eq 0 ] && has "heartbeat refreshed" && [ -z "$(find "$RUN_ROOT/lock" -mmin +1)" ]'
 age_lock
-rs heartbeat "$DEAD"
+rs heartbeat "$RUN_ROOT" "$DEAD"
 expect "heartbeat (no session id, another pid): skipped" \
   eval '[ "$RC" -eq 0 ] && grep -q "^heartbeat skipped: " "$OUT" && [ -n "$(find "$RUN_ROOT/lock" -mmin +60)" ]'
 rm -f "$RUN_ROOT/lock"
 export CLAUDE_CODE_SESSION_ID=sess-A
-rs heartbeat "$LIVE"
+rs heartbeat "$RUN_ROOT" "$LIVE"
 expect "heartbeat never recreates a deleted lock" \
   eval '[ "$RC" -eq 0 ] && grep -q "^heartbeat skipped: no lock" "$OUT" && [ ! -e "$RUN_ROOT/lock" ]'
+
+fresh drift
+export CLAUDE_CODE_SESSION_ID=sess-A
+rs init "$LIVE" 120; age_lock
+( cd "$TMP" && bash "$SCRIPT" heartbeat "$RUN_ROOT" "$LIVE" ) >"$OUT" 2>"$ERRF"; RC=$?
+expect "heartbeat from another cwd acts on the given run root" \
+  eval '[ "$RC" -eq 0 ] && has "heartbeat refreshed" && [ -z "$(find "$RUN_ROOT/lock" -mmin +1)" ]'
+( cd "$TMP" && bash "$SCRIPT" release "$RUN_ROOT" ) >"$OUT" 2>"$ERRF"; RC=$?
+expect "release from another cwd acts on the given run root" \
+  eval '[ "$RC" -eq 0 ] && has "released: lock session" && [ ! -e "$RUN_ROOT/lock" ]'
 
 # --- unwritable and relative run roots -----------------------------------------
 export XDG_STATE_HOME="$TMP/not-a-dir"; : > "$XDG_STATE_HOME"   # mkdir -p under a regular file fails, even as root
@@ -253,7 +263,7 @@ fi
 fresh usage
 usage_ok=1
 for args in "" "bogus" "init" "init 12" "init x 120" "init 12 0" "init 12 abc" "init 12 120 --keep" \
-            "heartbeat" "heartbeat 0" "release --all" "resolve extra"; do
+            "heartbeat" "heartbeat /abs 0" "heartbeat rel/root 12" "heartbeat 12" "release" "release rel/root" "release /abs --all" "resolve extra"; do
   # shellcheck disable=SC2086 # intended: split the fixture's argument string
   rs $args
   [ "$RC" -eq 2 ] || { err "usage error for '$args' exits 2 (got $RC)"; usage_ok=0; }
