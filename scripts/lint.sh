@@ -28,8 +28,10 @@
 #      skills/*/scripts/*.sh and the extracted blocks — findings are WARNINGS
 #      only, never failures
 #   9. the default-branch resolution one-liner is byte-identical at every site
-#  10. both SKILL files carry the /issue-< branch-contract match (placeholder
-#      spelling drift <N> vs <number> is a warning)
+#  10. the branch-contract match pattern is stated once, in
+#      skills/issue-runner/scripts/resume-check.sh: classify.sh uses the same
+#      forms, both issue-runner editions point at the script, and gh-issue (both
+#      editions) still creates branches in that shape
 #  11. the result.json key set is spelled identically on every contract line
 #      (a line starting with `{` and carrying `"outcome":` — the shape line and
 #      the write recipe) in gh-issue and issue-runner — Claude skills and the
@@ -60,7 +62,8 @@
 #  18. every bundled script under skills/*/scripts/ parses (bash -n), and every
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
-#      so does a missing Codex copy of validation-contract.sh or classify.sh;
+#      so does a missing Codex copy of validation-contract.sh, classify.sh,
+#      resume-check.sh or merge-ready.sh;
 #      gh-issue's "## Validation contract" section is byte-identical across
 #      editions
 #  19. skills/issue-runner/scripts/test-classify.sh passes — the golden
@@ -69,6 +72,11 @@
 #  20. skills/issue-runner/scripts/test-run-state.sh passes — the fixtures for
 #      scripts/run-state.sh, the extracted State-section run root, run lock,
 #      heartbeat, same-session re-entry / rotation and release
+#  21. skills/issue-runner/scripts/test-resume-check.sh passes — the fixtures
+#      for scripts/resume-check.sh, the extracted Step 3a resume probes
+#  22. skills/issue-runner/scripts/test-merge-ready.sh passes — the fixtures
+#      for scripts/merge-ready.sh, the extracted --merge-ready state, refresh,
+#      checks re-check and head-pinned merge
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -367,29 +375,38 @@ else
   fi
 fi
 
-# 10. Branch-contract match pattern in both SKILL files --------------------------
+# 10. Branch-contract match pattern: resume-check.sh is its one statement --------
+# gh-issue Step 4 names every implementer branch <type>/issue-<number>-<slug>.
+# issue-runner finds an issue's branches with two forms, stated once in
+# skills/issue-runner/scripts/resume-check.sh (its CONTRACT= and GLOB= lines):
+# classify.sh must use the same two forms, both issue-runner editions must point
+# at the script instead of restating the pattern, and gh-issue (both editions)
+# must still create and guard branches in that shape. Each file keeps its own
+# placeholder spelling (<N> in issue-runner, <number> in gh-issue): the script,
+# not the prose, is what matches.
+RESUME_SCRIPT="$ROOT/skills/issue-runner/scripts/resume-check.sh"
+CLASSIFY_SH="$ROOT/skills/issue-runner/scripts/classify.sh"
 contract_ok=1
-for f in "$SKILL_RUNNER" "$SKILL_GH"; do
-  if ! grep -qF '/issue-<' "$f"; then
-    err "branch-contract pattern '/issue-<' missing from ${f#"$ROOT"/}"
-    contract_ok=0
-  fi
+# shellcheck disable=SC2016 # literal on purpose: the script's own spelling
+for form in 'CONTRACT="/issue-$N-"' 'GLOB="*/issue-$N-*"'; do
+  grep -qF "$form" "$RESUME_SCRIPT" 2>/dev/null \
+    || { err "branch-contract form '$form' missing from skills/issue-runner/scripts/resume-check.sh"; contract_ok=0; }
 done
-if [ "$contract_ok" -eq 1 ]; then
-  ok "branch-contract '/issue-<' present in both SKILL files"
-  # Placeholder spelling drift is cosmetic: warn, don't fail.
-  spellings() {
-    s=""
-    grep -qF '/issue-<N>' "$1" && s="$s<N>"
-    grep -qF '/issue-<number>' "$1" && s="$s<number>"
-    printf '%s' "$s"
-  }
-  sp_runner="$(spellings "$SKILL_RUNNER")"
-  sp_gh="$(spellings "$SKILL_GH")"
-  if [ "$sp_runner" != "$sp_gh" ]; then
-    warn "branch-contract placeholder spelling differs: issue-runner uses '$sp_runner', gh-issue uses '$sp_gh'"
-  fi
-fi
+# shellcheck disable=SC2016 # literal on purpose
+for form in '"/issue-$N-"' '"*/issue-$N-*"'; do
+  grep -qF "$form" "$CLASSIFY_SH" 2>/dev/null \
+    || { err "classify.sh does not use the branch-contract form $form that resume-check.sh states"; contract_ok=0; }
+done
+for f in "$SKILL_RUNNER" "$CANON_RUNNER"; do
+  # shellcheck disable=SC2016 # literal on purpose
+  grep -qF '`resume-check.sh` is the one statement of its match pattern' "$f" \
+    || { err "${f#"$ROOT"/} does not point at resume-check.sh as the branch-contract pattern's statement"; contract_ok=0; }
+done
+for f in "$SKILL_GH" "$CANON_GH"; do
+  { grep -qF 'git checkout -b <type>/issue-<number>-<short-slug>' "$f" && grep -qF "'*/issue-<number>-*'" "$f"; } \
+    || { err "${f#"$ROOT"/} lost the branch-contract shape (<type>/issue-<number>-<slug>, '*/issue-<number>-*')"; contract_ok=0; }
+done
+[ "$contract_ok" -eq 1 ] && ok "branch-contract pattern stated once (resume-check.sh), used by classify.sh, created by gh-issue (both editions)"
 
 # 11. result.json key set identical on every contract line, both editions -------
 # A contract line starts with `{` and carries `"outcome":` — the shape line in
@@ -594,7 +611,8 @@ for c in "$ROOT"/codex/issue-runner/canonical/*/scripts/*; do
   [ -f "$ROOT/skills/$rel" ] \
     || { err "codex/issue-runner/canonical/$rel has no original at skills/$rel"; bundled_ok=0; }
 done
-for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/classify.sh; do
+for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/classify.sh \
+                issue-runner/scripts/resume-check.sh issue-runner/scripts/merge-ready.sh; do
   [ -f "$ROOT/codex/issue-runner/canonical/$required" ] \
     || { err "codex/issue-runner/canonical/$required missing (the Codex canonical procedure runs it)"; bundled_ok=0; }
 done
@@ -630,6 +648,32 @@ if [ -f "$TEST_RUN_STATE" ]; then
   fi
 else
   err "$TEST_RUN_STATE not found"
+fi
+
+# 21. Resume-check fixtures -------------------------------------------------------
+TEST_RESUME="$ROOT/skills/issue-runner/scripts/test-resume-check.sh"
+if [ -f "$TEST_RESUME" ]; then
+  if bash "$TEST_RESUME" >"$TMP/test-resume-check.out" 2>&1; then
+    ok "resume-check fixtures pass (skills/issue-runner/scripts/test-resume-check.sh)"
+  else
+    err "resume-check fixtures failed:"
+    cat "$TMP/test-resume-check.out" >&2
+  fi
+else
+  err "$TEST_RESUME not found"
+fi
+
+# 22. Merge-ready fixtures --------------------------------------------------------
+TEST_MERGE_READY="$ROOT/skills/issue-runner/scripts/test-merge-ready.sh"
+if [ -f "$TEST_MERGE_READY" ]; then
+  if bash "$TEST_MERGE_READY" >"$TMP/test-merge-ready.out" 2>&1; then
+    ok "merge-ready fixtures pass (skills/issue-runner/scripts/test-merge-ready.sh)"
+  else
+    err "merge-ready fixtures failed:"
+    cat "$TMP/test-merge-ready.out" >&2
+  fi
+else
+  err "$TEST_MERGE_READY not found"
 fi
 
 if [ "$fail" -ne 0 ]; then
