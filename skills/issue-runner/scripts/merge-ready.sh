@@ -201,17 +201,20 @@ cmd_refresh() {
   [ -z "$out" ] || stuck "worktree dirty — a human must reconcile"
 
   # run_vs MODE: the validation script's MODE on the worktree, its output
-  # streamed to stderr as it runs (tee) and kept only for its first line; sets
-  # rc (the script's own exit status) and first. Fails closed: every mode of
-  # the script prints a first line, so a tee that failed or an empty record
-  # never reads as a pass that hid the `fallback` line.
+  # streamed to stderr as it runs (tee) and kept only for the script's own
+  # first `validation: ` line (the shell running it may print a warning
+  # first; the command's output always follows the script's `running` line);
+  # sets rc (the script's own exit status) and first. Fails closed: every mode
+  # of the script prints such a line, so a tee that failed, or a pass with no
+  # such line, never reads as a pass that hid the `fallback` line.
   tmpf=$(mktemp) || stuck "cannot record the validation output — temporary file failed"   # global: the EXIT trap runs after this function returns
   trap 'rm -f "${tmpf:-}"' EXIT
   run_vs() {
     local ts
     (cd "$top" && bash "$vs" "$1" "$base" </dev/null 2>&1) | tee "$tmpf" >&2; rc=${PIPESTATUS[0]} ts=${PIPESTATUS[1]}
-    first=$(head -n 1 "$tmpf" 2>/dev/null)
-    [ "$ts" -eq 0 ] && [ -n "$first" ] || stuck "cannot record the validation output — temporary file failed"
+    first=$(grep -m 1 '^validation: ' "$tmpf" 2>/dev/null)
+    [ "$ts" -eq 0 ] || stuck "cannot record the validation output — temporary file failed"
+    [ "$rc" -ne 0 ] || [ -n "$first" ] || stuck "cannot record the validation output — temporary file failed"
   }
 
   view=$(gh pr view "$p" --json headRefName,headRefOid,baseRefName \
@@ -281,7 +284,7 @@ EOF_VIEW
          stuck "validation script unavailable or miscalled — a human must fix the install" ;;
       *) stuck "validation script unavailable or miscalled — a human must fix the install" ;;
     esac
-    # Only the first line: with a contract the script prints `running preflight:` first,
+    # Only the script's first `validation: ` line: with a contract it prints `running preflight:` first,
     # and the command's own output (PR-controlled) must never read as "no contract".
     if [ "$mode" = preflight ] && case $first in 'validation: fallback ('*) true ;; *) false ;; esac; then
       [ "$have_fallback" -eq 1 ] || stuck "no validation contract and no --fallback-cmd given"

@@ -11,7 +11,7 @@
 # call. git is real: a bare origin, a clone the `gh` subcommands run in (the
 # orchestrator's cwd), and a worktree on the PR branch the refresh works in.
 # Validation runs through a stub validation script (every exit status the #53
-# script can return) and, for three fixtures, through the real
+# script can return) and, for four refresh calls, through the real
 # skills/gh-issue/scripts/validation-contract.sh against a contract on origin.
 #
 # Run directly, or from scripts/lint.sh (and so from CI). Dependency-free:
@@ -395,6 +395,14 @@ layout; advance_base b.txt new; vc preflight 0 "$FB"
 run refresh "$TMP/wt" 12 "$VC" --fallback-cmd "exit 3"
 expect "no contract, the project's tests fail -> stuck" 0 "stuck fallback tests failed (exit 3)"
 holds "fallback failure after a base merge: merge dropped" wt_at "$HEAD_OID"
+# A shell warning printed before the script's own first line (bash's setlocale warning) never hides it.
+layout; vc check 0 "$(printf 'bash: warning: setlocale: LC_ALL: cannot change locale\n%s' "$FB")"
+run refresh "$TMP/wt" 12 "$VC"; expect "noise before the fallback line, no --fallback-cmd -> stuck" 0 "stuck no validation contract and no --fallback-cmd given"
+layout; vc preflight 0 "$(printf 'bash: warning: setlocale: LC_ALL: cannot change locale\n%s' "$FB")"
+run refresh "$TMP/wt" 12 "$VC" --fallback-cmd "exit 4"
+expect "noise before the fallback line -> the failing --fallback-cmd still runs" 0 "stuck fallback tests failed (exit 4)"
+layout; vc preflight 0 "no validation line at all"
+run refresh "$TMP/wt" 12 "$VC"; expect "a passing mode with no validation line -> stuck, never a pass" 0 "stuck cannot record the validation output — temporary file failed"
 
 # --- the real validation-contract.sh, contract on origin/main ---
 layout
@@ -421,7 +429,7 @@ holds "spoofed fallback: merge dropped" wt_at "$HEAD_OID"
 
 # --- the output record cannot be written -> stuck, never a pass that hid the fallback line ---
 layout; mkdir -p "$TMP/badtmp"
-printf '#!/bin/sh\nf=$(command -p mktemp) && chmod 000 "$f" && echo "$f"\n' > "$TMP/badtmp/mktemp"
+printf '#!/bin/sh\necho "%s/no-such-dir/record"\n' "$TMP" > "$TMP/badtmp/mktemp"   # unopenable even for root
 chmod +x "$TMP/badtmp/mktemp"
 PATH="$TMP/badtmp:$PATH" run refresh "$TMP/wt" 12 "$REAL_VC"
 expect "unwritable output record, no contract on the base -> stuck, never unchanged" 0 "stuck cannot record the validation output — temporary file failed"
