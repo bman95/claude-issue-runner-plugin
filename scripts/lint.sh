@@ -631,7 +631,7 @@ fi
 # Codex edition ships the same file.
 cmp -s "$ROOT/skills/gh-issue/REFERENCE.md" "$ROOT/codex/issue-runner/canonical/gh-issue/REFERENCE.md" \
   || { err "skills/gh-issue/REFERENCE.md missing or differs from codex/issue-runner/canonical/gh-issue/REFERENCE.md"; bundled_ok=0; }
-[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section byte-identical in both editions"
+[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section and gh-issue REFERENCE.md byte-identical in both editions"
 
 # 19. Merge-proof and PR-shape classification fixtures ----------------------------
 TEST_CLASSIFY="$ROOT/skills/issue-runner/scripts/test-classify.sh"
@@ -691,7 +691,9 @@ fi
 MAX_LINE_CHARS=1500
 size_ok=1
 while IFS='|' read -r f ceiling; do
+  [ -r "$f" ] || { err "${f#"$ROOT"/} missing or unreadable (spec size ceilings)"; size_ok=0; continue; }
   words="$(wc -w < "$f" | tr -d ' ')"
+  case $words in ''|*[!0-9]*) err "${f#"$ROOT"/}: cannot count words"; size_ok=0; continue ;; esac
   if [ "$words" -gt "$ceiling" ]; then
     err "${f#"$ROOT"/} has $words words, over its ceiling of $ceiling"; size_ok=0
   fi
