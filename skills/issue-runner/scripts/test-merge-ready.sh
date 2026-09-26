@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016 # file-wide: `holds ... eval '…'` evaluates its conditions later, on purpose
 #
 # Fixtures for scripts/merge-ready.sh: the mechanical part of issue-runner's
 # `--merge-ready` pass (the PR state, the refresh against the PR head and the
@@ -95,6 +96,7 @@ cat > "$VC" <<'EOF'
 d=$VC_STUB
 echo "$1 $2" >> "$d/log"
 [ -f "$d/$1.sleep" ] && sleep "$(cat "$d/$1.sleep")"
+[ -f "$d/$1.cmd" ] && bash "$d/$1.cmd"
 if [ -f "$d/$1.out" ]; then cat "$d/$1.out"; else echo "validation: $1 passed"; fi
 [ -f "$d/$1.rc" ] && exit "$(cat "$d/$1.rc")"
 exit 0
@@ -262,6 +264,60 @@ OUT=$(cat "$TMP/int.out"); RC=0
 expect "row 37: a refresh killed mid-validation -> stuck, interrupted" 0 "stuck refresh interrupted before it finished — re-run it"
 holds "interrupted: own merge commit dropped, worktree back at the PR head" wt_at "$HEAD_OID"
 holds "interrupted: nothing pushed" [ "$(origin_tip)" = "$T0" ]
+
+# --- stopped by a process-group signal -> prompt, and rolled back ---
+if command -v setsid >/dev/null 2>&1; then
+layout; advance_base b.txt new; T0=$(origin_tip); echo 60 > "$VC_STUB/preflight.sleep"
+(cd "$TMP/repo" && exec setsid bash "$SCRIPT" refresh "$TMP/wt" 12 "$VC" >"$TMP/int.out" 2>/dev/null) & BGP=$!
+for _ in $(seq 1 100); do grep -q '^preflight' "$VC_STUB/log" 2>/dev/null && break; sleep 0.1; done
+S0=$(date +%s); kill -TERM -- "-$BGP" 2>/dev/null || kill -TERM "$BGP"; wait "$BGP"; S1=$(date +%s)
+OUT=$(cat "$TMP/int.out"); RC=0
+expect "a refresh stopped as a process group -> stuck, interrupted" 0 "stuck refresh interrupted before it finished — re-run it"
+holds "a process-group stop is prompt (well before the 60 s validation ends)" [ $((S1 - S0)) -lt 10 ]
+holds "process-group stop: worktree back at the PR head" wt_at "$HEAD_OID"
+else ok "setsid not installed - process-group stop fixture skipped"; fi
+
+# --- interrupted while the base merge runs -> the half-done merge is undone ---
+layout; advance_base b.txt new
+cat > "$TMP/repo/.git/hooks/post-merge" <<'EOF'
+#!/bin/sh
+kill -TERM "$(cat "$MR_PIDFILE")"
+EOF
+chmod +x "$TMP/repo/.git/hooks/post-merge"
+export MR_PIDFILE="$TMP/mr.pid"
+(cd "$TMP/repo" && exec bash "$SCRIPT" refresh "$TMP/wt" 12 "$VC" >"$TMP/int.out" 2>/dev/null) & BGP=$!
+echo "$BGP" > "$MR_PIDFILE"; wait "$BGP"
+OUT=$(cat "$TMP/int.out"); RC=0
+expect "interrupted during the base merge -> stuck, interrupted" 0 "stuck refresh interrupted before it finished — re-run it"
+holds "interrupted merge: worktree back at the PR head, clean" eval 'wt_at "$HEAD_OID" && wt_clean'
+rm -f "$TMP/repo/.git/hooks/post-merge"
+run refresh "$TMP/wt" 12 "$VC"
+NEW=$(git -C "$TMP/wt" rev-parse HEAD)
+expect "the re-run after an interrupted merge recovers -> refreshed" 0 "refreshed $NEW"
+
+# --- a failure after a fast-forward -> back where it was, so the retry says refreshed ---
+layout; push_head; W0=$(git -C "$TMP/wt" rev-parse HEAD); vc preflight 1 "validation: preflight failed (exit 1): t"
+run refresh "$TMP/wt" 12 "$VC"
+expect "fast-forwarded, then preflight fails -> stuck" 0 "stuck preflight validation failed (exit 1)"
+holds "failure after a fast-forward: the worktree is back where this pass found it" wt_at "$W0"
+rm -f "$VC_STUB/preflight.rc" "$VC_STUB/preflight.out"
+run refresh "$TMP/wt" 12 "$VC"
+expect "the retry still reports the pushed head as refreshed" 0 "refreshed $HEAD_OID"
+
+# --- validation commits in the worktree -> never pushed ---
+layout; advance_base b.txt new; T0=$(origin_tip)
+echo 'git commit -q --allow-empty -m sneaky' > "$VC_STUB/full.cmd"
+run refresh "$TMP/wt" 12 "$VC"
+expect "validation moves HEAD off the base merge -> stuck, nothing pushed" 0 "stuck validation moved HEAD off the base merge — a human must reconcile"
+holds "moved HEAD: origin unchanged, worktree back at the PR head" eval '[ "$(origin_tip)" = "$T0" ] && wt_at "$HEAD_OID"'
+
+# --- no merge-base with the base branch ---
+layout
+git -C "$TMP/other" checkout -q --orphan unrelated && git -C "$TMP/other" commit -q --allow-empty -m unrelated \
+  && git -C "$TMP/other" push -q origin unrelated
+stub head "$BR $HEAD_OID unrelated"
+run refresh "$TMP/wt" 12 "$VC"
+expect "unrelated base history -> stuck, no merge-base" 0 "stuck no merge-base with origin/unrelated"
 
 # --- the contract probe fails -> stuck before the head sync ---
 layout; push_head; W0=$(git -C "$TMP/wt" rev-parse HEAD); vc check 2 "validation: cannot resolve the base branch: …"

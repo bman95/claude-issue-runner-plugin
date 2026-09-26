@@ -55,10 +55,15 @@
 #        `full not declared`), each with the PR's base branch as its argument
 #     7. push only what the base merge produced (`git push origin
 #        HEAD:refs/heads/<headRefName>`, never forced)
-#   After a base merge, a failing validation or a failed push first drops this
-#   pass's own unpushed merge commit (`git reset --hard <headRefOid>`), so the
-#   next pass's head sync is not left permanently ahead of the PR. Nothing is
-#   ever pushed on a failure, and the PR's draft state is never touched.
+#   From the head sync on (the tree verified clean before it), every failure —
+#   and a TERM, INT or HUP — first puts the worktree back where this pass found
+#   it (`git merge --abort` if one is in progress, then `git reset --hard` to
+#   the starting HEAD): an unpushed merge commit left checked out would keep
+#   every later pass stuck at the fast-forward, and a kept fast-forward would
+#   make the re-run report `unchanged` for a head new to it. Nothing is ever
+#   pushed on a failure, and the PR's draft state is never touched. The trap
+#   runs once the current command returns: at once when the whole process
+#   group is signalled, after the running validation step otherwise.
 #   Output:
 #     unchanged <oid>        already at headRefOid and the base had not advanced;
 #                            validation passed; nothing pushed
@@ -86,6 +91,7 @@
 #       validation script unavailable or miscalled — a human must fix the install
 #                            (a path that is not absolute, names no file or lies
 #                            inside the worktree, or any other exit: 6, 7, 126, …)
+#       validation moved HEAD off the base merge — a human must reconcile
 #       push failed after refresh — a human must retry or merge by hand
 #       refresh interrupted before it finished — re-run it   (TERM, INT or HUP)
 #     A reason gains `; reset failed` when dropping the merge commit failed.
@@ -157,18 +163,25 @@ cmd_state() {
 cmd_refresh() {
   local wt=$1 p=$2 vs=$3 fallback=$4 have_fallback=$5
   local top view head_ref head_oid base cur mb count merged=0 moved=0 out rc mode conflicts log
+  local start_oid="" touched=0 merge_oid=""
 
-  # Result lines; after a base merge every failure first drops that merge.
+  # Result lines. Once this pass has touched the worktree (from the head sync
+  # on, the tree verified clean before it), every failure first puts it back
+  # where this pass found it: an unpushed merge commit left checked out would
+  # put HEAD ahead of the PR head and every later pass would be stuck at the
+  # fast-forward, and a kept fast-forward would make the re-run report
+  # `unchanged` for a head that is new to it.
   stuck() {
     local reason=$1
-    if [ "$merged" -eq 1 ]; then
-      git -C "$top" reset -q --hard "$head_oid" </dev/null >/dev/null 2>&1 || reason="$reason; reset failed"
+    if [ "$touched" -eq 1 ]; then
+      git -C "$top" merge --abort </dev/null >/dev/null 2>&1
+      git -C "$top" reset -q --hard "$start_oid" </dev/null >/dev/null 2>&1 || reason="$reason; reset failed"
     fi
     echo "stuck $reason"; exit 0
   }
-  # A refresh killed mid-run (the caller's timeout, an interrupt) drops its own
-  # merge commit too: left checked out, it would put HEAD ahead of the PR head
-  # and every later pass would be stuck at the fast-forward.
+  # A refresh stopped mid-run does the same. Bash runs the trap once the
+  # current command returns: at once when the whole process group is signalled
+  # (the host's stop primitive), after the running validation step otherwise.
   trap 'stuck "refresh interrupted before it finished — re-run it"' TERM INT HUP
 
   # The recorded path must itself be a checkout's root: a leftover plain
@@ -212,6 +225,8 @@ EOF_VIEW
   fi
 
   # Head sync.
+  start_oid=$(git -C "$top" rev-parse HEAD 2>/dev/null) || stuck "cannot resolve the PR head — query or fetch failed"
+  touched=1
   (cd "$top" && fetch3 "$head_ref") || stuck "cannot resolve the PR head — query or fetch failed"
   if [ "$(git -C "$top" rev-parse HEAD 2>/dev/null)" != "$head_oid" ]; then
     # shellcheck disable=SC2015 # intended: stuck when either the ancestry check or the fast-forward fails
@@ -234,6 +249,7 @@ EOF_VIEW
       stuck "base merge did not start: $(printf '%s\n' "$log" | awk 'NF { print; exit }')"
     fi
     merged=1
+    merge_oid=$(git -C "$top" rev-parse HEAD 2>/dev/null) || stuck "base merge did not start: cannot read its commit"
   fi
 
   # Validation, from the worktree, against the PR's base branch.
@@ -260,8 +276,11 @@ EOF_VIEW
     fi
   done
 
+  # Push exactly the commit the base merge produced, nothing validation made.
   if [ "$merged" -eq 1 ]; then
-    git -C "$top" push -q origin "HEAD:refs/heads/$head_ref" </dev/null >/dev/null 2>&1 \
+    [ "$(git -C "$top" rev-parse HEAD 2>/dev/null)" = "$merge_oid" ] \
+      || stuck "validation moved HEAD off the base merge — a human must reconcile"
+    git -C "$top" push -q origin "$merge_oid:refs/heads/$head_ref" </dev/null >/dev/null 2>&1 \
       || stuck "push failed after refresh — a human must retry or merge by hand"
   fi
   if [ "$merged" -eq 1 ] || [ "$moved" -eq 1 ]; then
