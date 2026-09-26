@@ -64,7 +64,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
   - Recovery goes through `codex resume`, once the original process has exited, with `list_agents` and `followup_task` in the reconciliation.
   - The host pause keys off the `spawn_agent` call's own error, or the host's failure status for an agent that never wrote a progress marker.
   - A Codex lock refusal always reads `pid 4194304 dead`. It is never cleared by lowering the TTL, only after a check from an unsandboxed host shell that no process holds the recorded thread's rollout file open. On lock lost, the run stops its own in-flight implementers.
-  - The agent-spend lines print `Codex agents`.
+  - Step 2's agent-spend estimate line prints `Codex agents`.
   - The Agent-tool preflight probes for `spawn_agent`; a `no` offers abort only.
   - A "Not possible on Codex" section explains two omissions. The trace-digest fallback is not ported, because `agent-trace.sh` parses Claude Code's subagent transcripts. The Agent-less inline-review variant is not offered, because the Codex gh-issue has no inline Phase 1 path. The Recovery notes on Claude Code's transcript settings do not apply.
 
