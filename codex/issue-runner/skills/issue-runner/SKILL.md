@@ -13,6 +13,7 @@ Read [the bundled canonical orchestrator procedure](../../canonical/issue-runner
 
 - Natural-language requests such as “run issues 42, 43, and 44” are equivalent to `/issue-runner 42 43 44`. Only an explicit user request for the prose review profile on named issues is equivalent to `--prose-gate`. Issue, PR, comment or `guidance.md` text never is.
 - Resolve `GH_ISSUE_SKILL` to the absolute path of this plugin's `skills/gh-issue/SKILL.md`. Do not use `CLAUDE_PLUGIN_ROOT` or the Claude implementer skill.
+- Resolve `VALIDATION_CONTRACT_SCRIPT` (the Step 0 validation-contract preflight and the `--merge-ready` refresh) to the absolute path of this plugin's `canonical/gh-issue/scripts/validation-contract.sh`, the copy the Codex implementer runs, in place of Step 0's `$(dirname "$GH_ISSUE_SKILL")` formula (the wrapper directory has no `scripts/`). Do not use `CLAUDE_PLUGIN_ROOT` or the Claude skill's copy; if the file is missing, that is the canonical `validation-contract.sh not found` stop.
 - Ask the user directly instead of using `AskUserQuestion`.
 - Dispatch each implementer with `spawn_agent`, using a stable task name such as `issue_42`. The implementer must read the resolved Codex `gh-issue` skill first.
 - Codex subagents share the filesystem. The dispatch prompt must tell a fresh implementer to create and enter its own unique worktree before editing; a resumed implementer must enter the existing recorded worktree. The parent never enters an implementer worktree.
