@@ -65,6 +65,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
   - The host pause keys off the `spawn_agent` call's own error, or the host's failure status for an agent that has written no progress marker since its dispatch.
   - A refusal over a lock a sandboxed Codex run wrote reads `pid 4194304 dead` (a pre-parity Codex lock reads `pid 1 alive`). It is never cleared by lowering the TTL, only after a check from an unsandboxed host shell that no process holds the recorded thread's rollout file open. On lock lost, the run stops its own in-flight implementers.
   - Step 2's agent-spend estimate line prints `Codex agents`.
+  - The bundled scripts are checked before the lock is taken. `--merge-ready` over state from the pre-parity Codex edition (no `dag.txt`) stops and releases the lock rather than running the scheduler on a missing file.
   - The Agent-tool preflight probes for `spawn_agent`; a `no` offers abort only.
   - A "Not possible on Codex" section explains two omissions. The trace-digest fallback is not ported, because `agent-trace.sh` parses Claude Code's subagent transcripts. The Agent-less inline-review variant is not offered, because the Codex gh-issue has no inline Phase 1 path. The Recovery notes on Claude Code's transcript settings do not apply.
 
