@@ -181,6 +181,19 @@ rs init "$LIVE" 120
 expect "init prunes state.prev.* older than 7 days, keeps newer" \
   eval '[ "$RC" -eq 0 ] && [ ! -e "$RUN_ROOT/state.prev.1" ] && [ -d "$RUN_ROOT/state.prev.2" ]'
 
+rs release; rs release
+expect "release with no lock says so" eval '[ "$RC" -eq 0 ] && has "released: no lock at $RUN_ROOT/lock"'
+
+fresh fail-after-lock
+mkdir -p "$RUN_ROOT"; : > "$STATE_DIR"   # a regular file where the state dir goes: mkdir fails after the lock write
+export CLAUDE_CODE_SESSION_ID=sess-A
+rs init "$LIVE" 120
+expect "failure after taking the lock: exit 1, lock truncated (reads stale), nothing on stdout" \
+  eval '[ "$RC" -eq 1 ] && errhas "cannot create state dir" && [ -f "$RUN_ROOT/lock" ] && [ ! -s "$RUN_ROOT/lock" ] && [ ! -s "$OUT" ]'
+rm -f "$STATE_DIR"
+rs init "$LIVE" 120
+expect "after that failure, a retry takes the lock" eval '[ "$RC" -eq 0 ] && [ "$(cat "$RUN_ROOT/lock")" = "$LIVE" ]'
+
 # --- heartbeat ------------------------------------------------------------------
 fresh heartbeat
 export CLAUDE_CODE_SESSION_ID=sess-A

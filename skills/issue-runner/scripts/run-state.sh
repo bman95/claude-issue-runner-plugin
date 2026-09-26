@@ -69,6 +69,10 @@
 #                                        touch failed — best-effort, never fatal
 #   release:
 #     released: lock session             (or `released: lock` with --lock-only)
+#     released: no lock at <path>        there was no lock to remove (the session
+#                                        pointer, without --lock-only, is still
+#                                        removed): a cwd other than the repository
+#                                        root resolves another run root — check it
 #
 # Exit status: 0 with the lines above (a skipped heartbeat included); 1 — a
 # refusal or an environment failure: a live lock held by another run, a run
@@ -130,7 +134,8 @@ resolve_paths() {
   h=$(printf '%s' "$REPO_ROOT" | git hash-object --stdin) && [ -n "$h" ] \
     || die "cannot hash the repository root: $REPO_ROOT"
   REPO_KEY=$(basename "$REPO_ROOT")-$(printf '%s' "$h" | cut -c1-8)
-  RUN_ROOT=${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/$REPO_KEY
+  # ${HOME:-}: an unset HOME must reach the write probe's fix-it message, not abort under set -u.
+  RUN_ROOT=${XDG_STATE_HOME:-${HOME:-}/.local/state}/issue-runner/$REPO_KEY
   case $RUN_ROOT in /*) ;; *) die "run root is not absolute: $RUN_ROOT" ;; esac
   STATE_DIR=$RUN_ROOT/state
 }
@@ -148,7 +153,7 @@ session_matches() {  # the recorded pointer equals a non-empty current session i
 # the directory is read-only; an empty lock reads stale) if it still holds
 # OWNER, then die.
 fail_locked() {
-  [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$OWNER" ] && : > "$RUN_ROOT/lock"
+  [ "$(cat "$RUN_ROOT/lock" 2>/dev/null)" = "$OWNER" ] && true > "$RUN_ROOT/lock"
   die "$1"
 }
 
@@ -158,8 +163,10 @@ cmd_init() {
 
   # Hard precondition, before the lock and the rotation: create the root and
   # write inside it. A real write probe, not -w: sandboxes deny at open(), not
-  # in the mode bits. There is no fallback root; on failure nothing is locked.
-  if ! { mkdir -p "$RUN_ROOT" 2>/dev/null && : > "$RUN_ROOT/.write-probe" 2>/dev/null \
+  # in the mode bits (and `true`, not `:`, so a POSIX-mode shell reaches the
+  # message instead of aborting on the special builtin). There is no fallback
+  # root; on failure nothing is locked.
+  if ! { mkdir -p "$RUN_ROOT" 2>/dev/null && true > "$RUN_ROOT/.write-probe" 2>/dev/null \
          && rm -f "$RUN_ROOT/.write-probe" 2>/dev/null; }; then
     echo "run-state.sh: run root is not writable: $RUN_ROOT" >&2
     echo "issue-runner keeps its state there and has no fallback root. Fix the permissions, or relaunch with that path writable: create ${RUN_ROOT%/*} from an unsandboxed shell, then \`codex --add-dir \"${RUN_ROOT%/*}\"\` (or list it under sandbox_workspace_write.writable_roots in config.toml); in other sandboxes allow-list the same path. Then retry." >&2
@@ -226,6 +233,11 @@ cmd_heartbeat() {
 
 cmd_release() {
   resolve_paths
+  if [ ! -e "$RUN_ROOT/lock" ]; then
+    [ "$LOCK_ONLY" = 1 ] || rm -f "$RUN_ROOT/session" 2>/dev/null || die "cannot remove $RUN_ROOT/session"
+    echo "released: no lock at $RUN_ROOT/lock"
+    return 0
+  fi
   if [ "$LOCK_ONLY" = 1 ]; then
     rm -f "$RUN_ROOT/lock" 2>/dev/null || die "cannot remove $RUN_ROOT/lock"
     echo "released: lock"
