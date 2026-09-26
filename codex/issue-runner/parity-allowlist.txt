@@ -1,0 +1,12 @@
+# Intentional differences between skills/issue-runner/SKILL.md (Claude edition)
+# and codex/issue-runner/canonical/issue-runner/SKILL.md (Codex edition), for
+# scripts/lint.sh check 24. It compares the `## `/`### ` heading lines and the
+# `--flag` names of the two files; any other difference fails the lint.
+#
+# One entry per line, each preceded by a comment giving the reason:
+#   claude-only heading: <heading line>     codex-only heading: <heading line>
+#   claude-only flag: <--name>              codex-only flag: <--name>
+#
+# None today: the canonical copy is byte-identical to the Claude edition, and
+# every Codex adaptation (including what cannot be ported) lives in the wrapper,
+# codex/issue-runner/skills/issue-runner/SKILL.md.

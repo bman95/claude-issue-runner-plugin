@@ -23,6 +23,8 @@ Use gh-issue to implement issue 42 end to end.
 
 Codex selects skills from natural-language requests; the Claude-style slash commands shown below remain useful aliases when running the Claude edition.
 
+The Codex edition has the same features as the Claude edition. Its orchestrator runs the same procedure (`canonical/issue-runner/`, a byte-identical copy) and the same bundled scripts: the scheduler, the run lock with its heartbeat and `--lock-ttl-minutes`, the host credit/usage-limit pause, the agent-spend estimate and actuals, and crash recovery through `codex resume`. The wrapper skill maps Claude Code primitives to Codex's collaboration tools. It also lists the one feature that cannot be ported: the trace-digest recovery fallback, which reads Claude Code's own transcripts. Lint fails on any heading or flag difference between the editions that `codex/issue-runner/parity-allowlist.txt` does not record.
+
 Orchestrated runs (`issue-runner` on two or more issues, or `--plan`) keep their state under `${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner`, which a default `workspace-write` sandbox cannot write and a running session cannot grant: create that directory once and launch Codex with `codex --add-dir "${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner"` (or list it under `sandbox_workspace_write.writable_roots` in `config.toml`); otherwise the run refuses to start with `run root is not writable`.
 
 ## Claude Code installation
