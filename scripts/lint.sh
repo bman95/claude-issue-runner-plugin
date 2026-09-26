@@ -60,8 +60,12 @@
 #  18. every bundled script under skills/*/scripts/ parses (bash -n), and every
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
-#      so does a missing Codex copy of validation-contract.sh; gh-issue's
-#      "## Validation contract" section is byte-identical across editions
+#      so does a missing Codex copy of validation-contract.sh or classify.sh;
+#      gh-issue's "## Validation contract" section is byte-identical across
+#      editions
+#  19. skills/issue-runner/scripts/test-classify.sh passes — the golden
+#      fixtures for scripts/classify.sh, the extracted Step 3 item 5 merge
+#      proof and Step 5 unfinished-PR shape classifications
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -587,8 +591,10 @@ for c in "$ROOT"/codex/issue-runner/canonical/*/scripts/*; do
   [ -f "$ROOT/skills/$rel" ] \
     || { err "codex/issue-runner/canonical/$rel has no original at skills/$rel"; bundled_ok=0; }
 done
-[ -f "$ROOT/codex/issue-runner/canonical/gh-issue/scripts/validation-contract.sh" ] \
-  || { err "codex/issue-runner/canonical/gh-issue/scripts/validation-contract.sh missing (the Codex gh-issue procedure runs it)"; bundled_ok=0; }
+for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/classify.sh; do
+  [ -f "$ROOT/codex/issue-runner/canonical/$required" ] \
+    || { err "codex/issue-runner/canonical/$required missing (the Codex canonical procedure runs it)"; bundled_ok=0; }
+done
 # The procedure that runs the script (resolution, modes, outcomes) is one
 # contract too: gh-issue's "## Validation contract" section, byte-identical.
 vc_section() { awk '/^## Validation contract$/ {f=1; print; next} f && /^## / {exit} f {print}' "$1"; }
@@ -596,6 +602,19 @@ if [ -z "$(vc_section "$SKILL_GH")" ] || [ "$(vc_section "$SKILL_GH")" != "$(vc_
   err "gh-issue '## Validation contract' section missing or differs between editions"; bundled_ok=0
 fi
 [ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section byte-identical in both editions"
+
+# 19. Merge-proof and PR-shape classification fixtures ----------------------------
+TEST_CLASSIFY="$ROOT/skills/issue-runner/scripts/test-classify.sh"
+if [ -f "$TEST_CLASSIFY" ]; then
+  if bash "$TEST_CLASSIFY" >"$TMP/test-classify.out" 2>&1; then
+    ok "classification fixtures pass (skills/issue-runner/scripts/test-classify.sh)"
+  else
+    err "classification fixtures failed:"
+    cat "$TMP/test-classify.out" >&2
+  fi
+else
+  err "$TEST_CLASSIFY not found"
+fi
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2

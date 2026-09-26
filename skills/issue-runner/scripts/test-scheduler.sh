@@ -285,7 +285,8 @@ fi
 # --- Accounting against docs/scenarios.md -----------------------------------
 # Every row above is one this script actually exercises. The rest of the
 # table is Step 3 items 3/4/5 (dispatch, hang detection, result.json
-# processing), Step 3a/Step 4/Step 5 (live GitHub state, human escalation),
+# processing; item 5's merge proof and Step 5's PR shape are fixtured by
+# test-classify.sh), Step 3a/Step 4/Step 5 (live GitHub state, human escalation),
 # or Step 1/2/State (scope, DAG construction, the run lock), gh-issue (its
 # gate cap is row 50, its prose review profile rows 51-59, its reviewer and gate
 # liveness rows 60-62), or the planner (issue-plan reconciliation, rows 45-49) —
