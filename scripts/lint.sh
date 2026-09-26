@@ -84,10 +84,11 @@
 #      skills/gh-issue/SKILL.md at most 9000 (`wc -w`), and no line in either
 #      over 1500 characters — each failure names the file, its count and the
 #      ceiling; rationale belongs in REFERENCE.md, not in the procedure
-#  24. the `## `/`### ` headings and `--flag` names of the two issue-runner
-#      SKILL.md files (Claude edition and Codex canonical copy) agree, except
-#      for the differences recorded in codex/issue-runner/parity-allowlist.txt;
-#      a stale allowlist entry fails too
+#  24. the `## `/`### ` headings and `--flag` names of the Claude edition's
+#      issue-runner SKILL.md and the Codex edition's two (the canonical copy
+#      plus the wrapper skill that adapts it) agree, except for the differences
+#      recorded in codex/issue-runner/parity-allowlist.txt; a stale allowlist
+#      entry fails too
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -735,22 +736,27 @@ EOF_SIZE
 [ "$size_ok" -eq 1 ] && ok "spec size ceilings hold (issue-runner SKILL.md <= 11000 words, gh-issue SKILL.md <= 9000, lines <= $MAX_LINE_CHARS chars)"
 
 # 24. Issue-runner heading and flag parity between editions ------------------------
-# The `## `/`### ` heading lines and the `--flag` names of the two issue-runner
-# SKILL.md files must match, except for the intentional differences recorded in
+# The `## `/`### ` heading lines and the `--flag` names of the Claude edition's
+# issue-runner SKILL.md and of the Codex edition's (its canonical copy, which
+# check 18 keeps byte-identical, plus the wrapper skill where every Codex
+# difference lives) must match, except for the intentional differences recorded in
 # codex/issue-runner/parity-allowlist.txt as `claude-only <item>` / `codex-only
 # <item>` lines, where <item> is `heading: <line>` or `flag: <--name>`. An
 # allowlist entry that no longer matches a difference fails too (stale).
 PARITY_ALLOW="$ROOT/codex/issue-runner/parity-allowlist.txt"
-parity_items() {   # sorted, unique "heading: <line>" and "flag: <--name>" items of $1
-  { grep -E '^#{2,3} ' "$1" | sed 's/[[:space:]]*$//; s/^/heading: /'
-    grep -oE -- '--[a-z][a-z0-9-]*' "$1" | sed 's/^/flag: /'
+CODEX_RUNNER_WRAPPER="$ROOT/codex/issue-runner/skills/issue-runner/SKILL.md"
+parity_items() {   # sorted, unique "heading: <line>" and "flag: <--name>" items of the files given
+  { grep -hE '^#{2,3} ' "$@" | sed 's/[[:space:]]*$//; s/^/heading: /'
+    grep -ohE -- '--[a-z][a-z0-9-]*' "$@" | sed 's/^/flag: /'
   } | LC_ALL=C sort -u
 }
-if [ ! -f "$PARITY_ALLOW" ]; then
+if [ ! -f "$CODEX_RUNNER_WRAPPER" ]; then
+  err "${CODEX_RUNNER_WRAPPER#"$ROOT"/} not found (the Codex issue-runner wrapper skill)"
+elif [ ! -f "$PARITY_ALLOW" ]; then
   err "${PARITY_ALLOW#"$ROOT"/} not found (the issue-runner parity allowlist)"
 else
   parity_items "$SKILL_RUNNER" > "$TMP/parity.claude"
-  parity_items "$CANON_RUNNER" > "$TMP/parity.codex"
+  parity_items "$CANON_RUNNER" "$CODEX_RUNNER_WRAPPER" > "$TMP/parity.codex"
   { LC_ALL=C comm -23 "$TMP/parity.claude" "$TMP/parity.codex" | sed 's/^/claude-only /'
     LC_ALL=C comm -13 "$TMP/parity.claude" "$TMP/parity.codex" | sed 's/^/codex-only /'
   } | LC_ALL=C sort -u > "$TMP/parity.diff"

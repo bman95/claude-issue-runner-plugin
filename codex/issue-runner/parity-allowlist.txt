@@ -1,12 +1,20 @@
-# Intentional differences between skills/issue-runner/SKILL.md (Claude edition)
-# and codex/issue-runner/canonical/issue-runner/SKILL.md (Codex edition), for
-# scripts/lint.sh check 24. It compares the `## `/`### ` heading lines and the
-# `--flag` names of the two files; any other difference fails the lint.
+# Intentional differences between the Claude edition's issue-runner
+# (skills/issue-runner/SKILL.md) and the Codex edition's, for scripts/lint.sh
+# check 24. The Codex side is its canonical copy
+# (codex/issue-runner/canonical/issue-runner/SKILL.md, which check 18 keeps
+# byte-identical to the Claude file) plus the wrapper skill that adapts it
+# (codex/issue-runner/skills/issue-runner/SKILL.md). So every entry here
+# describes the wrapper. Check 24 compares the `## `/`### ` heading lines and
+# the `--flag` names; any difference not listed here fails the lint, and so
+# does a listed entry that is no longer a difference.
 #
 # One entry per line, each preceded by a comment giving the reason:
 #   claude-only heading: <heading line>     codex-only heading: <heading line>
 #   claude-only flag: <--name>              codex-only flag: <--name>
-#
-# None today: the canonical copy is byte-identical to the Claude edition, and
-# every Codex adaptation (including what cannot be ported) lives in the wrapper,
-# codex/issue-runner/skills/issue-runner/SKILL.md.
+
+# The wrapper's section mapping Claude Code primitives to Codex ones.
+codex-only heading: ## Codex adaptations
+# The wrapper's section listing what cannot be ported, and why.
+codex-only heading: ## Not possible on Codex
+# `codex --add-dir`: the Codex sandbox's writable-root grant for the run root.
+codex-only flag: --add-dir
