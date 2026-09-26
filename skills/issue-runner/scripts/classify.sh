@@ -48,15 +48,18 @@
 #                        when there is one, except for outcome `merged`
 #   blocked -            open, no proof, outcome `blocker`, worktree real; error is
 #                        <blocker>
-#   ready P              open, no proof, outcome `ready`, and an open, non-draft PR P
-#                        on the proof branch; no error
+#   ready P              open, no proof, outcome `ready`, and exactly one open PR P on
+#                        the proof branch whose headRefOid is the worktree's HEAD,
+#                        and it is not a draft; no error
 #   failed -             open, no proof, and outcome `failed`, `hung` or `none` — or
 #                        outcome `blocker` with the worktree gone (an empty or
 #                        unreadable branch); error is <blocker>. Outcome `merged`: error
 #                        `result.json claims merged but no merged PR on <branch>`;
 #                        outcome `ready`: `result.json claims ready but no open,
 #                        non-draft PR on <branch>` (<branch> is the worktree's
-#                        branch, `(none)` if gone)
+#                        branch, `(none)` if gone), or, when more than one open PR
+#                        carries the worktree's HEAD, `result.json claims ready but
+#                        several open PRs carry its HEAD on <branch>: #P #Q`
 #
 # `pr-shape` prints one line per open contract PR and per orphan branch, or
 # `none` when there is neither:
@@ -71,7 +74,10 @@
 #                                                     the ready→merge window)
 #   pr #P <branch> shape unknown (branch not on origin)
 #                                                     an open PR whose head branch origin
-#                                                     does not carry (a same-named fork PR)
+#                                                     does not carry (a fork's PR). A fork
+#                                                     PR whose branch name origin also
+#                                                     carries is not detected: it is shaped
+#                                                     from origin's branch like any other
 #   branch <B> branch only (no PR)                    a pushed `/issue-N-` branch with no
 #                                                     PR at all, in any state (Step 3a's
 #                                                     orphan)
@@ -86,10 +92,13 @@
 # written: an environment failure; 2 — a usage error (including a missing or
 # unknown `outcome`).
 #
-# Forks: a same-named PR from another repository proves nothing, because every
-# `result` check is anchored on the worktree's HEAD commit (a fork cannot forge
-# it). No query filters on `isCrossRepository`: when `origin` is itself a fork
-# of the repository gh targets, every implementer PR is cross-repository.
+# Forks: a same-named PR from another repository on a different commit proves
+# nothing, because every `result` check is anchored on the worktree's HEAD. A
+# fork can open a PR on that same public commit: for the merge proof that merges
+# identical content, and for `ready` two open PRs on the HEAD are ambiguous and
+# fail the claim. No query filters on `isCrossRepository`: when `origin` is
+# itself a fork of the repository gh targets, every implementer PR is
+# cross-repository.
 #
 # Dependencies: bash 3.2, coreutils, grep, awk, git, gh (its built-in --jq only
 # projects fields; every decision is made here).
@@ -181,9 +190,15 @@ classify_result() {
         # head (a fork's, an older run's) is never this claim's proof.
         list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft,headRefOid \
           --jq '.[] | "\(.number) \(.isDraft) \(.headRefOid)"') || die "cannot list open PRs on $proof_branch"
-        pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { print $1; exit }')
+        # The commit is public once pushed, so anyone can open a second PR on it
+        # (a same-named fork branch): more than one candidate is never proof of
+        # which PR is this run's.
+        pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { printf "%s#%s", (n++ ? " " : ""), $1 }')
+        case $pr in
+          *' '*) finish failed - "result.json claims ready but several open PRs carry its HEAD on $proof_branch: $pr"; return ;;
+        esac
         draft=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { print $2; exit }')
-        if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "$pr" ""; return; fi
+        if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "${pr#\#}" ""; return; fi
       fi
       finish failed - "result.json claims ready but no open, non-draft PR on ${wt_branch:-(none)}" ;;
   esac

@@ -293,8 +293,17 @@ rcheck "detached HEAD is a real worktree without a proof branch: blocker -> bloc
 no_head_query "detached HEAD runs no --head query"
 
 stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '12 true %s\n13 false %s' "$H_CONTRACT" "$H_CONTRACT")"
-rcheck "row 35: the first open PR carrying this HEAD is a draft -> failed" 0 "failed -" \
-  "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
+rcheck "row 35: two open PRs carry this HEAD (one a draft) -> failed, ambiguous" 0 "failed -" \
+  "result.json claims ready but several open PRs carry its HEAD on feat/issue-7-slug: #12 #13" "$W_CONTRACT" "" ready ""
+# The pushed commit is public: a fork can open a newer, same-named PR on it, which
+# gh lists first. Neither PR is proof of which one is this run's.
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '90 false %s\n12 false %s' "$H_CONTRACT" "$H_CONTRACT")"
+rcheck "row 35: a second non-draft PR on this HEAD (a fork's) -> failed, never ready 90" 0 "failed -" \
+  "result.json claims ready but several open PRs carry its HEAD on feat/issue-7-slug: #90 #12" "$W_CONTRACT" "" ready ""
+stub_reset; stub issue-state OPEN
+rcheck "row 35: ready with the worktree gone names the branch (none)" 0 "failed -" \
+  "result.json claims ready but no open, non-draft PR on (none)" "$TMP/gone" "" ready ""
+no_head_query "row 35: ready with the worktree gone runs no --head query"
 
 stub_reset; stub issue-state OPEN; stub open-someone_unrelated-name "31 false $H_OTHER"
 rcheck "row 35: ready on the branch Step 3a recorded -> ready" 0 "ready 31" "" \
