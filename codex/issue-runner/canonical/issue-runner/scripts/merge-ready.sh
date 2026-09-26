@@ -217,7 +217,7 @@ cmd_refresh() {
     [ "$rc" -ne 0 ] || [ -n "$first" ] || stuck "cannot record the validation output — temporary file failed"
   }
 
-  view=$(gh pr view "$p" --json headRefName,headRefOid,baseRefName \
+  view=$(cd "$top" && gh pr view "$p" --json headRefName,headRefOid,baseRefName \
     --jq '"\(.headRefName) \(.headRefOid) \(.baseRefName)"' </dev/null) \
     || stuck "cannot resolve the PR head — query or fetch failed"
   read -r head_ref head_oid base <<EOF_VIEW

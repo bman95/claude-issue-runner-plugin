@@ -52,6 +52,7 @@ if [ ! -f "$SCRIPT" ]; then err "merge-ready.sh not found"; exit 1; fi
 #   merge-rc       `gh pr merge` exit status (absent = 0); merge-lands: a
 #                  successful call also writes MERGED to `state`
 #   fail-view-<f>  `gh pr view --json <f>` fails
+#   need-repo      `gh pr view` fails outside a git checkout (as real gh does)
 # Every call is appended to $GH_STUB/log as `[arg][arg]…`.
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/gh" <<'EOF'
@@ -62,6 +63,7 @@ case "$1 $2" in
   "pr view")
     field=$5
     [ -f "$d/fail-view-${field%%,*}" ] && exit 1
+    [ -f "$d/need-repo" ] && ! git rev-parse --git-dir >/dev/null 2>&1 && exit 1
     case $field in
       state) f=state ;; headRefName,*) f=head ;; headRefOid) f=head-oid ;;
       title) f=title ;; body) f=body ;; mergeCommit) f=merge-sha ;; *) exit 1 ;;
@@ -179,6 +181,9 @@ holds "unchanged: nothing pushed" [ "$(origin_tip)" = "$T0" ]
 holds "unchanged: its temp file is removed, with no shell error" eval '[ -z "$(ls -A "$TMP/mt")" ] && ! grep -q "unbound variable" "$TMP/stderr"'
 holds "validation runs changed, preflight, full, each against the PR's base" \
   [ "$(cat "$VC_STUB/log")" = "$(printf 'check main\nchanged main\npreflight main\nfull main')" ]
+layout; stub need-repo 1
+OUT=$(cd "$TMP" || exit 99; bash "$SCRIPT" refresh "$TMP/wt" 12 "$VC" 2>"$TMP/stderr"); RC=$?
+expect "refresh called from outside any repository -> resolves the PR from the worktree" 0 "unchanged $HEAD_OID"
 
 # --- refreshed: fast-forward to a head pushed from elsewhere ---
 layout; push_head
