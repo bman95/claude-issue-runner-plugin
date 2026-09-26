@@ -17,6 +17,8 @@ RFC-style entries for the design questions that survived the 0.7.0/0.8.0 hardeni
 
 **Recommendation.** Option 2. It moves exactly the bug class that has actually bitten (deterministic transitions) into testable code, keeps the plugin daemon-free, and shrinks the SKILL.md scheduling prose to "run the script, obey its output". The scenarios table becomes the script's test fixtures — the same 11 rows, executable. Cost: a second source of truth to keep in sync with the spec; mitigate by making the script the *only* statement of the transition rules and having SKILL.md defer to it.
 
+**Bundled-script convention** (established by #53, reused by every later extraction). Scripts live at `skills/<skill>/scripts/<name>.sh` — bash 3.2 + coreutils + git/gh only, plain-text line output documented in the script's header — with the Codex copy at `codex/issue-runner/canonical/<skill>/scripts/<name>.sh`, kept byte-identical by `scripts/lint.sh` (`cmp`). The SKILL.md resolves the script, says "run it, obey its output" and never restates its logic. A non-zero exit means an environment failure — except where the spec already defines exit codes as verdicts: `validation-contract.sh` keeps its historical 1/3/4/5 verdict codes, a deliberate carve-out that later scripts should not copy by default.
+
 ---
 
 ## 2. Full merge queue

@@ -73,7 +73,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #   MAIN_CONTRACT   - content of .issue-runner/validation on the base branch at
 #                     the fork point, or "-" for no contract at all
 #   BRANCH_CONTRACT - content committed to the same path on the feature branch
-#                     (the PR's own edit — inert for the run; MODE=changed reports it),
+#                     (the PR's own edit — inert for the run; changed mode reports it),
 #                     or "-" for none
 #   EXPECTED_EXIT   - the script's exit status
 #   EXPECTED_TEXT   - a substring that must appear in stdout+stderr
@@ -85,7 +85,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       worktree=<contract>  write this to the working tree uncommitted (an edit in
 #                            progress — must be ignored)
 #       cwd=<subdir>         run the script from this subdirectory of the worktree
-#       delete=1             the feature branch deletes the contract (MODE=changed must report it)
+#       delete=1             the feature branch deletes the contract (changed mode must report it)
 #       nofetch=1            origin is unreachable when the script runs (the clone keeps a cached origin/main)
 #       strict=1             run the script under an inherited `bash -e -o pipefail`
 #       outside=1            run the script from a directory that is in no repository at all
@@ -95,6 +95,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       nul=1                the base contract is `preflight: tr<NUL>ue` (a shell variable would read `true`)
 #       arg=<name>           pass <name> as the script's explicit <base-branch> argument (no gh lookup)
 #       noarg=1              call the script with no mode argument at all
+#       emptyarg=1           pass an explicit but empty <base-branch> argument
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the script there — exactly the shape gh-issue Steps 3/5/8/9
@@ -102,7 +103,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 lock=0 nul=0 arg="" noarg=0 opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 lock=0 nul=0 arg="" noarg=0 emptyarg=0 opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
@@ -120,6 +121,7 @@ fixture() {
       nul=1)      nul=1 ;;
       arg=*)      arg="${opt#arg=}" ;;
       noarg=1)    noarg=1 ;;
+      emptyarg=1) emptyarg=1 ;;
     esac
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -186,7 +188,7 @@ fixture() {
     mkdir -p "$run/wt/.git/refs/remotes/origin" && : > "$run/wt/.git/refs/remotes/origin/main.lock"
     ( sleep 0.5; rm -f "$run/wt/.git/refs/remotes/origin/main.lock" ) &
   fi
-  local -a args=("$mode"); [ -n "$arg" ] && args+=("$arg"); [ "$noarg" -eq 1 ] && args=()
+  local -a args=("$mode"); [ -n "$arg" ] && args+=("$arg"); [ "$emptyarg" -eq 1 ] && args+=(""); [ "$noarg" -eq 1 ] && args=()
   (cd "$from" && GH_STUB_BRANCH="$base" GH_STUB_FAIL="$ghfail" "${shell[@]}" "$SCRIPT" ${args[@]+"${args[@]}"}) >"$run/out" 2>&1
   actual_exit=$?
   unset GIT_CEILING_DIRECTORIES
@@ -204,7 +206,7 @@ fixture "row 39: contract present, preflight passes" preflight \
   $'# comment\n\npreflight: true' - 0 "validation: preflight passed"
 fixture "row 39: preflight runs from the worktree root (invoked from a subdirectory)" preflight \
   'preflight: test -f README && test -f change && test -f sub/file' - 0 "validation: preflight passed" cwd=sub
-fixture "row 39: MODE=check reports the contract without running it" check \
+fixture "row 39: check mode reports the contract without running it" check \
   'preflight: exit 7' - 0 "validation: contract ok (preflight declared; full not declared)"
 fixture "row 39: this repository's own contract passes the grammar" check \
   "$(cat "$ROOT/.issue-runner/validation")" - 0 "validation: contract ok"
@@ -224,7 +226,7 @@ fixture "row 44: an explicit base argument in changed mode still sees the PR's e
 # --- Row 40: contract absent → fallback, never an error ------------------------
 fixture "row 40: no contract on the base branch" preflight \
   - - 0 "validation: fallback (no contract"
-fixture "row 40: MODE=check on an absent contract is the same fallback" check \
+fixture "row 40: check mode on an absent contract is the same fallback" check \
   - - 0 "validation: fallback (no contract"
 
 # --- Row 41: preflight failure ------------------------------------------------
@@ -242,7 +244,7 @@ fixture "row 42: full declared and fails" full \
   $'preflight: true\nfull: exit 5' - 1 "validation: full failed (exit 5)"
 fixture "row 42: full not declared → nothing to run" full \
   'preflight: true' - 0 "validation: full not declared"
-fixture "row 42: MODE=check reports a declared full" check \
+fixture "row 42: check mode reports a declared full" check \
   $'preflight: true\nfull: true' - 0 "full declared)"
 fixture "row 42: full not declared is exit 0 under an inherited -e/pipefail too" full \
   'preflight: true' - 0 "validation: full not declared" strict=1
@@ -268,13 +270,15 @@ fixture "row 43: a NUL byte in the contract is invalid (exit 3), never the byte-
   'preflight: true' - 3 "NUL byte" nul=1
 fixture "row 43: invalid contract is judged before full runs too" full \
   $'full: true\nbogus' - 3 "validation: invalid contract"
-fixture "row 43: MODE=check rejects an invalid contract (exit 3)" check \
+fixture "row 43: check mode rejects an invalid contract (exit 3)" check \
   'bogus' - 3 "validation: invalid contract"
 fixture "row 43: unknown MODE is rejected, never a silent pass (exit 6 — its own class, not the contract's)" ful \
   'preflight: true' - 6 "validation: unknown MODE 'ful'"
+fixture "row 43: an explicit but empty base argument → exit 2, never the gh lookup on this checkout's branch" check \
+  'preflight: true' - 2 "validation: cannot resolve the base branch: empty base argument" emptyarg=1
 fixture "row 43: no mode argument is rejected, never a default run (exit 6)" preflight \
   'preflight: true' - 6 "validation: unknown MODE ''" noarg=1
-fixture "row 43: MODE=check with an explicit base missing on origin → exit 2, never fallback" check \
+fixture "row 43: check mode with an explicit base missing on origin → exit 2, never fallback" check \
   - - 2 "validation: cannot resolve the base branch: cannot fetch origin/nope" arg=nope
 fixture "row 43: command not found (127 → 4)" preflight \
   'preflight: ./no-such-script-42' - 4 "validation: preflight command not runnable (exit 127)"
@@ -282,7 +286,7 @@ fixture "row 43: command not executable (126 → 4)" preflight \
   'preflight: ./README' - 4 "validation: preflight command not runnable (exit 126)"
 fixture "row 43: base branch missing on origin (exit 2)" preflight \
   'preflight: true' - 2 "validation: cannot resolve the base branch" base=nope
-fixture "row 43: MODE=check exits 2 too, never fallback" check \
+fixture "row 43: check mode exits 2 too, never fallback" check \
   - - 2 "validation: cannot resolve the base branch" base=nope
 fixture "row 43: every gh call fails → exit 2, never fallback" preflight \
   'preflight: true' - 2 "validation: cannot resolve the base branch: cannot fetch origin/?" ghfail=all
@@ -315,26 +319,26 @@ fixture "row 44: contract removed from base after the fork → fallback" preflig
 fixture "row 44: a sibling's fetch holds the shared ref's lock — retried, the tip's copy still runs" preflight \
   'preflight: exit 9' - 0 "validation: preflight passed" 'advance=preflight: true' lock=1
 
-# --- Row 44: MODE=changed — did this PR edit the contract? ---------------------
-fixture "row 44: MODE=changed, untouched → unchanged (exit 0)" changed \
+# --- Row 44: changed mode — did this PR edit the contract? --------------------
+fixture "row 44: changed mode, untouched → unchanged (exit 0)" changed \
   'preflight: true' - 0 "validation: contract unchanged in this PR"
-fixture "row 44: MODE=changed, branch edit → changed (exit 5, diff printed)" changed \
+fixture "row 44: changed mode, branch edit → changed (exit 5, diff printed)" changed \
   'preflight: true' 'preflight: exit 9' 5 "+preflight: exit 9"
-fixture "row 44: MODE=changed, branch adds a contract → changed (exit 5)" changed \
+fixture "row 44: changed mode, branch adds a contract → changed (exit 5)" changed \
   - 'preflight: true' 5 "validation: contract changed in this PR"
-fixture "row 44: MODE=changed, branch deletes the contract → changed (exit 5)" changed \
+fixture "row 44: changed mode, branch deletes the contract → changed (exit 5)" changed \
   'preflight: true' - 5 "validation: contract changed in this PR" delete=1
-fixture "row 44: MODE=changed from a subdirectory still sees the edit (a pathspec is cwd-relative)" changed \
+fixture "row 44: changed mode from a subdirectory still sees the edit (a pathspec is cwd-relative)" changed \
   'preflight: true' 'preflight: exit 9' 5 "validation: contract changed in this PR" cwd=sub
-fixture "row 44: MODE=changed from a subdirectory still sees the deletion" changed \
+fixture "row 44: changed mode from a subdirectory still sees the deletion" changed \
   'preflight: true' - 5 "validation: contract changed in this PR" delete=1 cwd=sub
-fixture "row 44: MODE=changed from a subdirectory, untouched → unchanged" changed \
+fixture "row 44: changed mode from a subdirectory, untouched → unchanged" changed \
   'preflight: true' - 0 "validation: contract unchanged in this PR" cwd=sub
-fixture "row 44: MODE=changed ignores an uncommitted edit (HEAD is what merges)" changed \
+fixture "row 44: changed mode ignores an uncommitted edit (HEAD is what merges)" changed \
   'preflight: true' - 0 "validation: contract unchanged in this PR" 'worktree=preflight: exit 9'
-fixture "row 44: MODE=changed, a sibling's change on the base tip is not this PR's" changed \
+fixture "row 44: changed mode, a sibling's change on the base tip is not this PR's" changed \
   'preflight: true' - 0 "validation: contract unchanged in this PR" 'advance=preflight: exit 9'
-fixture "row 44: MODE=changed, base missing → exit 2, never unchanged" changed \
+fixture "row 44: changed mode, base missing → exit 2, never unchanged" changed \
   'preflight: true' 'preflight: exit 9' 2 "validation: cannot resolve the base branch" base=nope
 
 if [ "$fail" -ne 0 ]; then

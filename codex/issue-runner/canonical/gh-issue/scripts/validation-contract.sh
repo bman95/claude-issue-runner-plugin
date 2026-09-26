@@ -12,7 +12,8 @@
 #                  full      run the contract's `full:` command (if declared)
 #   <base-branch>  optional; skips the `gh` lookup. Default: the open PR's base
 #                  branch (`gh pr view`), else the repository's default branch
-#                  (`gh repo view`).
+#                  (`gh repo view`). Passed but empty → exit 2, never the default.
+#   Extra arguments are ignored.
 #
 # Trust rule: the contract is always read from the freshly fetched tip of
 # `origin/<base>`, never from the working tree, the index or a cached
@@ -24,7 +25,11 @@
 # a `#` comment. Any other line, CRLF line endings or a NUL byte anywhere makes
 # the file invalid.
 #
-# Output: plain-text lines prefixed `validation: `. Exit status:
+# Output: plain-text lines prefixed `validation: ` (preflight/full also print
+# `validation: running <mode>: <command>` before the command's own output).
+# Exit status — unlike the bundled-script convention (non-zero only for an
+# environment failure), 1, 3, 4 and 5 are verdicts: the codes predate the
+# extraction and gh-issue branches on them, so they are kept as they were:
 #   0  check:     `validation: contract ok (preflight declared; full declared|not declared)`
 #                 or `validation: fallback (no contract at .issue-runner/validation on <base>)`
 #      changed:   `validation: contract unchanged in this PR`
@@ -44,12 +49,15 @@
 #
 # Dependencies: bash 3.2, coreutils, grep, sed, git; gh unless <base-branch> is given.
 
-MODE=${1:-}   # check | changed | preflight | full
+MODE=${1:-}   # check | changed | preflight | full (the exit-6 message keeps its historical `MODE` wording)
 set +e +o pipefail   # the script reads every exit status itself; an inherited -e/pipefail would turn "no full: line" (grep -c exits 1) into a silent exit 1
 # shellcheck disable=SC2015   # A && B && C || D is intended: the error branch must run when any link fails, the cd included
-TOP=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$TOP" ] && cd "$TOP" || { echo "validation: cannot resolve the worktree root" >&2; exit 2; }   # a pathspec (the MODE=changed diff) is cwd-relative: from a subdirectory it would match nothing and read as "unchanged"; chained on rev-parse's own status, never on its output: `cd ""` is a no-op that exits 0 in bash
+TOP=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$TOP" ] && cd "$TOP" || { echo "validation: cannot resolve the worktree root" >&2; exit 2; }   # a pathspec (the `changed` diff) is cwd-relative: from a subdirectory it would match nothing and read as "unchanged"; chained on rev-parse's own status, never on its output: `cd ""` is a no-op that exits 0 in bash
 case $MODE in check|changed|preflight|full) ;; *) echo "validation: unknown MODE '$MODE'" >&2; exit 6 ;; esac
 CONTRACT_PATH=.issue-runner/validation
+if [ $# -ge 2 ] && [ -z "$2" ]; then   # an explicit but empty base (an unset variable in the caller) must never fall back to the gh lookup on whatever branch this checkout is on
+  echo "validation: cannot resolve the base branch: empty base argument" >&2; exit 2
+fi
 BASE_BRANCH=${2:-}
 if [ -z "$BASE_BRANCH" ]; then
   BASE_BRANCH=$(gh pr view --json baseRefName,state -q 'select(.state=="OPEN") | .baseRefName' 2>/dev/null) && [ -n "$BASE_BRANCH" ] \
