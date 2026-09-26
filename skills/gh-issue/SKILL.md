@@ -222,7 +222,7 @@ Stage explicitly (no `git add .`). Commit message: `<type>: <description>` with 
 
 Body: `## Summary`, `Closes #<number>`, `## Changes`, `## Test plan` (name the validation that ran: the contract's `preflight`/`full`, or the conventions fallback); title under 70 chars. Check for an open PR, never assume: `gh pr view --json number,state -q 'select(.state=="OPEN") | .number'`; a closed or merged PR is never adopted (why: Why Step 7 adopts only an open PR).
 
-- **Empty** → `gh pr create`; orchestrated: `--draft` (Step 9 readies it). Drafts unavailable on this repo (recorded at Step 4) → create it plain and report `checkpoint: refused` in Step 10.
+- **Empty** → `gh pr create`; orchestrated: `--draft` (Step 9 readies it). If `--draft` is refused because drafts are unavailable on this repo (recorded at Step 4) → create it plain and report `checkpoint: refused` in Step 10.
 - **Non-empty** (the Step 4 checkpoint, or the dispatch's PR) → push to it; replace the body **above** `## Review notes` with the shape above, keeping any `## Review notes` verbatim: splice the new head + `gh pr view --json body -q .body | awk '/^## Review notes$/,0'` (the complement of Step 9's strip). `## Changes` supersedes the checkpoint's `## Plan`.
 
 Refresh the body on every later push ("PR-body discipline"). Leave a draft a draft: Step 9 marks it ready.
