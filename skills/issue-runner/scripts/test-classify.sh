@@ -319,7 +319,10 @@ rcheck "a same-named merged PR on another head is no proof" 0 "closed-externally
 stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '40 false %s\n12 false %s' "$OLD_OID" "$H_CONTRACT")"
 rcheck "ready takes the open PR carrying this HEAD, not a same-named one" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "40 false $OLD_OID"
-rcheck "ready with only a same-named PR on another head -> failed" 0 "failed -" \
+rcheck "ready with only a non-draft PR at another head (pushed to after the run) -> blocked" 0 "blocked -" \
+  "result.json claims ready but the open PR on feat/issue-7-slug is not at the worktree's HEAD: #40" "$W_CONTRACT" "" ready ""
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "40 true $OLD_OID"
+rcheck "ready with only a draft PR at another head -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 
 # --- result: failures and usage ------------------------------------------------------

@@ -47,7 +47,10 @@
 #                        open — confirm and close by hand`, followed by `: <blocker>`
 #                        when there is one, except for outcome `merged`
 #   blocked -            open, no proof, outcome `blocker`, worktree real; error is
-#                        <blocker>
+#                        <blocker>. Also outcome `ready` when no open PR on the proof
+#                        branch carries the worktree's HEAD but a non-draft one sits
+#                        at another head: error `result.json claims ready but the
+#                        open PR on <branch> is not at the worktree's HEAD: #P …`
 #   ready P              open, no proof, outcome `ready`, and exactly one open PR P on
 #                        the proof branch whose headRefOid is the worktree's HEAD,
 #                        and it is not a draft; no error
@@ -137,7 +140,7 @@ read_state() {
 
 classify_result() {
   local wt recorded outcome error
-  local state wt_branch="" wt_head="" proof_branch="" merged_pr="" list pr draft
+  local state wt_branch="" wt_head="" proof_branch="" merged_pr="" list pr draft other
   [ -d "$DIR" ] || usage "not a directory: $DIR"
   wt=$(read_state worktree) || exit 1
   recorded=$(read_state branch) || exit 1
@@ -199,6 +202,13 @@ classify_result() {
         esac
         draft=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { print $2; exit }')
         if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "${pr#\#}" ""; return; fi
+        # No open PR on the HEAD, but a non-draft one at another head: someone may
+        # have pushed to the implementer's PR after it stopped (a bot, a maintainer),
+        # or it is another repository's. A human decides; dependents keep waiting.
+        other=$(printf '%s\n' "$list" | awk -v h="$wt_head" 'NF && $3 != h && $2 == "false" { printf "%s#%s", (n++ ? " " : ""), $1 }')
+        if [ -z "$pr" ] && [ -n "$other" ]; then
+          finish blocked - "result.json claims ready but the open PR on $proof_branch is not at the worktree's HEAD: $other"; return
+        fi
       fi
       finish failed - "result.json claims ready but no open, non-draft PR on ${wt_branch:-(none)}" ;;
   esac
