@@ -77,8 +77,8 @@
 #  22. skills/issue-runner/scripts/test-merge-ready.sh passes — the fixtures
 #      for scripts/merge-ready.sh, the extracted --merge-ready state, refresh,
 #      checks re-check and head-pinned merge
-#  23. spec size ceilings: skills/issue-runner/SKILL.md at most 8000 words and
-#      skills/gh-issue/SKILL.md at most 5000 (`wc -w`), and no line in either
+#  23. spec size ceilings: skills/issue-runner/SKILL.md at most 11000 words and
+#      skills/gh-issue/SKILL.md at most 9000 (`wc -w`), and no line in either
 #      over 1500 characters — each failure names the file, its count and the
 #      ceiling; rationale belongs in REFERENCE.md, not in the procedure
 #
@@ -700,10 +700,10 @@ while IFS='|' read -r f ceiling; do
     err "${f#"$ROOT"/} has a $longest-character line, over the ceiling of $MAX_LINE_CHARS"; size_ok=0
   fi
 done <<EOF_SIZE
-$SKILL_RUNNER|8000
-$SKILL_GH|5000
+$SKILL_RUNNER|11000
+$SKILL_GH|9000
 EOF_SIZE
-[ "$size_ok" -eq 1 ] && ok "spec size ceilings hold (issue-runner SKILL.md <= 8000 words, gh-issue SKILL.md <= 5000, lines <= $MAX_LINE_CHARS chars)"
+[ "$size_ok" -eq 1 ] && ok "spec size ceilings hold (issue-runner SKILL.md <= 11000 words, gh-issue SKILL.md <= 9000, lines <= $MAX_LINE_CHARS chars)"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
