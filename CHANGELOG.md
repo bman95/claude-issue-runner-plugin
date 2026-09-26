@@ -17,9 +17,31 @@ All notable changes to this plugin will be documented here. Versions follow semv
 - **`--prose-gate N,…`** (#51) authorizes that profile per issue. Step 1 validates the list (refused with `--merge-ready` or `--no-codex-gate`) and writes `issue-N/profile`. The file is kept across retries and same-session re-entry, never carried into a new run, and never recovered from GitHub. The Step 2 printout shows each issue's requested profile and source, Step 3a adds `Review profile: prose (user-authorized for issue #N)`, and Step 5 prints requested → effective. Step 4 may offer "retry under the prose profile" for a Markdown-only cap-stop, and the user's answer is the only authorization. A new lint check (16) pins the contract across both editions. Both editions.
 - **Gate pass files and recovery** (#52). Step 3a clears `codex-pass-*` on every dispatch, since each dispatch counts passes from 1 again. Gated dispatches carry `Silent-reviewer fallback: inline review authorized`. Gateless ones never do, whatever made them gateless. The recovery reconciliation (Claude edition; the Codex edition has none yet) checks `codex-pass-K.exit` before it tells a resumed implementer to re-run a gate pass. The hang rule now states that implementers refresh the marker while they wait on children. REFERENCE.md gains the troubleshooting entry "implementer waiting on a silent reviewer / killed codex run".
 - **Step 0 runs the same validation-contract script** (#53), `check` against the default branch, in place of its own copy of the fetch, `ls-tree` and grammar logic. It runs the copy bundled beside the resolved gh-issue skill, so the runner and its implementers always use the same file. The present, absent, invalid and unresolvable outcomes are unchanged, except that the probe now needs a work tree (outside one it is unresolvable, exit 2). The resolved path must be absolute, so an unsubstituted path can never run a checkout's own `scripts/`. The `--merge-ready` refresh calls the script too, with its absolute path written into the refresh subagent's prompt; a missing script is a *stuck* outcome there.
+- **Merge-proof and unfinished-PR classification extracted into a bundled script** (#54). `skills/issue-runner/scripts/classify.sh` has two modes:
+  - `result` covers Step 3 item 5: the issue-state and merged-PR queries, the proof branch with its empty-branch guard, the `headRefOid` anchor, the `ready` check and the hang-suffix rule.
+  - `pr-shape` covers Step 5: the `draft (checkpoint)` and `draft (implemented, not ready)` labels, their `non-draft (…)` twins, and `branch only (no PR)` via probe 3.
+
+  Each mode prints one line per verdict. The existing statuses and error strings are unchanged; the new cases are listed below. Item 5, the item 4 recap, Step 4's "Mark `done`" and Step 5 now call the script. The rationale moved into REFERENCE.md's merge-proof and draft-checkpoint entries. `result <N> <issue-dir>` reads its inputs from state files: `worktree` and `branch`, plus two new per-attempt files, `outcome` and `blocker`. Step 3a clears the new files on every dispatch. The orchestrator writes `blocker` with a file tool, never as a shell argument, because blocker text is untrusted. The script writes only `issue-N/error`, so re-running it is idempotent. Cases the prose left open are now explicit, flagged for the release slice (#62):
+  - A failed `gh` or git query exits non-zero and never reads as "no proof". Item 5 retries once, then records `blocked` with `classification failed: …`. Step 4 answers that by re-running the call, never with a retry dispatch. Step 5 lists `PR shape unknown: …`.
+  - An unproven `merged` or `ready` claim with no worktree names its branch as `(none)`.
+  - `branch only (no PR)` means no PR in any state. A branch whose PRs are all merged or closed is listed as `no open PR (only merged or closed PRs: …)`.
+  - `pr-shape` lists open PRs with `--limit 1000` instead of gh's default of 30.
+  - In `pr-shape`, an open PR whose branch is not on origin gets a `shape unknown (branch not on origin)` line instead of failing the whole call.
+  - A `## Plan` heading is matched as a heading line.
+  - A usage error (exit 2, a missing `outcome` file included) is fixed and re-run; still exit 2 after one fix records `blocked` with `classification failed: …`.
+  - A failed write of the `blocker` input records `blocked` with `cannot record the implementer's error: …` and never classifies without it.
+  - `result` removes `issue-N/error` when the status carries none (`done`, `ready`), so a retry that ends there no longer shows the previous attempt's error.
+  - Step 4's "Mark `done`" writes only `done`; any other output of the re-run leaves the issue `blocked` with its merged-but-open error restored, and is reported to the user.
+
+  The Codex edition calls a byte-identical copy under `canonical/issue-runner/scripts/`.
 
 **Tooling:**
 - `scripts/test-validation-contract.sh` runs the script directly (rows 39–44, plus the explicit-base and missing-mode cases). A new lint check (18) runs `bash -n` on every bundled `skills/*/scripts/*` and requires each one with a Codex counterpart to be byte-identical (`cmp`), replacing the block-extraction identity check. It also pins gh-issue's `## Validation contract` section byte-identical across editions. Advisory shellcheck now covers every bundled script.
+- `skills/issue-runner/scripts/test-classify.sh` fixtures every classification. It uses a stubbed `gh` and real temporary git repositories:
+  - the stub logs each call, so the fixtures assert that `gh pr list --head ""` never runs;
+  - a stale local default branch exercises the checkpoint-only count.
+
+  It covers scenarios rows 5, 6, 11, 14–18, 21, 23–25 and 35 (their classification only) and pins the row count. A new lint check (19) runs it, and check 18 now also requires the Codex copy of `classify.sh`.
 
 ## [0.12.0] - 2026-09-25
 
