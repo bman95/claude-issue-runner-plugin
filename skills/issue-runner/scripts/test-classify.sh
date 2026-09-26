@@ -43,6 +43,8 @@ if [ ! -f "$SCRIPT" ]; then err "classify.sh not found"; exit 1; fi
 #   view-<P>             `gh pr view P`                        isDraft line, then the body
 #   fail-prlist          any `gh pr list` fails
 #   fail-prlist-<state>  `gh pr list --state <state>` fails
+# Every PR-listing line gets a trailing isCrossRepository field (`false`, or
+# `true` for a line ending in the word `fork`).
 # Every call is appended to $GH_STUB/log as `[arg][arg]…`.
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/gh" <<'EOF'
@@ -60,7 +62,9 @@ case "$1 $2" in
     done
     [ -f "$d/fail-prlist-$state" ] && exit 1
     if [ -z "$head" ]; then f="$d/open-all"; else f="$d/$state-$(printf '%s' "$head" | tr / _)"; fi
-    [ -f "$f" ] && cat "$f"; exit 0 ;;
+    # Every PR listing ends with isCrossRepository: `false` unless the fixture
+    # line ends with the word `fork` (then `true`).
+    [ -f "$f" ] && awk 'NF { if ($NF == "fork") { $NF = "true"; print } else print $0 " false" }' "$f"; exit 0 ;;
 esac
 exit 1
 EOF
@@ -295,6 +299,20 @@ stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '12 tru
 rcheck "row 35: the first open PR is a draft -> failed (the first PR decides, as before)" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 
+stub_reset; stub issue-state OPEN; stub open-someone_unrelated-name "31 false"
+rcheck "row 35: ready on the branch Step 3a recorded -> ready" 0 "ready 31" "" \
+  "$W_OTHER" "someone/unrelated-name" ready ""
+stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
+rcheck "outcome ready, but a merged PR and the issue still open -> blocked, no suffix" 0 "blocked 11" "$MERGED_OPEN" \
+  "$W_CONTRACT" "" ready ""
+
+# --- result: a fork's PR is never the runner's ---------------------------------------
+stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "11 $H_CONTRACT fork"
+rcheck "a merged fork PR with the same branch name and head is no proof" 0 "closed-externally -" "$CLOSED_EXT" \
+  "$W_CONTRACT" "" merged ""
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '40 false fork\n12 false')"
+rcheck "ready skips a fork's open PR on the same branch name" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
+
 # --- result: failures and usage ------------------------------------------------------
 stub_reset
 rcheck "issue state query fails -> exit 1, no classification, error file untouched" 1 "" "" \
@@ -387,6 +405,14 @@ check "an open PR and a second orphan branch -> one line each" 0 \
 
 stub_reset; stub open-all "21 feat/issue-7-slug maybe"; stub view-21 "maybe"$'\n'"$PLAN_BODY"
 check "unexpected isDraft -> exit 1" 1 "" -- pr-shape 7 main
+stub_reset; stub open-all "$(printf '40 feat/issue-7-slug false fork\n21 feat/issue-7-slug true')"; stub view-21 "true"$'\n'"$PLAN_BODY"
+check "a fork's open PR on a matching branch name is ignored, never fetched" 0 \
+  "$(printf 'pr #21 feat/issue-7-slug draft (checkpoint)\nbranch chore/issue-7-second branch only (no PR)')" -- pr-shape 7 main
+stub_reset; stub all-feat_issue-9-orphan "41 fork"
+check "a branch whose only PR is a fork's is still an orphan" 0 \
+  "branch feat/issue-9-orphan branch only (no PR)" -- pr-shape 9 main
+stub_reset; : > "$GH_STUB/fail-prlist-all"
+check "probe 3's per-branch PR query fails -> exit 1" 1 "" -- pr-shape 9 main
 stub_reset; : > "$GH_STUB/fail-prlist"
 check "open-PR listing fails -> exit 1" 1 "" -- pr-shape 7 main
 stub_reset

@@ -83,6 +83,9 @@
 # written: an environment failure; 2 — a usage error (including a missing or
 # unknown `outcome`).
 #
+# A PR from a fork (`isCrossRepository`) is never the runner's, whatever its
+# branch name: every PR query below ignores it.
+#
 # Dependencies: bash 3.2, coreutils, grep, awk, git, gh (its built-in --jq only
 # projects fields; every decision is made here).
 
@@ -142,11 +145,11 @@ classify_result() {
   case $wt_branch in */issue-"$N"-*) proof_branch=$wt_branch ;; esac
   [ -n "$wt_branch" ] && [ "$wt_branch" = "$(printf '%s' "$recorded" | tr -d '[:space:]')" ] && proof_branch=$wt_branch
   if [ -n "$proof_branch" ] && [ -n "$wt_head" ]; then
-    list=$(gh pr list --head "$proof_branch" --state merged --json number,headRefOid \
-      --jq '.[] | "\(.number) \(.headRefOid)"') || die "cannot list merged PRs on $proof_branch"
+    list=$(gh pr list --head "$proof_branch" --state merged --json number,headRefOid,isCrossRepository \
+      --jq '.[] | "\(.number) \(.headRefOid) \(.isCrossRepository)"') || die "cannot list merged PRs on $proof_branch"
     # Anchored on this attempt's commit: a previous run's merged PR on a
     # recurring branch name is not this attempt's proof.
-    merged_pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$2 == h { print $1; exit }')
+    merged_pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$2 == h && $3 == "false" { print $1; exit }')
   fi
 
   if [ "$state" = CLOSED ]; then
@@ -169,10 +172,10 @@ classify_result() {
       finish failed - "result.json claims merged but no merged PR on ${wt_branch:-(none)}" ;;
     ready)
       if [ -n "$proof_branch" ]; then
-        list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft \
-          --jq '.[] | "\(.number) \(.isDraft)"') || die "cannot list open PRs on $proof_branch"
-        pr=$(printf '%s\n' "$list" | awk 'NF { print $1; exit }')
-        draft=$(printf '%s\n' "$list" | awk 'NF { print $2; exit }')
+        list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft,isCrossRepository \
+          --jq '.[] | "\(.number) \(.isDraft) \(.isCrossRepository)"') || die "cannot list open PRs on $proof_branch"
+        pr=$(printf '%s\n' "$list" | awk '$3 == "false" { print $1; exit }')
+        draft=$(printf '%s\n' "$list" | awk '$3 == "false" { print $2; exit }')
         if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "$pr" ""; return; fi
       fi
       finish failed - "result.json claims ready but no open, non-draft PR on ${wt_branch:-(none)}" ;;
@@ -182,9 +185,9 @@ classify_result() {
 classify_pr_shape() {
   local default="$1" list prs out="" p b view draft body count shape refs rc ref any
   [ -n "$default" ] || usage "empty default branch"
-  list=$(gh pr list --state open --limit 1000 --json number,headRefName,isDraft \
-    --jq '.[] | "\(.number) \(.headRefName) \(.isDraft)"') || die "cannot list open PRs"
-  prs=$(printf '%s\n' "$list" | awk -v pat="/issue-$N-" 'NF && index($2, pat) { print $1, $2 }')
+  list=$(gh pr list --state open --limit 1000 --json number,headRefName,isDraft,isCrossRepository \
+    --jq '.[] | "\(.number) \(.headRefName) \(.isDraft) \(.isCrossRepository)"') || die "cannot list open PRs"
+  prs=$(printf '%s\n' "$list" | awk -v pat="/issue-$N-" '$4 == "false" && index($2, pat) { print $1, $2 }')
 
   while read -r p b; do
     [ -n "$p" ] || continue
@@ -215,8 +218,9 @@ EOF_PRS
          b=${ref#refs/heads/}
          [ -n "$b" ] || continue
          printf '%s\n' "$prs" | awk -v b="$b" '$2 == b { f = 1 } END { exit !f }' && continue
-         any=$(gh pr list --head "$b" --state all --limit 1000 --json number --jq '.[] | .number' </dev/null) \
-           || die "cannot list PRs on $b"
+         any=$(gh pr list --head "$b" --state all --limit 1000 --json number,isCrossRepository \
+           --jq '.[] | "\(.number) \(.isCrossRepository)"' </dev/null) || die "cannot list PRs on $b"
+         any=$(printf '%s\n' "$any" | awk '$2 == "false" { print $1 }')
          if [ -n "$any" ]; then
            out="${out}branch $b no open PR (only merged or closed PRs: $(printf '%s' "$any" | awk 'NF { printf "%s#%s", (n++ ? " " : ""), $1 }'))"$'\n'
          else
