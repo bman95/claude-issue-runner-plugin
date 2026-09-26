@@ -66,8 +66,9 @@
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
 #      resume-check.sh, merge-ready.sh, run-state.sh or scheduler.sh;
-#      gh-issue's "## Validation contract" section and skills/gh-issue/REFERENCE.md
-#      are byte-identical across editions
+#      gh-issue's "## Validation contract" section, skills/gh-issue/REFERENCE.md
+#      and skills/issue-runner/{SKILL,REFERENCE}.md are byte-identical across
+#      editions
 #  19. skills/issue-runner/scripts/test-classify.sh passes — the golden
 #      fixtures for scripts/classify.sh, the extracted Step 3 item 5 merge
 #      proof and Step 5 unfinished-PR shape classifications
@@ -651,7 +652,13 @@ fi
 # Codex edition ships the same file.
 cmp -s "$ROOT/skills/gh-issue/REFERENCE.md" "$ROOT/codex/issue-runner/canonical/gh-issue/REFERENCE.md" \
   || { err "skills/gh-issue/REFERENCE.md missing or differs from codex/issue-runner/canonical/gh-issue/REFERENCE.md"; bundled_ok=0; }
-[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section and gh-issue REFERENCE.md byte-identical in both editions"
+# The Codex issue-runner reads a canonical copy of the orchestrator procedure;
+# every Codex difference lives in its wrapper skill, so the copy stays exact.
+for f in SKILL.md REFERENCE.md; do
+  cmp -s "$ROOT/skills/issue-runner/$f" "$ROOT/codex/issue-runner/canonical/issue-runner/$f" \
+    || { err "skills/issue-runner/$f missing or differs from codex/issue-runner/canonical/issue-runner/$f (copy the Claude file over it; Codex differences go in codex/issue-runner/skills/issue-runner/SKILL.md)"; bundled_ok=0; }
+done
+[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section, gh-issue REFERENCE.md and issue-runner SKILL.md/REFERENCE.md byte-identical in both editions"
 
 # 19. Merge-proof and PR-shape classification fixtures ----------------------------
 TEST_CLASSIFY="$ROOT/skills/issue-runner/scripts/test-classify.sh"

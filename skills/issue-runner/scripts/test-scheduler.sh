@@ -20,6 +20,7 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 SCHEDULER="${1:-$ROOT/skills/issue-runner/scripts/scheduler.sh}"
 [ -f "$SCHEDULER" ] || { printf 'FAIL: scheduler script not found: %s\n' "$SCHEDULER" >&2; exit 1; }
+SCHEDULER="$(cd "$(dirname "$SCHEDULER")" && pwd)/$(basename "$SCHEDULER")"   # absolute: a fixture below runs from another cwd
 SCENARIOS="$ROOT/docs/scenarios.md"
 
 fail=0
