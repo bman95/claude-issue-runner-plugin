@@ -52,8 +52,9 @@
 #       a closing-keyword search hit whose body has no plain `<keyword> #N`:
 #       read it before deciding (it may close #N in another form, or only
 #       mention it); draft and worktree as on a `pr` line
-#   branch <B> <tip> orphan
-#       no PR at all, in any state: a checkpoint whose `gh pr create` never ran
+#   branch <B> <tip> orphan worktree=<path|->
+#       no PR at all, in any state: a checkpoint whose `gh pr create` never ran;
+#       worktree as on a `pr` line (a leftover run's worktree may hold <B>)
 #   branch <B> <tip> stale #P
 #       a merged PR whose headRefOid is the branch's tip <tip>: the undeleted
 #       head branch of landed work, safe to delete under a lease on <tip>
@@ -148,7 +149,7 @@ case $rc in
        hist=$(gh pr list --head "$b" --state all --limit 1000 --json number,state,headRefOid \
          --jq '.[] | "\(.number) \(.state) \(.headRefOid)"' </dev/null) || die "cannot list PRs on $b"
        if [ -z "$(printf '%s' "$hist" | tr -d '[:space:]')" ]; then
-         out="${out}branch $b $tip orphan"$'\n'
+         out="${out}branch $b $tip orphan worktree=$(worktree_of "$b")"$'\n'
          continue
        fi
        stale=$(printf '%s\n' "$hist" | awk -v t="$tip" '$2 == "MERGED" && $3 == t { print $1; exit }')

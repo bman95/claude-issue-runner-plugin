@@ -130,6 +130,9 @@ check "row 22: draft checkpoint found by both probes -> one line, via=both" 0 \
   "pr #21 feat/issue-7-slug draft=true via=both worktree=$WT_SPACE" 7
 if grep -qF '[pr][view]' "$GH_STUB/log"; then err "a PR already found by probe 1 had its body re-read"
 else ok "a probe-1 PR is not re-read for the keyword check"; fi
+stub_reset
+check "row 23: an orphan checked out in a leftover worktree -> its worktree path" 0 \
+  "branch feat/issue-7-slug $T7 orphan worktree=$WT_SPACE" 7
 git -C "$REPO" worktree remove -f "$WT_SPACE"
 
 # --- Closing keywords: confirmed, and not ---------------------------------------
@@ -146,7 +149,7 @@ check "keyword hits: plain closing references are pr lines, the rest keyword-unc
     "pr #34 fourth/name draft=true via=keyword worktree=-" \
     "keyword-unconfirmed #32 other/name draft=false worktree=-" \
     "keyword-unconfirmed #33 third/name draft=false worktree=-" \
-    "branch feat/issue-7-slug $T7 orphan")" 7
+    "branch feat/issue-7-slug $T7 orphan worktree=-")" 7
 stub_reset; stub search "$(printf '35 a/b false\n36 c/d false\n37 e/f false')"
 stub body-35 "Closes o/r#7"
 stub body-36 "Fixes https://github.com/o/r/issues/7"
@@ -156,13 +159,13 @@ check "cross-repo, URL and emphasized forms are never dropped: unconfirmed, for 
     "keyword-unconfirmed #35 a/b draft=false worktree=-" \
     "keyword-unconfirmed #36 c/d draft=false worktree=-" \
     "keyword-unconfirmed #37 e/f draft=false worktree=-" \
-    "branch feat/issue-7-slug $T7 orphan")" 7
+    "branch feat/issue-7-slug $T7 orphan worktree=-")" 7
 git -C "$REPO" worktree add -q -b kw/branch "$TMP/wt-kw" main 2>/dev/null
 stub_reset; stub search "38 kw/branch true"; stub body-38 "Closes o/r#7"
 check "an unconfirmed hit carries draft= and worktree= like a pr line" 0 \
   "$(printf '%s\n%s' \
     "keyword-unconfirmed #38 kw/branch draft=true worktree=$TMP/wt-kw" \
-    "branch feat/issue-7-slug $T7 orphan")" 7
+    "branch feat/issue-7-slug $T7 orphan worktree=-")" 7
 
 # --- Several matches ------------------------------------------------------------
 stub_reset
@@ -175,7 +178,7 @@ check "several contract PRs -> one line each, sorted; #70 never matches #7" 0 \
 # --- Row 23: probe 3 branch classification -------------------------------------
 # feat/issue-7-slug is on origin; each fixture gives it a PR history.
 stub_reset
-check "row 23: branch with no PR at all -> orphan" 0 "branch feat/issue-7-slug $T7 orphan" 7
+check "row 23: branch with no PR at all -> orphan" 0 "branch feat/issue-7-slug $T7 orphan worktree=-" 7
 stub_reset; stub all-feat_issue-7-slug "$(printf '9 CLOSED 1111111111111111111111111111111111111111\n12 MERGED %s' "$T7")"
 check "row 23: merged PR on the current tip -> stale" 0 "branch feat/issue-7-slug $T7 stale #12" 7
 stub_reset; stub all-feat_issue-7-slug "12 MERGED 1111111111111111111111111111111111111111"
@@ -188,8 +191,8 @@ check "a branch an open PR covers gets no branch line" 0 \
   "pr #21 feat/issue-7-slug draft=false via=contract worktree=-" 7
 T70=$(push_branch feat/issue-70-slug)
 stub_reset
-check "probe 3 for #7 ignores feat/issue-70-slug" 0 "branch feat/issue-7-slug $T7 orphan" 7
-check "probe 3 for #70 finds only feat/issue-70-slug" 0 "branch feat/issue-70-slug $T70 orphan" 70
+check "probe 3 for #7 ignores feat/issue-70-slug" 0 "branch feat/issue-7-slug $T7 orphan worktree=-" 7
+check "probe 3 for #70 finds only feat/issue-70-slug" 0 "branch feat/issue-70-slug $T70 orphan worktree=-" 70
 
 # --- Failures ---------------------------------------------------------------------
 stub_reset; stub fail-open x
