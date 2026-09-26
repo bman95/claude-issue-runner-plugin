@@ -14,7 +14,7 @@
 # decisions and the evidence, never `tool_result` bodies, which can carry
 # environment dumps or secrets.
 #
-# Usage: scripts/agent-trace.sh <session-id> <issue-number>
+# Usage: skills/issue-runner/scripts/agent-trace.sh <session-id> <issue-number>
 #
 # Locates the newest subagents/agent-*.meta.json (by mtime) under
 # ~/.claude/projects/*/<session-id>/subagents/ whose "description" is
@@ -22,14 +22,15 @@
 # the result under a "## Recovered trace" heading to
 # $STATE_DIR/issue-N/guidance.md — the file every Step 3a dispatch already
 # reads, so a retry or fresh dispatch picks it up with no further wiring.
-# $STATE_DIR is derived exactly as SKILL.md's State block derives it, from
-# the repo this script is run from.
+# $STATE_DIR comes from the sibling run-state.sh (`resolve`), the same
+# derivation SKILL.md's State section uses, for the repo this script is run
+# from.
 #
 # Exits non-zero with a message on stderr when no matching transcript
 # exists, so callers can fall through to a plain fresh dispatch.
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq, no python —
-# same convention as the rest of scripts/, see scripts/lint.sh).
+# same convention as the other bundled scripts, see scripts/lint.sh).
 set -euo pipefail
 
 usage() { echo "usage: agent-trace.sh <session-id> <issue-number>" >&2; }
@@ -81,15 +82,15 @@ if [ ! -f "$TRANSCRIPT" ]; then
   exit 1
 fi
 
-# STATE_DIR, derived exactly like SKILL.md's State block (REPO_KEY formula
-# must stay byte-identical to that block, or this writes to the wrong run's
-# guidance.md).
-REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
-  echo "agent-trace: not inside a git repository" >&2
+# STATE_DIR from the sibling run-state.sh, the one derivation the
+# orchestrator's State section uses — a second copy of the formula here could
+# drift and write to the wrong run's guidance.md.
+RESOLVED="$(bash "$(dirname "${BASH_SOURCE[0]}")/run-state.sh" resolve)" || {
+  echo "agent-trace: cannot resolve the run's state dir (run-state.sh resolve failed)" >&2
   exit 1
 }
-REPO_KEY="$(basename "$REPO_ROOT")-$(printf '%s' "$REPO_ROOT" | git hash-object --stdin | cut -c1-8)"
-STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/$REPO_KEY/state"
+STATE_DIR="$(printf '%s\n' "$RESOLVED" | sed -n 's/^state-dir //p')"
+[ -n "$STATE_DIR" ] || { echo "agent-trace: run-state.sh resolve printed no state-dir" >&2; exit 1; }
 GUIDANCE="$STATE_DIR/issue-$ISSUE_N/guidance.md"
 mkdir -p "$(dirname "$GUIDANCE")"
 
@@ -343,7 +344,7 @@ REFS="$(printf '%s\n' "$DIGEST_BODY" \
   echo "## Recovered trace"
   echo
   echo "Digest of agent-$AGENT_ID (session $SESSION_ID, transcript $TRANSCRIPT)"
-  echo "recovered by scripts/agent-trace.sh because in-place resume was"
+  echo "recovered by skills/issue-runner/scripts/agent-trace.sh because in-place resume was"
   echo "unavailable for this implementer. This is a digest of what it did,"
   echo "not what it thought — chain-of-thought is not recoverable and is"
   echo "never included. Tool_result bodies (the densest source of secrets"

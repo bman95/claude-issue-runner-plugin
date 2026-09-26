@@ -66,6 +66,9 @@
 #  19. skills/issue-runner/scripts/test-classify.sh passes — the golden
 #      fixtures for scripts/classify.sh, the extracted Step 3 item 5 merge
 #      proof and Step 5 unfinished-PR shape classifications
+#  20. skills/issue-runner/scripts/test-run-state.sh passes — the fixtures for
+#      scripts/run-state.sh, the extracted State-section run root, run lock,
+#      heartbeat, same-session re-entry / rotation and release
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -614,6 +617,19 @@ if [ -f "$TEST_CLASSIFY" ]; then
   fi
 else
   err "$TEST_CLASSIFY not found"
+fi
+
+# 20. Run-state fixtures ----------------------------------------------------------
+TEST_RUN_STATE="$ROOT/skills/issue-runner/scripts/test-run-state.sh"
+if [ -f "$TEST_RUN_STATE" ]; then
+  if bash "$TEST_RUN_STATE" >"$TMP/test-run-state.out" 2>&1; then
+    ok "run-state fixtures pass (skills/issue-runner/scripts/test-run-state.sh)"
+  else
+    err "run-state fixtures failed:"
+    cat "$TMP/test-run-state.out" >&2
+  fi
+else
+  err "$TEST_RUN_STATE not found"
 fi
 
 if [ "$fail" -ne 0 ]; then

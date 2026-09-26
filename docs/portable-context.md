@@ -25,7 +25,12 @@ flow is two halves:
 
 1. **pack** — `pack-context.sh` → `base64(gzip(tar))` of `skills/` +
    `plugin.json`. One line, no shell-hostile bytes, fits a shell profile, a
-   `.env`, or the cloud environment's variable list.
+   `.env`, or the cloud environment's variable list. The whole `skills/` tree
+   travels, so the scripts the skills run are bundled with them: every
+   `skills/<skill>/scripts/*.sh` (issue-runner's `run-state.sh`,
+   `scheduler.sh`, `classify.sh` and the recovery fallback `agent-trace.sh`;
+   gh-issue's `validation-contract.sh`). Nothing outside `skills/` is packed —
+   which is why a script a skill runs must live under `skills/`.
 2. **bootstrap** — `bootstrap-context.sh` reads `$ISSUE_RUNNER_CONTEXT` (or a
    file it points to), decodes it, and writes the skill folders into
    `~/.claude/skills/`. Claude Code discovers `~/.claude/skills/<name>/SKILL.md`
@@ -136,6 +141,13 @@ setup script do. Wire it there:
 ```bash
 scripts/context-env/bootstrap-context.sh          # prints what it installed
 ls ~/.claude/skills                               # -> gh-issue  issue-plan  issue-runner
+ls ~/.claude/skills/issue-runner/scripts          # -> agent-trace.sh  classify.sh  run-state.sh  scheduler.sh  test-*.sh
+```
+
+To check a pack before installing it, list what it carries:
+
+```bash
+scripts/context-env/pack-context.sh --raw 2>/dev/null | base64 -d | tar -tzf - | grep '/scripts/'
 ```
 
 Then in a Claude Code session, `/issue-plan`, `/issue-runner`, and `/gh-issue`
