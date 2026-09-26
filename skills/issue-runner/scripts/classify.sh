@@ -47,22 +47,16 @@
 #                        open — confirm and close by hand`, followed by `: <blocker>`
 #                        when there is one, except for outcome `merged`
 #   blocked -            open, no proof, outcome `blocker`, worktree real; error is
-#                        <blocker>. Also outcome `ready` when no open PR on the proof
-#                        branch carries the worktree's HEAD but a non-draft one sits
-#                        at another head: error `result.json claims ready but the
-#                        open PR on <branch> is not at the worktree's HEAD: #P …`
-#   ready P              open, no proof, outcome `ready`, and exactly one open PR P on
-#                        the proof branch whose headRefOid is the worktree's HEAD,
-#                        and it is not a draft; no error
+#                        <blocker>
+#   ready P              open, no proof, outcome `ready`, and the first open PR P on
+#                        the proof branch is not a draft; no error
 #   failed -             open, no proof, and outcome `failed`, `hung` or `none` — or
 #                        outcome `blocker` with the worktree gone (an empty or
 #                        unreadable branch); error is <blocker>. Outcome `merged`: error
 #                        `result.json claims merged but no merged PR on <branch>`;
 #                        outcome `ready`: `result.json claims ready but no open,
 #                        non-draft PR on <branch>` (<branch> is the worktree's
-#                        branch, `(none)` if gone), or, when more than one open PR
-#                        carries the worktree's HEAD, `result.json claims ready but
-#                        several open PRs carry its HEAD on <branch>: #P #Q`
+#                        branch, `(none)` if gone)
 #
 # `pr-shape` prints one line per open contract PR and per orphan branch, or
 # `none` when there is neither:
@@ -95,13 +89,11 @@
 # written: an environment failure; 2 — a usage error (including a missing or
 # unknown `outcome`).
 #
-# Forks: a same-named PR from another repository on a different commit proves
-# nothing, because every `result` check is anchored on the worktree's HEAD. A
-# fork can open a PR on that same public commit: for the merge proof that merges
-# identical content, and for `ready` two open PRs on the HEAD are ambiguous and
-# fail the claim. No query filters on `isCrossRepository`: when `origin` is
+# Forks: the merge proof is anchored on the worktree's HEAD, so a same-named
+# merged PR on another commit proves nothing (one on that same commit merged
+# identical content). No query filters on `isCrossRepository`: when `origin` is
 # itself a fork of the repository gh targets, every implementer PR is
-# cross-repository.
+# cross-repository. The `ready` check keeps the spec's unanchored form.
 #
 # Dependencies: bash 3.2, coreutils, grep, awk, git, gh (its built-in --jq only
 # projects fields; every decision is made here).
@@ -140,7 +132,7 @@ read_state() {
 
 classify_result() {
   local wt recorded outcome error
-  local state wt_branch="" wt_head="" proof_branch="" merged_pr="" list pr draft other
+  local state wt_branch="" wt_head="" proof_branch="" merged_pr="" list pr draft
   [ -d "$DIR" ] || usage "not a directory: $DIR"
   wt=$(read_state worktree) || exit 1
   recorded=$(read_state branch) || exit 1
@@ -188,27 +180,14 @@ classify_result() {
     merged)
       finish failed - "result.json claims merged but no merged PR on ${wt_branch:-(none)}" ;;
     ready)
-      if [ -n "$proof_branch" ] && [ -n "$wt_head" ]; then
-        # The open PR carrying this attempt's commit: a same-named PR on another
-        # head (a fork's, an older run's) is never this claim's proof.
-        list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft,headRefOid \
-          --jq '.[] | "\(.number) \(.isDraft) \(.headRefOid)"') || die "cannot list open PRs on $proof_branch"
-        # The commit is public once pushed, so anyone can open a second PR on it
-        # (a same-named fork branch): more than one candidate is never proof of
-        # which PR is this run's.
-        pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { printf "%s#%s", (n++ ? " " : ""), $1 }')
-        case $pr in
-          *' '*) finish failed - "result.json claims ready but several open PRs carry its HEAD on $proof_branch: $pr"; return ;;
-        esac
-        draft=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { print $2; exit }')
-        if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "${pr#\#}" ""; return; fi
-        # No open PR on the HEAD, but a non-draft one at another head: someone may
-        # have pushed to the implementer's PR after it stopped (a bot, a maintainer),
-        # or it is another repository's. A human decides; dependents keep waiting.
-        other=$(printf '%s\n' "$list" | awk -v h="$wt_head" 'NF && $3 != h && $2 == "false" { printf "%s#%s", (n++ ? " " : ""), $1 }')
-        if [ -z "$pr" ] && [ -n "$other" ]; then
-          finish blocked - "result.json claims ready but the open PR on $proof_branch is not at the worktree's HEAD: $other"; return
-        fi
+      if [ -n "$proof_branch" ]; then
+        # The spec's check, unchanged: the first open PR on the proof branch must
+        # be non-draft. It is not anchored on HEAD (REFERENCE.md: a follow-up).
+        list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft \
+          --jq '.[] | "\(.number) \(.isDraft)"') || die "cannot list open PRs on $proof_branch"
+        pr=$(printf '%s\n' "$list" | awk 'NF { print $1; exit }')
+        draft=$(printf '%s\n' "$list" | awk 'NF { print $2; exit }')
+        if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "$pr" ""; return; fi
       fi
       finish failed - "result.json claims ready but no open, non-draft PR on ${wt_branch:-(none)}" ;;
   esac

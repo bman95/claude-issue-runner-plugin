@@ -93,7 +93,6 @@ W_OTHER=$(wt other someone/unrelated-name)
 W_SEVENTY=$(wt seventy feat/issue-70-slug)
 H_CONTRACT=$(head_of "$W_CONTRACT")
 H_OTHER=$(head_of "$W_OTHER")
-H_SCRATCH=$(head_of "$W_SCRATCH")
 H_SEVENTY=$(head_of "$W_SEVENTY")
 OLD_OID=0123456789abcdef0123456789abcdef01234567
 
@@ -261,15 +260,15 @@ if [ -e "$TMP/pwned" ] || [ -e "$TMP/pwned2" ]; then err "an error string execut
 else ok "no command in the error string ran"; fi
 
 # --- result: row 35, the ready claim ------------------------------------------------
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 false $H_CONTRACT"
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 false"
 rcheck "row 35: open, non-draft PR on the branch -> ready" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 true $H_CONTRACT"
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 true"
 rcheck "row 35: the PR is a draft -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state OPEN
 rcheck "row 35: no open PR -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
-stub_reset; stub issue-state OPEN; stub open-worktree-agent-abc123 "12 false $H_SCRATCH"
+stub_reset; stub issue-state OPEN; stub open-worktree-agent-abc123 "12 false"
 rcheck "row 35: scratch branch is no proof branch -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on worktree-agent-abc123" "$W_SCRATCH" "" ready ""
 no_head_query "row 35: scratch branch runs no --head query"
@@ -292,20 +291,15 @@ rcheck "detached HEAD is a real worktree without a proof branch: blocker -> bloc
   "$DETACHED" "" blocker "checks failed"
 no_head_query "detached HEAD runs no --head query"
 
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '12 true %s\n13 false %s' "$H_CONTRACT" "$H_CONTRACT")"
-rcheck "row 35: two open PRs carry this HEAD (one a draft) -> failed, ambiguous" 0 "failed -" \
-  "result.json claims ready but several open PRs carry its HEAD on feat/issue-7-slug: #12 #13" "$W_CONTRACT" "" ready ""
-# The pushed commit is public: a fork can open a newer, same-named PR on it, which
-# gh lists first. Neither PR is proof of which one is this run's.
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '90 false %s\n12 false %s' "$H_CONTRACT" "$H_CONTRACT")"
-rcheck "row 35: a second non-draft PR on this HEAD (a fork's) -> failed, never ready 90" 0 "failed -" \
-  "result.json claims ready but several open PRs carry its HEAD on feat/issue-7-slug: #90 #12" "$W_CONTRACT" "" ready ""
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '12 true\n13 false')"
+rcheck "row 35: the first open PR is a draft -> failed" 0 "failed -" \
+  "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state OPEN
 rcheck "row 35: ready with the worktree gone names the branch (none)" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on (none)" "$TMP/gone" "" ready ""
 no_head_query "row 35: ready with the worktree gone runs no --head query"
 
-stub_reset; stub issue-state OPEN; stub open-someone_unrelated-name "31 false $H_OTHER"
+stub_reset; stub issue-state OPEN; stub open-someone_unrelated-name "31 false"
 rcheck "row 35: ready on the branch Step 3a recorded -> ready" 0 "ready 31" "" \
   "$W_OTHER" "someone/unrelated-name" ready ""
 stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
@@ -316,15 +310,10 @@ rcheck "outcome ready, but a merged PR and the issue still open -> blocked, no s
 stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "40 $OLD_OID"
 rcheck "a same-named merged PR on another head is no proof" 0 "closed-externally -" "$CLOSED_EXT" \
   "$W_CONTRACT" "" merged ""
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '40 false %s\n12 false %s' "$OLD_OID" "$H_CONTRACT")"
-rcheck "ready takes the open PR carrying this HEAD, not a same-named one" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "40 false $OLD_OID"
-rcheck "ready with only a non-draft PR at another head (pushed to after the run) -> blocked" 0 "blocked -" \
-  "result.json claims ready but the open PR on feat/issue-7-slug is not at the worktree's HEAD: #40" "$W_CONTRACT" "" ready ""
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "40 true $OLD_OID"
-rcheck "ready with only a draft PR at another head -> failed" 0 "failed -" \
-  "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
-
+# `ready` keeps the spec's check: the first open PR on the proof branch, not
+# anchored on HEAD (a pushed-to PR stays ready; a fork's same-named PR is a follow-up).
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '40 false\n12 false')"
+rcheck "ready reads the first open PR on the branch, as the spec's .[0] does" 0 "ready 40" "" "$W_CONTRACT" "" ready ""
 # --- result: failures and usage ------------------------------------------------------
 stub_reset
 rcheck "issue state query fails -> exit 1, no classification, error file untouched" 1 "" "" \

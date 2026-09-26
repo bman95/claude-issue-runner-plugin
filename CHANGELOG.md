@@ -26,7 +26,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
   - An unproven `merged` or `ready` claim with no worktree names its branch as `(none)`.
   - `branch only (no PR)` means no PR in any state. A branch whose PRs are all merged or closed is listed as `no open PR (only merged or closed PRs: …)`.
   - `pr-shape` lists open PRs with `--limit 1000` instead of gh's default of 30.
-  - `ready` now requires exactly one open PR carrying the worktree's `HEAD` (the same anchor as the merge proof), so a same-named PR on another head, whether a fork's or an older run's, never passes, and a second PR on the same commit (a fork can open one) fails the claim as ambiguous. When no open PR carries the `HEAD` but a non-draft one sits at another head (a push after the implementer stopped), the issue is `blocked` with `result.json claims ready but the open PR on <branch> is not at the worktree's HEAD: #P`, where the `.[0]` check read it as `ready`. In `pr-shape`, an open PR whose branch is not on origin gets a `shape unknown (branch not on origin)` line instead of failing the whole call.
+  - In `pr-shape`, an open PR whose branch is not on origin gets a `shape unknown (branch not on origin)` line instead of failing the whole call.
   - A `## Plan` heading is matched as a heading line.
 
   The Codex edition calls a byte-identical copy under `canonical/issue-runner/scripts/`.
