@@ -12,30 +12,31 @@
 # fetches and probes its `origin`.
 #
 # Usage:
-#   classify.sh result <N> <worktree> <recorded-branch> <outcome> <error-file>
-#     <worktree>         the implementer's worktree path, or "" when none is known
-#                        (never run `git -C ""`: it silently reads the cwd)
-#     <recorded-branch>  $STATE_DIR/issue-N/branch (Step 3a's non-contract resume
-#                        branch), or ""
-#     <outcome>          merged | ready | blocker | failed — result.json's
-#                        `outcome`, or the prose classification of the final
-#                        message when the file is absent or unreadable;
-#                        hung — stopped by Step 3 item 4;
-#                        none — crashed, nothing to classify
-#     <error-file>       $STATE_DIR/issue-N/error, holding the implementer's
-#                        `blocker` string or message, or item 4's hang string,
-#                        verbatim — written by the caller as a file, never passed
-#                        on a command line (it is untrusted text: in a shell
-#                        argument, backticks and $(...) would run). Absent or empty
-#                        = no error. The script rewrites it in place with the final
-#                        error text (removes it when there is none) before it prints.
+#   classify.sh result <N> <issue-dir>
+#     <issue-dir> is $STATE_DIR/issue-N. Every input is read from a file there,
+#     so the call is the same on every run and re-running it (a retry after a
+#     failed query, Step 4's "Mark `done`") classifies the same inputs again:
+#       worktree  the implementer's worktree path; absent or empty = none known
+#                 (never `git -C ""`: it silently reads the cwd)
+#       branch    Step 3a's recorded non-contract resume branch; absent = none
+#       outcome   required, one word: merged | ready | blocker | failed —
+#                 result.json's `outcome`, or the prose classification of the
+#                 final message when that file is absent or unreadable;
+#                 hung — stopped by Step 3 item 4; none — crashed
+#       blocker   the implementer's `blocker` string or message, or item 4's
+#                 hang string, verbatim; absent or empty = none. Untrusted text:
+#                 the caller writes it as a file, never on a command line, where
+#                 backticks and $(...) would run. Never modified here.
+#     It writes one file, `error` (the final error text; removed when there is
+#     none), and nothing else.
 #
 #   classify.sh pr-shape <N> <default-branch>
 #     for an issue that is not `done` or `ready`: its open PR on the
 #     `/issue-N-` branch contract, and its orphan branches (Step 3a probe 3)
 #
 # Output — `result` prints exactly one line, `<status> <pr>` (<pr> is the bare
-# PR number, or `-`), and leaves the final error in <error-file>:
+# PR number, or `-`), and leaves the final error in <issue-dir>/error
+# (<blocker> below is the `blocker` file's text):
 #   done P               CLOSED, and a merged PR P on the proof branch whose
 #                        headRefOid is the worktree's HEAD — the only status that
 #                        authorizes Step 5's `git branch -D`; no error
@@ -43,14 +44,15 @@
 #                        the contract, another head's merged PR); error
 #                        `closed without a merged implementer PR`
 #   blocked P            open, with that proof; error `PR #P merged but issue still
-#                        open — confirm and close by hand`, followed by `: <error>`
+#                        open — confirm and close by hand`, followed by `: <blocker>`
 #                        when there is one, except for outcome `merged`
-#   blocked -            open, no proof, outcome `blocker`, worktree real; error kept
+#   blocked -            open, no proof, outcome `blocker`, worktree real; error is
+#                        <blocker>
 #   ready P              open, no proof, outcome `ready`, and an open, non-draft PR P
 #                        on the proof branch; no error
 #   failed -             open, no proof, and outcome `failed`, `hung` or `none` — or
 #                        outcome `blocker` with the worktree gone (an empty or
-#                        unreadable branch); error kept. Outcome `merged`: error
+#                        unreadable branch); error is <blocker>. Outcome `merged`: error
 #                        `result.json claims merged but no merged PR on <branch>`;
 #                        outcome `ready`: `result.json claims ready but no open,
 #                        non-draft PR on <branch>` (<branch> is the worktree's
@@ -69,13 +71,17 @@
 #                                                     the ready→merge window)
 #   branch <B> branch only (no PR)                    a pushed `/issue-N-` branch with no
 #                                                     PR at all, in any state (Step 3a's
-#                                                     orphan); a branch whose only PRs
-#                                                     are merged or closed is not listed
+#                                                     orphan)
+#   branch <B> no open PR (only merged or closed PRs: #P …)
+#                                                     a pushed branch whose PRs are all
+#                                                     merged or closed: it may still hold
+#                                                     work nobody merged
 #
 # Exit status: 0 with the lines above. Non-zero prints nothing on stdout,
-# leaves <error-file> untouched, and is never a classification: 1 — a query
-# failed (gh, the fetch, ls-remote, rev-list) or <error-file> could not be
-# read or rewritten: an environment failure; 2 — a usage error.
+# leaves `error` untouched, and is never a classification: 1 — a query failed
+# (gh, the fetch, ls-remote, rev-list) or a state file could not be read or
+# written: an environment failure; 2 — a usage error (including a missing or
+# unknown `outcome`).
 #
 # Dependencies: bash 3.2, coreutils, grep, awk, git, gh (its built-in --jq only
 # projects fields; every decision is made here).
@@ -88,7 +94,8 @@ usage() { echo "classify.sh: $1" >&2; exit 2; }
 
 MODE=${1:-}
 N=${2:-}
-case $N in ''|*[!0-9]*) usage "issue number must be a positive integer, got '${N}'" ;; esac
+case $MODE in result|pr-shape) ;; *) usage "unknown mode '$MODE' (expected result or pr-shape)" ;; esac
+case $N in ''|*[!0-9]*|0*) usage "issue number must be a positive integer, got '${N}'" ;; esac
 
 # finish STATUS PR ERROR: rewrite the error file (through a temp file in the
 # same directory, so a failed write never leaves it half-written), then print.
@@ -105,13 +112,22 @@ finish() {
   echo "$1 $2"
 }
 
+# read_state NAME: a state file's content, "" when absent; exit 1 when unreadable
+read_state() {
+  [ -e "$DIR/$1" ] || return 0
+  cat "$DIR/$1" || die "cannot read $DIR/$1"
+}
+
 classify_result() {
-  local wt="$1" recorded="$2" outcome="$3" error=""
+  local wt recorded outcome error
   local state wt_branch="" wt_head="" proof_branch="" merged_pr="" list pr draft
-  case $outcome in merged|ready|blocker|failed|hung|none) ;; *) usage "unknown outcome '$outcome'" ;; esac
-  if [ -e "$ERROR_FILE" ]; then
-    error=$(cat "$ERROR_FILE") || die "cannot read $ERROR_FILE"
-  fi
+  [ -d "$DIR" ] || usage "not a directory: $DIR"
+  wt=$(read_state worktree) || exit 1
+  recorded=$(read_state branch) || exit 1
+  outcome=$(read_state outcome) || exit 1
+  error=$(read_state blocker) || exit 1
+  outcome=$(printf '%s' "$outcome" | tr -d '[:space:]')
+  case $outcome in merged|ready|blocker|failed|hung|none) ;; *) usage "missing or unknown outcome '$outcome' in $DIR/outcome" ;; esac
 
   state=$(gh issue view "$N" --json state --jq .state) || die "cannot query the state of issue #$N"
   case $state in OPEN|CLOSED) ;; *) die "unexpected state '$state' for issue #$N" ;; esac
@@ -124,7 +140,7 @@ classify_result() {
   # Step 3a recorded for a keyword-only resume. Never empty into the query:
   # `gh pr list --head ""` applies no filter and returns unrelated merged PRs.
   case $wt_branch in */issue-"$N"-*) proof_branch=$wt_branch ;; esac
-  [ -n "$wt_branch" ] && [ "$wt_branch" = "$recorded" ] && proof_branch=$wt_branch
+  [ -n "$wt_branch" ] && [ "$wt_branch" = "$(printf '%s' "$recorded" | tr -d '[:space:]')" ] && proof_branch=$wt_branch
   if [ -n "$proof_branch" ] && [ -n "$wt_head" ]; then
     list=$(gh pr list --head "$proof_branch" --state merged --json number,headRefOid \
       --jq '.[] | "\(.number) \(.headRefOid)"') || die "cannot list merged PRs on $proof_branch"
@@ -166,7 +182,7 @@ classify_result() {
 classify_pr_shape() {
   local default="$1" list prs out="" p b view draft body count shape refs rc ref any
   [ -n "$default" ] || usage "empty default branch"
-  list=$(gh pr list --state open --json number,headRefName,isDraft \
+  list=$(gh pr list --state open --limit 1000 --json number,headRefName,isDraft \
     --jq '.[] | "\(.number) \(.headRefName) \(.isDraft)"') || die "cannot list open PRs"
   prs=$(printf '%s\n' "$list" | awk -v pat="/issue-$N-" 'NF && index($2, pat) { print $1, $2 }')
 
@@ -199,10 +215,13 @@ EOF_PRS
          b=${ref#refs/heads/}
          [ -n "$b" ] || continue
          printf '%s\n' "$prs" | awk -v b="$b" '$2 == b { f = 1 } END { exit !f }' && continue
-         any=$(gh pr list --head "$b" --state all --json number --jq '.[] | .number' </dev/null) \
+         any=$(gh pr list --head "$b" --state all --limit 1000 --json number --jq '.[] | .number' </dev/null) \
            || die "cannot list PRs on $b"
-         [ -n "$any" ] && continue
-         out="${out}branch $b branch only (no PR)"$'\n'
+         if [ -n "$any" ]; then
+           out="${out}branch $b no open PR (only merged or closed PRs: $(printf '%s' "$any" | awk 'NF { printf "%s#%s", (n++ ? " " : ""), $1 }'))"$'\n'
+         else
+           out="${out}branch $b branch only (no PR)"$'\n'
+         fi
        done <<EOF_REFS
 $refs
 EOF_REFS
@@ -216,11 +235,10 @@ EOF_REFS
 
 case $MODE in
   result)
-    [ $# -ge 6 ] && [ -n "$6" ] || usage "result needs <N> <worktree> <recorded-branch> <outcome> <error-file>"
-    ERROR_FILE=$6
-    classify_result "$3" "$4" "$5" ;;
+    [ $# -ge 3 ] && [ -n "$3" ] || usage "result needs <N> <issue-dir>"
+    DIR=${3%/}; ERROR_FILE="$DIR/error"
+    classify_result ;;
   pr-shape)
     [ $# -ge 3 ] || usage "pr-shape needs <N> <default-branch>"
     classify_pr_shape "$3" ;;
-  *) usage "unknown mode '$MODE' (expected result or pr-shape)" ;;
 esac

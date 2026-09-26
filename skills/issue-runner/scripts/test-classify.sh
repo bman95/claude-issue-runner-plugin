@@ -115,26 +115,38 @@ check() {
   fi
 }
 
-# rcheck NAME EXPECTED_EXIT "STATUS PR" EXPECTED_ERROR WORKTREE RECORDED OUTCOME INPUT_ERROR
-#   Writes INPUT_ERROR to the error file the way the orchestrator does (a file,
-#   never an argument; "" = no file), runs `result`, and checks both the stdout
-#   line and the error file the script leaves behind ("" = no file). On a
-#   non-zero exit the error file must be exactly as it was.
-ERRF="$TMP/issue-error"
+# rcheck NAME EXPECTED_EXIT "STATUS PR" EXPECTED_ERROR WORKTREE RECORDED OUTCOME BLOCKER
+#   Lays out $STATE_DIR/issue-7 the way the orchestrator does (worktree,
+#   branch, outcome and blocker files; "" = no file — the blocker is always a
+#   file, never an argument), runs `result 7 <dir>`, and checks the stdout line
+#   and the `error` file left behind ("" = no file). On a non-zero exit `error`
+#   must be exactly as it was (a pre-existing sentinel), and `blocker` is never
+#   modified.
+ID="$TMP/state/issue-7"
+lay_out() {   # lay_out WORKTREE RECORDED OUTCOME BLOCKER
+  rm -rf "$ID"; mkdir -p "$ID"
+  [ -n "$1" ] && printf '%s\n' "$1" > "$ID/worktree"
+  [ -n "$2" ] && printf '%s\n' "$2" > "$ID/branch"
+  [ -n "$3" ] && printf '%s\n' "$3" > "$ID/outcome"
+  [ -n "$4" ] && printf '%s\n' "$4" > "$ID/blocker"
+  printf 'sentinel from an earlier step\n' > "$ID/error"
+  return 0
+}
 rcheck() {
-  local name="$1" want_rc="$2" want_out="$3" want_err="$4" wt="$5" rec="$6" outcome="$7" in_err="$8"
-  local out rc got_err want_file
-  rm -f "$ERRF"; [ -n "$in_err" ] && printf '%s\n' "$in_err" > "$ERRF"
-  out=$(cd "$REPO" && bash "$SCRIPT" result 7 "$wt" "$rec" "$outcome" "$ERRF" 2>"$TMP/stderr"); rc=$?
-  if [ -e "$ERRF" ]; then got_err=$(cat "$ERRF"); else got_err="<no file>"; fi
+  local name="$1" want_rc="$2" want_out="$3" want_err="$4"
+  local out rc got_err got_blk want_file
+  lay_out "$5" "$6" "$7" "$8"
+  out=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID" 2>"$TMP/stderr"); rc=$?
+  if [ -e "$ID/error" ]; then got_err=$(cat "$ID/error"); else got_err="<no file>"; fi
+  if [ -e "$ID/blocker" ]; then got_blk=$(cat "$ID/blocker"); else got_blk=""; fi
   want_file=$want_err; [ -n "$want_file" ] || want_file="<no file>"
-  [ "$rc" = 0 ] || want_file=${in_err:-<no file>}
-  if [ "$rc" = "$want_rc" ] && [ "$out" = "$want_out" ] && [ "$got_err" = "$want_file" ]; then
+  [ "$rc" = 0 ] || want_file="sentinel from an earlier step"
+  if [ "$rc" = "$want_rc" ] && [ "$out" = "$want_out" ] && [ "$got_err" = "$want_file" ] && [ "$got_blk" = "$8" ]; then
     ok "$name"
   else
     err "$name (exit $rc, want $want_rc)"
     printf '%s | error: %s\n' "$want_out" "$want_file" | sed 's/^/  expected> /' >&2
-    printf '%s | error: %s\n' "$out" "$got_err" | sed 's/^/  actual  > /' >&2
+    printf '%s | error: %s | blocker: %s\n' "$out" "$got_err" "$got_blk" | sed 's/^/  actual  > /' >&2
     sed 's/^/  stderr  > /' "$TMP/stderr" >&2
   fi
 }
@@ -195,7 +207,7 @@ rcheck "row 14: CLOSED + outcome merged + no merged PR -> closed-externally" 0 "
 # --- result: row 16, merged but still open (and its suffixes) ----------------------
 stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
 rcheck "row 16: open + merged PR, outcome merged -> blocked, no suffix" 0 "blocked 11" "$MERGED_OPEN" \
-  "$W_CONTRACT" "" merged "stale text from the file"
+  "$W_CONTRACT" "" merged "a merged claim's message is no suffix"
 rcheck "row 16: open + merged PR, outcome blocker -> blocked with the blocker suffix" 0 "blocked 11" \
   "$MERGED_OPEN: base freshness conflict" "$W_CONTRACT" "" blocker "base freshness conflict"
 rcheck "row 21: hung after merge, issue still open -> blocked with the hang suffix" 0 "blocked 11" \
@@ -261,6 +273,28 @@ rcheck "row 35: scratch branch is no proof branch -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on worktree-agent-abc123" "$W_SCRATCH" "" ready ""
 no_head_query "row 35: scratch branch runs no --head query"
 
+# --- result: re-runs, detached HEAD, several open PRs ------------------------------
+stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
+lay_out "$W_CONTRACT" "" blocker "base freshness conflict"
+first=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID"; cat "$ID/error")
+second=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID"; cat "$ID/error")
+if [ "$first" = "$second" ] && [ "$(cat "$ID/blocker")" = "base freshness conflict" ]; then
+  ok "re-running result classifies the same inputs again (no double suffix)"
+else
+  err "re-running result is not idempotent:"; printf '%s\n---\n%s\n' "$first" "$second" | sed 's/^/  > /' >&2
+fi
+
+DETACHED="$TMP/wt-detached"
+git -C "$REPO" worktree add -q --detach "$DETACHED" main >/dev/null 2>&1
+stub_reset; stub issue-state OPEN
+rcheck "detached HEAD is a real worktree without a proof branch: blocker -> blocked" 0 "blocked -" "checks failed" \
+  "$DETACHED" "" blocker "checks failed"
+no_head_query "detached HEAD runs no --head query"
+
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '12 true\n13 false')"
+rcheck "row 35: the first open PR is a draft -> failed (the first PR decides, as before)" 0 "failed -" \
+  "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
+
 # --- result: failures and usage ------------------------------------------------------
 stub_reset
 rcheck "issue state query fails -> exit 1, no classification, error file untouched" 1 "" "" \
@@ -273,10 +307,21 @@ stub_reset; stub issue-state MERGED
 rcheck "unexpected issue state -> exit 1" 1 "" "" "$W_CONTRACT" "" merged ""
 stub_reset; stub issue-state OPEN
 rcheck "unknown outcome -> exit 2" 2 "" "" "$W_CONTRACT" "" success ""
-check "non-numeric issue -> exit 2" 2 "" -- result 7x "$W_CONTRACT" "" merged "$ERRF"
-check "missing error-file argument -> exit 2" 2 "" -- result 7 "$W_CONTRACT" "" merged
-check "empty error-file argument -> exit 2" 2 "" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "missing outcome file -> exit 2" 2 "" "" "$W_CONTRACT" "" "" ""
+lay_out "$W_CONTRACT" "" failed "x"; chmod 0555 "$ID"
+rcheck_ro=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID" 2>/dev/null); rc=$?
+chmod 0755 "$ID"
+if [ "$rc" = 1 ] && [ -z "$rcheck_ro" ] && [ "$(cat "$ID/error")" = "sentinel from an earlier step" ]; then
+  ok "error file cannot be written -> exit 1, nothing printed, error untouched"
+else
+  err "unwritable issue dir: exit $rc, stdout '$rcheck_ro'"
+fi
+check "non-numeric issue -> exit 2" 2 "" -- result 7x "$ID"
+check "issue 0 -> exit 2" 2 "" -- result 0 "$ID"
+check "missing issue-dir argument -> exit 2" 2 "" -- result 7
+check "issue dir that does not exist -> exit 2" 2 "" -- result 7 "$TMP/no-such-dir"
 check "unknown mode -> exit 2" 2 "" -- classify 7
+check "unknown mode is reported before the issue number" 2 "" -- classify
 
 # --- pr-shape ---------------------------------------------------------------------------
 # A second origin whose `main` advances after the clone: a branch forked from
@@ -331,8 +376,9 @@ stub_reset; stub open-all "70 feat/issue-70-slug true"
 check "row 23: pushed branch, no open PR -> branch only (no PR)" 0 \
   "branch feat/issue-9-orphan branch only (no PR)" -- pr-shape 9 main
 check "no PR and no branch -> none" 0 "none" -- pr-shape 11 main
-stub all-feat_issue-9-orphan "41"
-check "row 23: a branch whose only PR is merged or closed is no orphan -> none" 0 "none" -- pr-shape 9 main
+stub all-feat_issue-9-orphan "$(printf '41\n43')"
+check "row 23: a branch whose PRs are all merged or closed is listed, not as an orphan" 0 \
+  "branch feat/issue-9-orphan no open PR (only merged or closed PRs: #41 #43)" -- pr-shape 9 main
 
 push_branch chore/issue-7-second 1
 stub_reset; stub open-all "21 feat/issue-7-slug true"; stub view-21 "true"$'\n'"$PLAN_BODY"

@@ -21,10 +21,11 @@ All notable changes to this plugin will be documented here. Versions follow semv
   - `result` covers Step 3 item 5: the issue-state and merged-PR queries, the proof branch with its empty-branch guard, the `headRefOid` anchor, the `ready` check and the hang-suffix rule.
   - `pr-shape` covers Step 5: the `draft (checkpoint)` and `draft (implemented, not ready)` labels, their `non-draft (…)` twins, and `branch only (no PR)` via probe 3.
 
-  Each mode prints one line per verdict, and the statuses and error strings are unchanged. Item 5, the item 4 recap, Step 4's "Mark `done`" and Step 5 now call the script. The rationale moved into REFERENCE.md's merge-proof and draft-checkpoint entries. The implementer's error reaches the script as the `issue-N/error` file, written with a file tool and rewritten in place by the script, never as a shell argument, because blocker text is untrusted. Cases the prose left open are now explicit, flagged for the release slice (#62):
+  Each mode prints one line per verdict, and the statuses and error strings are unchanged. Item 5, the item 4 recap, Step 4's "Mark `done`" and Step 5 now call the script. The rationale moved into REFERENCE.md's merge-proof and draft-checkpoint entries. `result <N> <issue-dir>` reads its inputs from state files: `worktree` and `branch`, plus two new per-attempt files, `outcome` and `blocker`. Step 3a clears the new files on every dispatch. The orchestrator writes `blocker` with a file tool, never as a shell argument, because blocker text is untrusted. The script writes only `issue-N/error`, so re-running it is idempotent. Cases the prose left open are now explicit, flagged for the release slice (#62):
   - A failed `gh` or git query exits non-zero and never reads as "no proof". Item 5 retries once, then records `blocked` with `classification failed: …`. Step 4 answers that by re-running the call, never with a retry dispatch. Step 5 lists `PR shape unknown: …`.
   - An unproven `merged` or `ready` claim with no worktree names its branch as `(none)`.
-  - `branch only (no PR)` means no PR in any state.
+  - `branch only (no PR)` means no PR in any state. A branch whose PRs are all merged or closed is listed as `no open PR (only merged or closed PRs: …)`.
+  - `pr-shape` lists open PRs with `--limit 1000` instead of gh's default of 30.
   - A `## Plan` heading is matched as a heading line.
 
   The Codex edition calls a byte-identical copy under `canonical/issue-runner/scripts/`.
