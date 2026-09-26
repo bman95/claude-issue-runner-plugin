@@ -69,6 +69,9 @@
 #   pr #P <branch> non-draft (implemented, not ready) not a draft (checkpoint refused, a
 #                                                     failed revert, or a crash inside
 #                                                     the ready→merge window)
+#   pr #P <branch> shape unknown (branch not on origin)
+#                                                     an open PR whose head branch origin
+#                                                     does not carry (a same-named fork PR)
 #   branch <B> branch only (no PR)                    a pushed `/issue-N-` branch with no
 #                                                     PR at all, in any state (Step 3a's
 #                                                     orphan)
@@ -83,8 +86,10 @@
 # written: an environment failure; 2 — a usage error (including a missing or
 # unknown `outcome`).
 #
-# A PR from a fork (`isCrossRepository`) is never the runner's, whatever its
-# branch name: every PR query below ignores it.
+# Forks: a same-named PR from another repository proves nothing, because every
+# `result` check is anchored on the worktree's HEAD commit (a fork cannot forge
+# it). No query filters on `isCrossRepository`: when `origin` is itself a fork
+# of the repository gh targets, every implementer PR is cross-repository.
 #
 # Dependencies: bash 3.2, coreutils, grep, awk, git, gh (its built-in --jq only
 # projects fields; every decision is made here).
@@ -145,11 +150,11 @@ classify_result() {
   case $wt_branch in */issue-"$N"-*) proof_branch=$wt_branch ;; esac
   [ -n "$wt_branch" ] && [ "$wt_branch" = "$(printf '%s' "$recorded" | tr -d '[:space:]')" ] && proof_branch=$wt_branch
   if [ -n "$proof_branch" ] && [ -n "$wt_head" ]; then
-    list=$(gh pr list --head "$proof_branch" --state merged --json number,headRefOid,isCrossRepository \
-      --jq '.[] | "\(.number) \(.headRefOid) \(.isCrossRepository)"') || die "cannot list merged PRs on $proof_branch"
+    list=$(gh pr list --head "$proof_branch" --state merged --json number,headRefOid \
+      --jq '.[] | "\(.number) \(.headRefOid)"') || die "cannot list merged PRs on $proof_branch"
     # Anchored on this attempt's commit: a previous run's merged PR on a
     # recurring branch name is not this attempt's proof.
-    merged_pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$2 == h && $3 == "false" { print $1; exit }')
+    merged_pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$2 == h { print $1; exit }')
   fi
 
   if [ "$state" = CLOSED ]; then
@@ -171,11 +176,13 @@ classify_result() {
     merged)
       finish failed - "result.json claims merged but no merged PR on ${wt_branch:-(none)}" ;;
     ready)
-      if [ -n "$proof_branch" ]; then
-        list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft,isCrossRepository \
-          --jq '.[] | "\(.number) \(.isDraft) \(.isCrossRepository)"') || die "cannot list open PRs on $proof_branch"
-        pr=$(printf '%s\n' "$list" | awk '$3 == "false" { print $1; exit }')
-        draft=$(printf '%s\n' "$list" | awk '$3 == "false" { print $2; exit }')
+      if [ -n "$proof_branch" ] && [ -n "$wt_head" ]; then
+        # The open PR carrying this attempt's commit: a same-named PR on another
+        # head (a fork's, an older run's) is never this claim's proof.
+        list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft,headRefOid \
+          --jq '.[] | "\(.number) \(.isDraft) \(.headRefOid)"') || die "cannot list open PRs on $proof_branch"
+        pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { print $1; exit }')
+        draft=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$3 == h { print $2; exit }')
         if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "$pr" ""; return; fi
       fi
       finish failed - "result.json claims ready but no open, non-draft PR on ${wt_branch:-(none)}" ;;
@@ -185,16 +192,26 @@ classify_result() {
 classify_pr_shape() {
   local default="$1" list prs out="" p b view draft body count shape refs rc ref any
   [ -n "$default" ] || usage "empty default branch"
-  list=$(gh pr list --state open --limit 1000 --json number,headRefName,isDraft,isCrossRepository \
-    --jq '.[] | "\(.number) \(.headRefName) \(.isDraft) \(.isCrossRepository)"') || die "cannot list open PRs"
-  prs=$(printf '%s\n' "$list" | awk -v pat="/issue-$N-" '$4 == "false" && index($2, pat) { print $1, $2 }')
+  list=$(gh pr list --state open --limit 1000 --json number,headRefName,isDraft \
+    --jq '.[] | "\(.number) \(.headRefName) \(.isDraft)"') || die "cannot list open PRs"
+  prs=$(printf '%s\n' "$list" | awk -v pat="/issue-$N-" 'NF && index($2, pat) { print $1, $2 }')
+  # Explicit destination: a single-branch clone would fetch only into FETCH_HEAD,
+  # and a stale default branch inflates the count below.
+  if [ -n "$prs" ]; then
+    git fetch -q origin "+refs/heads/$default:refs/remotes/origin/$default" </dev/null 2>/dev/null \
+      || die "cannot fetch origin/$default"
+  fi
 
   while read -r p b; do
     [ -n "$p" ] || continue
-    # Explicit destinations: a single-branch clone would fetch only into
-    # FETCH_HEAD. Both refs: a stale default branch inflates the count.
-    git fetch -q origin "+refs/heads/$default:refs/remotes/origin/$default" \
-      "+refs/heads/$b:refs/remotes/origin/$b" </dev/null 2>/dev/null || die "cannot fetch origin/$default and origin/$b"
+    # A PR whose head branch is not on origin (a same-named fork PR) cannot be
+    # shaped; it gets its own line rather than hiding the others.
+    if ! git ls-remote --exit-code --heads origin "refs/heads/$b" >/dev/null 2>&1 </dev/null; then
+      git ls-remote --heads origin >/dev/null 2>&1 </dev/null || die "cannot reach origin"
+      out="${out}pr #$p $b shape unknown (branch not on origin)"$'\n'
+      continue
+    fi
+    git fetch -q origin "+refs/heads/$b:refs/remotes/origin/$b" </dev/null 2>/dev/null || die "cannot fetch origin/$b"
     count=$(git rev-list --count "origin/$default..origin/$b" </dev/null 2>/dev/null) || die "cannot count origin/$default..origin/$b"
     view=$(gh pr view "$p" --json isDraft,body --jq '.isDraft, .body' </dev/null) || die "cannot view PR #$p"
     draft=$(printf '%s\n' "$view" | head -n 1)
@@ -218,9 +235,8 @@ EOF_PRS
          b=${ref#refs/heads/}
          [ -n "$b" ] || continue
          printf '%s\n' "$prs" | awk -v b="$b" '$2 == b { f = 1 } END { exit !f }' && continue
-         any=$(gh pr list --head "$b" --state all --limit 1000 --json number,isCrossRepository \
-           --jq '.[] | "\(.number) \(.isCrossRepository)"' </dev/null) || die "cannot list PRs on $b"
-         any=$(printf '%s\n' "$any" | awk '$2 == "false" { print $1 }')
+         any=$(gh pr list --head "$b" --state all --limit 1000 --json number --jq '.[] | .number' </dev/null) \
+           || die "cannot list PRs on $b"
          if [ -n "$any" ]; then
            out="${out}branch $b no open PR (only merged or closed PRs: $(printf '%s' "$any" | awk 'NF { printf "%s#%s", (n++ ? " " : ""), $1 }'))"$'\n'
          else

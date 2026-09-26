@@ -26,7 +26,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
   - An unproven `merged` or `ready` claim with no worktree names its branch as `(none)`.
   - `branch only (no PR)` means no PR in any state. A branch whose PRs are all merged or closed is listed as `no open PR (only merged or closed PRs: …)`.
   - `pr-shape` lists open PRs with `--limit 1000` instead of gh's default of 30.
-  - A fork's PR (`isCrossRepository`) is ignored by every query: it can neither prove a merge, pass as `ready`, nor break `pr-shape`.
+  - `ready` now requires the open PR to carry the worktree's `HEAD` (the same anchor as the merge proof), so a same-named PR on another head, whether a fork's or an older run's, never passes. In `pr-shape`, an open PR whose branch is not on origin gets a `shape unknown (branch not on origin)` line instead of failing the whole call.
   - A `## Plan` heading is matched as a heading line.
 
   The Codex edition calls a byte-identical copy under `canonical/issue-runner/scripts/`.

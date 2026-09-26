@@ -37,14 +37,12 @@ if [ ! -f "$SCRIPT" ]; then err "classify.sh not found"; exit 1; fi
 # Answers from files in $GH_STUB (branch names have `/` replaced by `_`):
 #   issue-state          `gh issue view N`            (absent → the call fails)
 #   merged-<branch>      `gh pr list --head B --state merged`  "number oid" lines
-#   open-<branch>        `gh pr list --head B --state open`    "number isDraft" lines
+#   open-<branch>        `gh pr list --head B --state open`    "number isDraft headRefOid" lines
 #   open-all             `gh pr list --state open`             "number branch isDraft" lines
 #   all-<branch>         `gh pr list --head B --state all`     "number" lines (absent = no PR)
 #   view-<P>             `gh pr view P`                        isDraft line, then the body
 #   fail-prlist          any `gh pr list` fails
 #   fail-prlist-<state>  `gh pr list --state <state>` fails
-# Every PR-listing line gets a trailing isCrossRepository field (`false`, or
-# `true` for a line ending in the word `fork`).
 # Every call is appended to $GH_STUB/log as `[arg][arg]…`.
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/gh" <<'EOF'
@@ -62,9 +60,7 @@ case "$1 $2" in
     done
     [ -f "$d/fail-prlist-$state" ] && exit 1
     if [ -z "$head" ]; then f="$d/open-all"; else f="$d/$state-$(printf '%s' "$head" | tr / _)"; fi
-    # Every PR listing ends with isCrossRepository: `false` unless the fixture
-    # line ends with the word `fork` (then `true`).
-    [ -f "$f" ] && awk 'NF { if ($NF == "fork") { $NF = "true"; print } else print $0 " false" }' "$f"; exit 0 ;;
+    [ -f "$f" ] && cat "$f"; exit 0 ;;
 esac
 exit 1
 EOF
@@ -97,6 +93,7 @@ W_OTHER=$(wt other someone/unrelated-name)
 W_SEVENTY=$(wt seventy feat/issue-70-slug)
 H_CONTRACT=$(head_of "$W_CONTRACT")
 H_OTHER=$(head_of "$W_OTHER")
+H_SCRATCH=$(head_of "$W_SCRATCH")
 H_SEVENTY=$(head_of "$W_SEVENTY")
 OLD_OID=0123456789abcdef0123456789abcdef01234567
 
@@ -264,15 +261,15 @@ if [ -e "$TMP/pwned" ] || [ -e "$TMP/pwned2" ]; then err "an error string execut
 else ok "no command in the error string ran"; fi
 
 # --- result: row 35, the ready claim ------------------------------------------------
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 false"
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 false $H_CONTRACT"
 rcheck "row 35: open, non-draft PR on the branch -> ready" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 true"
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 true $H_CONTRACT"
 rcheck "row 35: the PR is a draft -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state OPEN
 rcheck "row 35: no open PR -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
-stub_reset; stub issue-state OPEN; stub open-worktree-agent-abc123 "12 false"
+stub_reset; stub issue-state OPEN; stub open-worktree-agent-abc123 "12 false $H_SCRATCH"
 rcheck "row 35: scratch branch is no proof branch -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on worktree-agent-abc123" "$W_SCRATCH" "" ready ""
 no_head_query "row 35: scratch branch runs no --head query"
@@ -295,23 +292,26 @@ rcheck "detached HEAD is a real worktree without a proof branch: blocker -> bloc
   "$DETACHED" "" blocker "checks failed"
 no_head_query "detached HEAD runs no --head query"
 
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '12 true\n13 false')"
-rcheck "row 35: the first open PR is a draft -> failed (the first PR decides, as before)" 0 "failed -" \
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '12 true %s\n13 false %s' "$H_CONTRACT" "$H_CONTRACT")"
+rcheck "row 35: the first open PR carrying this HEAD is a draft -> failed" 0 "failed -" \
   "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 
-stub_reset; stub issue-state OPEN; stub open-someone_unrelated-name "31 false"
+stub_reset; stub issue-state OPEN; stub open-someone_unrelated-name "31 false $H_OTHER"
 rcheck "row 35: ready on the branch Step 3a recorded -> ready" 0 "ready 31" "" \
   "$W_OTHER" "someone/unrelated-name" ready ""
 stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
 rcheck "outcome ready, but a merged PR and the issue still open -> blocked, no suffix" 0 "blocked 11" "$MERGED_OPEN" \
   "$W_CONTRACT" "" ready ""
 
-# --- result: a fork's PR is never the runner's ---------------------------------------
-stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "11 $H_CONTRACT fork"
-rcheck "a merged fork PR with the same branch name and head is no proof" 0 "closed-externally -" "$CLOSED_EXT" \
+# --- result: same-named PRs on other heads (a fork's, an older run's) ----------------
+stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "40 $OLD_OID"
+rcheck "a same-named merged PR on another head is no proof" 0 "closed-externally -" "$CLOSED_EXT" \
   "$W_CONTRACT" "" merged ""
-stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '40 false fork\n12 false')"
-rcheck "ready skips a fork's open PR on the same branch name" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "$(printf '40 false %s\n12 false %s' "$OLD_OID" "$H_CONTRACT")"
+rcheck "ready takes the open PR carrying this HEAD, not a same-named one" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
+stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "40 false $OLD_OID"
+rcheck "ready with only a same-named PR on another head -> failed" 0 "failed -" \
+  "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 
 # --- result: failures and usage ------------------------------------------------------
 stub_reset
@@ -326,13 +326,17 @@ rcheck "unexpected issue state -> exit 1" 1 "" "" "$W_CONTRACT" "" merged ""
 stub_reset; stub issue-state OPEN
 rcheck "unknown outcome -> exit 2" 2 "" "" "$W_CONTRACT" "" success ""
 rcheck "missing outcome file -> exit 2" 2 "" "" "$W_CONTRACT" "" "" ""
-lay_out "$W_CONTRACT" "" failed "x"; chmod 0555 "$ID"
-rcheck_ro=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID" 2>/dev/null); rc=$?
-chmod 0755 "$ID"
-if [ "$rc" = 1 ] && [ -z "$rcheck_ro" ] && [ "$(cat "$ID/error")" = "sentinel from an earlier step" ]; then
-  ok "error file cannot be written -> exit 1, nothing printed, error untouched"
+if [ "$(id -u)" = 0 ]; then
+  ok "error file cannot be written: skipped as root (permissions do not bind root)"
 else
-  err "unwritable issue dir: exit $rc, stdout '$rcheck_ro'"
+  lay_out "$W_CONTRACT" "" failed "x"; chmod 0555 "$ID"
+  rcheck_ro=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID" 2>/dev/null); rc=$?
+  chmod 0755 "$ID"
+  if [ "$rc" = 1 ] && [ -z "$rcheck_ro" ] && [ "$(cat "$ID/error")" = "sentinel from an earlier step" ]; then
+    ok "error file cannot be written -> exit 1, nothing printed, error untouched"
+  else
+    err "unwritable issue dir: exit $rc, stdout '$rcheck_ro'"
+  fi
 fi
 check "non-numeric issue -> exit 2" 2 "" -- result 7x "$ID"
 check "issue 0 -> exit 2" 2 "" -- result 0 "$ID"
@@ -405,12 +409,9 @@ check "an open PR and a second orphan branch -> one line each" 0 \
 
 stub_reset; stub open-all "21 feat/issue-7-slug maybe"; stub view-21 "maybe"$'\n'"$PLAN_BODY"
 check "unexpected isDraft -> exit 1" 1 "" -- pr-shape 7 main
-stub_reset; stub open-all "$(printf '40 feat/issue-7-slug false fork\n21 feat/issue-7-slug true')"; stub view-21 "true"$'\n'"$PLAN_BODY"
-check "a fork's open PR on a matching branch name is ignored, never fetched" 0 \
-  "$(printf 'pr #21 feat/issue-7-slug draft (checkpoint)\nbranch chore/issue-7-second branch only (no PR)')" -- pr-shape 7 main
-stub_reset; stub all-feat_issue-9-orphan "41 fork"
-check "a branch whose only PR is a fork's is still an orphan" 0 \
-  "branch feat/issue-9-orphan branch only (no PR)" -- pr-shape 9 main
+stub_reset; stub open-all "$(printf '40 fork-user/issue-7-x false\n21 feat/issue-7-slug true')"; stub view-21 "true"$'\n'"$PLAN_BODY"
+check "an open PR whose branch is not on origin gets its own line, the rest still shaped" 0 \
+  "$(printf 'pr #40 fork-user/issue-7-x shape unknown (branch not on origin)\npr #21 feat/issue-7-slug draft (checkpoint)\nbranch chore/issue-7-second branch only (no PR)')" -- pr-shape 7 main
 stub_reset; : > "$GH_STUB/fail-prlist-all"
 check "probe 3's per-branch PR query fails -> exit 1" 1 "" -- pr-shape 9 main
 stub_reset; : > "$GH_STUB/fail-prlist"
