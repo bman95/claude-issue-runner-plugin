@@ -48,10 +48,10 @@
 #   pr #P <branch> draft=<true|false> via=<contract|keyword|both> worktree=<path|->
 #       worktree is where <branch> is checked out (`git worktree list`), `-`
 #       when nowhere; the path is the rest of the line and may hold spaces
-#   keyword-unconfirmed #P <branch>
+#   keyword-unconfirmed #P <branch> draft=<true|false> worktree=<path|->
 #       a closing-keyword search hit whose body has no plain `<keyword> #N`:
 #       read it before deciding (it may close #N in another form, or only
-#       mention it)
+#       mention it); draft and worktree as on a `pr` line
 #   branch <B> <tip> orphan
 #       no PR at all, in any state: a checkpoint whose `gh pr create` never ran
 #   branch <B> <tip> stale #P
@@ -105,7 +105,7 @@ while read -r p b d; do
   body=$(gh pr view "$p" --json body --jq .body </dev/null) || die "cannot view PR #$p"
   printf '%s\n' "$body" \
     | grep -qiE "(^|[^[:alnum:]_])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#$N([^[:alnum:]_]|$)" \
-    || { unconfirmed="${unconfirmed}keyword-unconfirmed #$p $b"$'\n'; continue; }
+    || { unconfirmed="${unconfirmed}$p $b $d"$'\n'; continue; }
   prs=$(printf '%s\n%s %s %s keyword\n' "$prs" "$p" "$b" "$d" | awk 'NF')
 done <<EOF_KW
 $list
@@ -127,7 +127,12 @@ while read -r p b d via; do
 done <<EOF_PRS
 $(printf '%s\n' "$prs" | sort -n)
 EOF_PRS
-out="$out$unconfirmed"
+while read -r p b d; do
+  [ -n "$p" ] || continue
+  out="${out}keyword-unconfirmed #$p $b draft=$d worktree=$(worktree_of "$b")"$'\n'
+done <<EOF_UNC
+$unconfirmed
+EOF_UNC
 
 # --- Probe 3: orphan branch -----------------------------------------------------
 probe3() { refs=$(git ls-remote --exit-code --heads origin "$GLOB" 2>"$ERRF" </dev/null); rc=$?; }

@@ -144,8 +144,8 @@ check "keyword hits: plain closing references are pr lines, the rest keyword-unc
   "$(printf '%s\n%s\n%s\n%s\n%s' \
     "pr #31 someone/any-name draft=false via=keyword worktree=-" \
     "pr #34 fourth/name draft=true via=keyword worktree=-" \
-    "keyword-unconfirmed #32 other/name" \
-    "keyword-unconfirmed #33 third/name" \
+    "keyword-unconfirmed #32 other/name draft=false worktree=-" \
+    "keyword-unconfirmed #33 third/name draft=false worktree=-" \
     "branch feat/issue-7-slug $T7 orphan")" 7
 stub_reset; stub search "$(printf '35 a/b false\n36 c/d false\n37 e/f false')"
 stub body-35 "Closes o/r#7"
@@ -153,9 +153,15 @@ stub body-36 "Fixes https://github.com/o/r/issues/7"
 stub body-37 "**Closes** #7"
 check "cross-repo, URL and emphasized forms are never dropped: unconfirmed, for the orchestrator" 0 \
   "$(printf '%s\n%s\n%s\n%s' \
-    "keyword-unconfirmed #35 a/b" \
-    "keyword-unconfirmed #36 c/d" \
-    "keyword-unconfirmed #37 e/f" \
+    "keyword-unconfirmed #35 a/b draft=false worktree=-" \
+    "keyword-unconfirmed #36 c/d draft=false worktree=-" \
+    "keyword-unconfirmed #37 e/f draft=false worktree=-" \
+    "branch feat/issue-7-slug $T7 orphan")" 7
+git -C "$REPO" worktree add -q -b kw/branch "$TMP/wt-kw" main 2>/dev/null
+stub_reset; stub search "38 kw/branch true"; stub body-38 "Closes o/r#7"
+check "an unconfirmed hit carries draft= and worktree= like a pr line" 0 \
+  "$(printf '%s\n%s' \
+    "keyword-unconfirmed #38 kw/branch draft=true worktree=$TMP/wt-kw" \
     "branch feat/issue-7-slug $T7 orphan")" 7
 
 # --- Several matches ------------------------------------------------------------

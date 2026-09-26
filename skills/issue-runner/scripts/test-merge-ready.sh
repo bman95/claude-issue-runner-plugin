@@ -171,10 +171,11 @@ rm -f "$GH_STUB/state"; run state 12; expect "row 37: state query fails -> exit 
 
 # ================================ refresh ========================================
 # --- unchanged ---
-layout; T0=$(origin_tip)
-run refresh "$TMP/wt" 12 "$VC"
+layout; T0=$(origin_tip); rm -rf "$TMP/mt"; mkdir "$TMP/mt"
+TMPDIR="$TMP/mt" run refresh "$TMP/wt" 12 "$VC"
 expect "row 37: at the PR head, base not advanced -> unchanged" 0 "unchanged $HEAD_OID"
 holds "unchanged: nothing pushed" [ "$(origin_tip)" = "$T0" ]
+holds "unchanged: its temp file is removed, with no shell error" eval '[ -z "$(ls -A "$TMP/mt")" ] && ! grep -q "unbound variable" "$TMP/stderr"'
 holds "validation runs changed, preflight, full, each against the PR's base" \
   [ "$(cat "$VC_STUB/log")" = "$(printf 'check main\nchanged main\npreflight main\nfull main')" ]
 
@@ -276,6 +277,15 @@ expect "a refresh stopped as a process group -> stuck, interrupted" 0 "stuck ref
 holds "a process-group stop is prompt (well before the 60 s validation ends)" [ $((S1 - S0)) -lt 10 ]
 holds "process-group stop: worktree back at the PR head" wt_at "$HEAD_OID"
 else ok "setsid not installed - process-group stop fixture skipped"; fi
+
+# --- validation output streams to stderr while it runs (the SKILL's stall rule watches it grow) ---
+layout; printf 'echo progress-1; sleep 3\n' > "$VC_STUB/preflight.cmd"
+(cd "$TMP/repo" && exec bash "$SCRIPT" refresh "$TMP/wt" 12 "$VC" >"$TMP/int.out" 2>"$TMP/int.err") & BGP=$!
+for _ in $(seq 1 50); do grep -q '^progress-1' "$TMP/int.err" 2>/dev/null && break; sleep 0.1; done
+# shellcheck disable=SC2016 # evaluated by holds, on purpose
+holds "a mode's output reaches stderr before the mode finishes" eval 'grep -q "^progress-1" "$TMP/int.err" && kill -0 "$BGP" 2>/dev/null && [ ! -s "$TMP/int.out" ]'
+wait "$BGP"; OUT=$(cat "$TMP/int.out"); RC=0
+expect "streamed validation still passes -> unchanged" 0 "unchanged $HEAD_OID"
 
 # --- interrupted as the base merge completes (its post-merge hook) -> undone ---
 layout; advance_base b.txt new

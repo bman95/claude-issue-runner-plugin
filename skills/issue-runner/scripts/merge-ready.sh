@@ -18,8 +18,9 @@
 # from anywhere — it works inside <worktree> through its own subshells and never
 # changes its caller's directory.
 #
-# Every subcommand prints exactly one line on stdout. `refresh` sends the
-# validation's own output to stderr.
+# Every subcommand prints exactly one line on stdout. `refresh` streams the
+# validation's own output to stderr as it runs (never buffered to the end of a
+# mode: the SKILL's stall rule watches that output grow).
 #
 # state <P> — the PR's state:
 #   open | merged | closed
@@ -88,6 +89,7 @@
 #       cannot resolve the base branch (validation exit 2)
 #       no validation contract and no --fallback-cmd given
 #       fallback tests failed (exit <N>)
+#       cannot create a temporary file
 #       validation script unavailable or miscalled — a human must fix the install
 #                            (a path that is not absolute, names no file or lies
 #                            inside the worktree, or any other exit: 6, 7, 126, …)
@@ -163,7 +165,7 @@ cmd_state() {
 cmd_refresh() {
   local wt=$1 p=$2 vs=$3 fallback=$4 have_fallback=$5
   local top view head_ref head_oid base cur mb count merged=0 moved=0 out rc mode conflicts log
-  local start_oid="" touched=0 merge_oid=""
+  local start_oid="" touched=0 merge_oid="" first
 
   # Result lines. Once this pass has touched the worktree (from the head sync
   # on, the tree verified clean before it), every failure first puts it back
@@ -198,6 +200,16 @@ cmd_refresh() {
   out=$(git -C "$top" status --porcelain </dev/null 2>/dev/null) || stuck "worktree dirty — a human must reconcile"
   [ -z "$out" ] || stuck "worktree dirty — a human must reconcile"
 
+  # run_vs MODE: the validation script's MODE on the worktree, its output
+  # streamed to stderr as it runs (tee) and kept only for its first line; sets
+  # rc (the script's own exit status) and first.
+  tmpf=$(mktemp) || stuck "cannot create a temporary file"   # global: the EXIT trap runs after this function returns
+  trap 'rm -f "${tmpf:-}"' EXIT
+  run_vs() {
+    (cd "$top" && bash "$vs" "$1" "$base" </dev/null 2>&1) | tee "$tmpf" >&2; rc=${PIPESTATUS[0]}
+    first=$(head -n 1 "$tmpf")
+  }
+
   view=$(gh pr view "$p" --json headRefName,headRefOid,baseRefName \
     --jq '"\(.headRefName) \(.headRefOid) \(.baseRefName)"' </dev/null) \
     || stuck "cannot resolve the PR head — query or fetch failed"
@@ -214,15 +226,14 @@ EOF_VIEW
   # the retry with --fallback-cmd still sees (and reports) a head sync as
   # `refreshed`. A `check` that fails stops here too, for the same reason.
   if [ "$have_fallback" -eq 0 ]; then
-    out=$(cd "$top" && bash "$vs" check "$base" </dev/null 2>&1); rc=$?
-    printf '%s\n' "$out" >&2
+    run_vs check
     case $rc in
       0) ;;
       2) stuck "cannot resolve the base branch (validation exit 2)" ;;
       3) stuck "validation contract invalid (exit 3)" ;;
       *) stuck "validation script unavailable or miscalled — a human must fix the install" ;;
     esac
-    printf '%s\n' "$out" | head -n 1 | grep -q '^validation: fallback (' && stuck "no validation contract and no --fallback-cmd given"
+    case $first in 'validation: fallback ('*) stuck "no validation contract and no --fallback-cmd given" ;; esac
   fi
 
   # Head sync.
@@ -255,8 +266,7 @@ EOF_VIEW
 
   # Validation, from the worktree, against the PR's base branch.
   for mode in changed preflight full; do
-    out=$(cd "$top" && bash "$vs" "$mode" "$base" </dev/null 2>&1); rc=$?
-    printf '%s\n' "$out" >&2
+    run_vs "$mode"
     case $rc in
       0) ;;
       1) stuck "$mode validation failed (exit 1)" ;;
@@ -269,7 +279,7 @@ EOF_VIEW
     esac
     # Only the first line: with a contract the script prints `running preflight:` first,
     # and the command's own output (PR-controlled) must never read as "no contract".
-    if [ "$mode" = preflight ] && printf '%s\n' "$out" | head -n 1 | grep -q '^validation: fallback ('; then
+    if [ "$mode" = preflight ] && case $first in 'validation: fallback ('*) true ;; *) false ;; esac; then
       [ "$have_fallback" -eq 1 ] || stuck "no validation contract and no --fallback-cmd given"
       (cd "$top" && bash -c "$fallback" </dev/null >&2 2>&1); rc=$?
       [ "$rc" -eq 0 ] || stuck "fallback tests failed (exit $rc)"
