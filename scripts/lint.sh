@@ -151,7 +151,9 @@ fi
 codex_version="$(json_version "$CODEX_PLUGIN_JSON")"
 if [ -z "$codex_version" ]; then
   err "could not read version from ${CODEX_PLUGIN_JSON#"$ROOT"/}"
-elif [ -n "$plugin_version" ] && [ "$codex_version" != "$plugin_version" ]; then
+elif [ -z "$plugin_version" ]; then
+  :   # already reported above
+elif [ "$codex_version" != "$plugin_version" ]; then
   err "version mismatch: .claude-plugin/plugin.json=$plugin_version codex/issue-runner/.codex-plugin/plugin.json=$codex_version"
 else
   ok "Codex edition manifest version agrees ($codex_version)"
