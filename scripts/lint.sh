@@ -691,7 +691,7 @@ fi
 MAX_LINE_CHARS=1500
 size_ok=1
 while IFS='|' read -r f ceiling; do
-  [ -r "$f" ] || { err "${f#"$ROOT"/} missing or unreadable (spec size ceilings)"; size_ok=0; continue; }
+  { [ -f "$f" ] && [ -r "$f" ]; } || { err "${f#"$ROOT"/} missing or unreadable (spec size ceilings)"; size_ok=0; continue; }
   words="$(wc -w < "$f" | tr -d ' ')"
   case $words in ''|*[!0-9]*) err "${f#"$ROOT"/}: cannot count words"; size_ok=0; continue ;; esac
   if [ "$words" -gt "$ceiling" ]; then
