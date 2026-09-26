@@ -94,6 +94,7 @@ cat > "$VC" <<'EOF'
 #!/usr/bin/env bash
 d=$VC_STUB
 echo "$1 $2" >> "$d/log"
+[ -f "$d/$1.sleep" ] && sleep "$(cat "$d/$1.sleep")"
 if [ -f "$d/$1.out" ]; then cat "$d/$1.out"; else echo "validation: $1 passed"; fi
 [ -f "$d/$1.rc" ] && exit "$(cat "$d/$1.rc")"
 exit 0
@@ -252,8 +253,28 @@ layout; stub head "$BR $HEAD_OID gone-base"
 run refresh "$TMP/wt" 12 "$VC"
 expect "base branch fetch fails -> stuck" 0 "stuck cannot fetch the base branch origin/gone-base"
 
+# --- interrupted after a base merge -> the merge commit is dropped ---
+layout; advance_base b.txt new; T0=$(origin_tip); echo 3 > "$VC_STUB/preflight.sleep"
+(cd "$TMP/repo" && exec bash "$SCRIPT" refresh "$TMP/wt" 12 "$VC" >"$TMP/int.out" 2>/dev/null) & BGP=$!
+for _ in $(seq 1 100); do grep -q '^preflight' "$VC_STUB/log" 2>/dev/null && break; sleep 0.1; done
+kill -TERM "$BGP"; wait "$BGP"
+OUT=$(cat "$TMP/int.out"); RC=0
+expect "row 37: a refresh killed mid-validation -> stuck, interrupted" 0 "stuck refresh interrupted before it finished — re-run it"
+holds "interrupted: own merge commit dropped, worktree back at the PR head" wt_at "$HEAD_OID"
+holds "interrupted: nothing pushed" [ "$(origin_tip)" = "$T0" ]
+
+# --- the contract probe fails -> stuck before the head sync ---
+layout; push_head; W0=$(git -C "$TMP/wt" rev-parse HEAD); vc check 2 "validation: cannot resolve the base branch: …"
+run refresh "$TMP/wt" 12 "$VC"
+expect "the contract probe cannot resolve the base -> stuck before the head sync" 0 "stuck cannot resolve the base branch (validation exit 2)"
+holds "failed contract probe: the worktree has not moved" wt_at "$W0"
+
 # --- worktree-missing ---
 layout
+mkdir -p "$TMP/repo/stale-dir"
+run refresh "$TMP/repo/stale-dir" 12 "$VC"
+expect "row 37: a leftover plain directory inside another checkout -> worktree-missing" 0 \
+  "worktree-missing $TMP/repo/stale-dir no longer exists or is not a git checkout"
 run refresh "$TMP/nowhere" 12 "$VC"
 expect "row 37: recorded worktree gone -> worktree-missing" 0 "worktree-missing $TMP/nowhere no longer exists or is not a git checkout"
 git -C "$TMP/wt" checkout -q -b someone-else
@@ -401,6 +422,10 @@ run refresh "$TMP/wt" 12 "$VC" --fallback; expect "refresh with a stray flag -> 
 run checks 12 --watch; expect "checks with an unknown flag -> exit 2" 2 ""
 run merge 12; expect "merge without an oid -> exit 2" 2 ""
 run merge 12 'HEAD; rm -rf /'; expect "merge with a non-hex oid -> exit 2" 2 ""
+run merge 12 0123abc; expect "merge with a truncated oid -> exit 2" 2 ""
+stub_reset; stub state OPEN; stub title t; stub body b; : > "$GH_STUB/merge-lands"; : > "$GH_STUB/fail-view-mergeCommit"
+run merge 12 0123456789abcdef0123456789abcdef01234567
+expect "merged, but the merge commit oid unreadable -> merged unknown" 0 "merged unknown"
 
 # --- Accounting against docs/scenarios.md ----------------------------------------------
 # Row 37's mechanics: the PR state, every refresh outcome, the checks re-check

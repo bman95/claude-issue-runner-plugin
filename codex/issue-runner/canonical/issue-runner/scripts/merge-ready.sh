@@ -34,7 +34,7 @@
 #                        no validation contract (the script prints its
 #                        `fallback` line); `changed` still runs either way
 #   In order, stopping at the first failure:
-#     1. the worktree exists and is a git checkout, else worktree-missing
+#     1. the worktree exists and is a git checkout's root, else worktree-missing
 #     2. a clean tree (`git status --porcelain` empty), else stuck: a
 #        fast-forward succeeds over non-overlapping edits and validation runs on
 #        the working tree, so nothing later would notice them. Never reset.
@@ -73,6 +73,7 @@
 #       cannot resolve the PR head — query or fetch failed
 #       worktree not at the PR head and cannot fast-forward to it — a human must reconcile
 #       cannot fetch the base branch origin/<base>
+#       no merge-base with origin/<base>
 #       merge conflict with origin/<base>: <paths>
 #       base merge did not start: <git's first error line>
 #       contract changed after ready — a human must review and merge   (`changed` exit 5)
@@ -86,6 +87,7 @@
 #                            (a path that is not absolute, names no file or lies
 #                            inside the worktree, or any other exit: 6, 7, 126, …)
 #       push failed after refresh — a human must retry or merge by hand
+#       refresh interrupted before it finished — re-run it   (TERM, INT or HUP)
 #     A reason gains `; reset failed` when dropping the merge commit failed.
 #
 # checks <P> [--refreshed] — the plain (non-`--watch`) three-way check gh-issue
@@ -103,7 +105,9 @@
 # MERGED, whatever `gh pr merge` exited with (its local-branch delete fails
 # while a worktree holds the branch, after the server-side merge). Never
 # retried.
-#   merged <sha>                    <sha> is the merge commit
+#   merged <sha>                    <sha> is the merge commit, or `unknown` when
+#                                   only its oid could not be read: the PR is
+#                                   still verified MERGED
 #   skipped head moved after validation
 #                                   the PR head is no longer <oid>: GitHub
 #                                   refused a head nobody validated
@@ -162,8 +166,15 @@ cmd_refresh() {
     fi
     echo "stuck $reason"; exit 0
   }
+  # A refresh killed mid-run (the caller's timeout, an interrupt) drops its own
+  # merge commit too: left checked out, it would put HEAD ahead of the PR head
+  # and every later pass would be stuck at the fast-forward.
+  trap 'stuck "refresh interrupted before it finished — re-run it"' TERM INT HUP
 
-  if [ ! -d "$wt" ] || ! top=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null) || [ -z "$top" ]; then
+  # The recorded path must itself be a checkout's root: a leftover plain
+  # directory inside another repository resolves to that repository.
+  if [ ! -d "$wt" ] || ! top=$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null) || [ -z "$top" ] \
+     || [ "$(cd "$wt" && pwd -P)" != "$(cd "$top" && pwd -P)" ]; then
     echo "worktree-missing $wt no longer exists or is not a git checkout"; exit 0
   fi
   case $vs in /*) ;; *) stuck "validation script unavailable or miscalled — a human must fix the install" ;; esac
@@ -187,10 +198,16 @@ EOF_VIEW
 
   # No contract and no fallback command: stop before touching the worktree, so
   # the retry with --fallback-cmd still sees (and reports) a head sync as
-  # `refreshed`. Any other `check` outcome is left to the validation below.
+  # `refreshed`. A `check` that fails stops here too, for the same reason.
   if [ "$have_fallback" -eq 0 ]; then
-    out=$(cd "$top" && bash "$vs" check "$base" </dev/null 2>&1)
+    out=$(cd "$top" && bash "$vs" check "$base" </dev/null 2>&1); rc=$?
     printf '%s\n' "$out" >&2
+    case $rc in
+      0) ;;
+      2) stuck "cannot resolve the base branch (validation exit 2)" ;;
+      3) stuck "validation contract invalid (exit 3)" ;;
+      *) stuck "validation script unavailable or miscalled — a human must fix the install" ;;
+    esac
     printf '%s\n' "$out" | head -n 1 | grep -q '^validation: fallback (' && stuck "no validation contract and no --fallback-cmd given"
   fi
 
@@ -206,7 +223,7 @@ EOF_VIEW
 
   # Base freshness.
   (cd "$top" && fetch3 "$base") || stuck "cannot fetch the base branch origin/$base"
-  mb=$(git -C "$top" merge-base HEAD "origin/$base" 2>/dev/null) || stuck "cannot fetch the base branch origin/$base"
+  mb=$(git -C "$top" merge-base HEAD "origin/$base" 2>/dev/null) || stuck "no merge-base with origin/$base"
   count=$(git -C "$top" rev-list --count "$mb..origin/$base" 2>/dev/null) || stuck "cannot fetch the base branch origin/$base"
   if [ "$count" -gt 0 ]; then
     log=$(git -C "$top" merge --no-edit "origin/$base" </dev/null 2>&1); rc=$?
@@ -317,7 +334,8 @@ case $MODE in
   merge)
     [ $# -eq 3 ] || usage "merge needs <P> <oid>"
     pr_arg "$2"
-    case $3 in *[!0-9a-f]*|'') usage "oid must be a hex commit id, got '$3'" ;; esac
+    case $3 in *[!0-9a-f]*|'') usage "oid must be a 40-hex commit id, got '$3'" ;; esac
+    [ ${#3} -eq 40 ] || usage "oid must be a 40-hex commit id, got '$3'"
     cmd_merge "$2" "$3" ;;
   *) usage "unknown mode '$MODE' (expected state, refresh, checks or merge)" ;;
 esac

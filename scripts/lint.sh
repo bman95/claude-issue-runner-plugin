@@ -380,7 +380,8 @@ fi
 # issue-runner finds an issue's branches with two forms, stated once in
 # skills/issue-runner/scripts/resume-check.sh (its CONTRACT= and GLOB= lines):
 # classify.sh must use the same two forms, both issue-runner editions must point
-# at the script instead of restating the pattern, and gh-issue (both editions)
+# at the script (Step 3 item 4's hung-worktree lookup still spells the first
+# form, identically; this is not checked), and gh-issue (both editions)
 # must still create and guard branches in that shape. Each file keeps its own
 # placeholder spelling (<N> in issue-runner, <number> in gh-issue): the script,
 # not the prose, is what matches.

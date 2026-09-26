@@ -59,7 +59,9 @@
 #       head branch of landed work, safe to delete under a lease on <tip>
 #   branch <B> <tip> ask (<#P state>, …)
 #       merged PRs whose head is not <tip> (the branch moved on after the
-#       merge) and/or closed PRs: unmerged work someone left or rejected
+#       merge) and/or closed PRs: unmerged work someone left or rejected; an
+#       `open` entry is a PR the open listings missed (opened in between, or
+#       past the 1000 limit, or a keyword-unconfirmed hit) — ask all the same
 #   probe3-failed <reason>
 #       probe 3 failed twice (auth, transport); printed after any PR lines, and
 #       never alone with `none`: a blind probe is not "no branch"
