@@ -39,7 +39,10 @@
 #        fast-forward succeeds over non-overlapping edits and validation runs on
 #        the working tree, so nothing later would notice them. Never reset.
 #     3. the PR's headRefName/headRefOid/baseRefName (`gh pr view`); the worktree
-#        must be on headRefName, else worktree-missing (another checkout)
+#        must be on headRefName, else worktree-missing (another checkout).
+#        Without --fallback-cmd, the script's `check` runs here: no contract
+#        on the base stops the call before anything in the worktree moves, so
+#        the retry with --fallback-cmd still reports a head sync as `refreshed`
 #     4. head sync: fetch the head ref (three tries), and when HEAD is not
 #        headRefOid, fast-forward to it only if HEAD is its ancestor; a worktree
 #        that carries commits the PR does not, or has diverged, is stuck, never
@@ -182,6 +185,15 @@ EOF_VIEW
     echo "worktree-missing $wt is not this PR's checkout (on ${cur:-?}, the PR head is $head_ref)"; exit 0
   fi
 
+  # No contract and no fallback command: stop before touching the worktree, so
+  # the retry with --fallback-cmd still sees (and reports) a head sync as
+  # `refreshed`. Any other `check` outcome is left to the validation below.
+  if [ "$have_fallback" -eq 0 ]; then
+    out=$(cd "$top" && bash "$vs" check "$base" </dev/null 2>&1)
+    printf '%s\n' "$out" >&2
+    printf '%s\n' "$out" | head -n 1 | grep -q '^validation: fallback (' && stuck "no validation contract and no --fallback-cmd given"
+  fi
+
   # Head sync.
   (cd "$top" && fetch3 "$head_ref") || stuck "cannot resolve the PR head — query or fetch failed"
   if [ "$(git -C "$top" rev-parse HEAD 2>/dev/null)" != "$head_oid" ]; then
@@ -221,7 +233,9 @@ EOF_VIEW
          stuck "validation script unavailable or miscalled — a human must fix the install" ;;
       *) stuck "validation script unavailable or miscalled — a human must fix the install" ;;
     esac
-    if [ "$mode" = preflight ] && printf '%s\n' "$out" | grep -q '^validation: fallback ('; then
+    # Only the first line: with a contract the script prints `running preflight:` first,
+    # and the command's own output (PR-controlled) must never read as "no contract".
+    if [ "$mode" = preflight ] && printf '%s\n' "$out" | head -n 1 | grep -q '^validation: fallback ('; then
       [ "$have_fallback" -eq 1 ] || stuck "no validation contract and no --fallback-cmd given"
       (cd "$top" && bash -c "$fallback" </dev/null >&2 2>&1); rc=$?
       [ "$rc" -eq 0 ] || stuck "fallback tests failed (exit $rc)"
@@ -294,6 +308,7 @@ case $MODE in
       || usage "refresh needs <worktree> <P> <validation-script> [--fallback-cmd <command>]"
     [ -n "$2" ] || usage "empty worktree path"
     pr_arg "$3"
+    [ $# -eq 4 ] || [ -n "$6" ] || usage "empty --fallback-cmd (use : for a project with no tests)"
     if [ $# -eq 6 ]; then cmd_refresh "$2" "$3" "$4" "$6" 1; else cmd_refresh "$2" "$3" "$4" "" 0; fi ;;
   checks)
     { [ $# -eq 2 ] || { [ $# -eq 3 ] && [ "$3" = --refreshed ]; }; } || usage "checks needs <P> [--refreshed]"

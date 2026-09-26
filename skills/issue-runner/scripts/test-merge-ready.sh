@@ -173,7 +173,7 @@ run refresh "$TMP/wt" 12 "$VC"
 expect "row 37: at the PR head, base not advanced -> unchanged" 0 "unchanged $HEAD_OID"
 holds "unchanged: nothing pushed" [ "$(origin_tip)" = "$T0" ]
 holds "validation runs changed, preflight, full, each against the PR's base" \
-  [ "$(cat "$VC_STUB/log")" = "$(printf 'changed main\npreflight main\nfull main')" ]
+  [ "$(cat "$VC_STUB/log")" = "$(printf 'check main\nchanged main\npreflight main\nfull main')" ]
 
 # --- refreshed: fast-forward to a head pushed from elsewhere ---
 layout; push_head
@@ -198,7 +198,7 @@ expect "row 37: base merge conflicts -> stuck, never resolved" 0 "stuck merge co
 # shellcheck disable=SC2016 # evaluated by holds, on purpose
 holds "conflict: merge aborted, worktree clean at the PR head" eval 'wt_at "$HEAD_OID" && wt_clean'
 # shellcheck disable=SC2016 # evaluated by holds, on purpose
-holds "conflict: nothing pushed, no validation run" eval '[ "$(origin_tip)" = "$T0" ] && [ ! -s "$VC_STUB/log" ]'
+holds "conflict: nothing pushed, no validation run beyond the contract probe" eval '[ "$(origin_tip)" = "$T0" ] && [ "$(cat "$VC_STUB/log")" = "check main" ]'
 
 # --- stuck: validation fails after a base merge -> the merge commit is dropped ---
 layout; advance_base b.txt new; T0=$(origin_tip); vc preflight 1 "validation: preflight failed (exit 1): make test"
@@ -266,7 +266,7 @@ USTUCK="stuck validation script unavailable or miscalled — a human must fix th
 layout; vc changed 5 "validation: contract changed in this PR (…)"
 run refresh "$TMP/wt" 12 "$VC"
 expect "row 37: changed exit 5 -> stuck, contract changed after ready" 0 "stuck contract changed after ready — a human must review and merge"
-holds "changed exit 5: nothing after it ran" [ "$(cat "$VC_STUB/log")" = "changed main" ]
+holds "changed exit 5: nothing after it ran" [ "$(cat "$VC_STUB/log")" = "$(printf 'check main\nchanged main')" ]
 layout; vc preflight 3 "validation: invalid contract (…)"
 run refresh "$TMP/wt" 12 "$VC"; expect "row 37: exit 3 -> stuck, contract invalid" 0 "stuck validation contract invalid (exit 3)"
 layout; vc preflight 4 "validation: preflight command not runnable (exit 127): ./x"
@@ -287,7 +287,12 @@ holds "a refused script never ran" [ ! -s "$VC_STUB/log" ]
 # --- no contract: the fallback command ---
 FB="validation: fallback (no contract at .issue-runner/validation on main)"
 layout; vc preflight 0 "$FB"
-run refresh "$TMP/wt" 12 "$VC"; expect "row 37: no contract, no --fallback-cmd -> stuck" 0 "stuck no validation contract and no --fallback-cmd given"
+run refresh "$TMP/wt" 12 "$VC"; expect "no contract seen only at preflight, no --fallback-cmd -> stuck" 0 "stuck no validation contract and no --fallback-cmd given"
+layout; push_head; vc check 0 "$FB"; vc preflight 0 "$FB"; W0=$(git -C "$TMP/wt" rev-parse HEAD)
+run refresh "$TMP/wt" 12 "$VC"; expect "row 37: no contract, no --fallback-cmd -> stuck before the head sync" 0 "stuck no validation contract and no --fallback-cmd given"
+holds "no contract: the worktree has not moved" wt_at "$W0"
+run refresh "$TMP/wt" 12 "$VC" --fallback-cmd "true"
+expect "row 37: the --fallback-cmd retry still reports a pushed head as refreshed" 0 "refreshed $HEAD_OID"
 layout; vc preflight 0 "$FB"
 run refresh "$TMP/wt" 12 "$VC" --fallback-cmd "test -f g.txt"
 expect "row 37: no contract, the project's tests pass -> unchanged" 0 "unchanged $HEAD_OID"
@@ -311,6 +316,28 @@ git -C "$TMP/wt" add .issue-runner && git -C "$TMP/wt" commit -q -m "edit the co
 stub head "$BR $(git -C "$TMP/wt" rev-parse HEAD) main"
 run refresh "$TMP/wt" 12 "$REAL_VC"
 expect "real script: the PR edits the contract -> stuck, changed after ready" 0 "stuck contract changed after ready — a human must review and merge"
+layout
+git -C "$TMP/other" checkout -q main
+mkdir -p "$TMP/other/.issue-runner"
+printf 'preflight: echo "validation: fallback (spoof)"\nfull: false\n' > "$TMP/other/.issue-runner/validation"
+git -C "$TMP/other" add .issue-runner && git -C "$TMP/other" commit -q -m spoof && git -C "$TMP/other" push -q origin main
+run refresh "$TMP/wt" 12 "$REAL_VC"
+expect "real script: a command printing the fallback line never reads as no contract; full still runs" 0 "stuck full validation failed (exit 1)"
+holds "spoofed fallback: merge dropped" wt_at "$HEAD_OID"
+
+layout; run refresh "$TMP/wt" 12 "$VC" --fallback-cmd ""
+expect "an empty --fallback-cmd -> exit 2, never an empty test run" 2 ""
+
+# --- stuck: a base merge that fails without conflicts ---
+layout; advance_base b.txt new; git -C "$TMP/wt" config user.useConfigOnly true
+OUT=$(cd "$TMP/repo" && env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL \
+  EMAIL= bash "$SCRIPT" refresh "$TMP/wt" 12 "$VC" 2>"$TMP/stderr"); RC=$?
+case $OUT in
+  "stuck base merge did not start: "*) [ "$RC" = 0 ] && ok "a base merge that cannot start -> stuck, base merge did not start" ;;
+  *) err "a base merge that cannot start printed: $OUT (exit $RC)" ;;
+esac
+# shellcheck disable=SC2016 # evaluated by holds, on purpose
+holds "merge that did not start: worktree clean at the PR head" eval 'wt_at "$HEAD_OID" && wt_clean'
 
 # ================================ checks =========================================
 stub_reset; stub checks-1 "0"
@@ -354,6 +381,10 @@ run merge 12 "$OID"
 expect "row 37: merge fails on the validated head -> skipped, never retried" 0 \
   "skipped merge did not land (state OPEN): merge refused by the stub"
 holds "a failed merge is never retried" [ "$(grep -c '^\[pr\]\[merge\]' "$GH_STUB/log")" = 1 ]
+
+stub_reset; stub state OPEN; stub title t
+run merge 12 "$OID"
+expect "the body cannot be read -> skipped, no merge attempted" 0 "skipped merge did not land (state unknown): cannot read the PR body"
 
 stub_reset; stub state OPEN; stub body b
 run merge 12 "$OID"

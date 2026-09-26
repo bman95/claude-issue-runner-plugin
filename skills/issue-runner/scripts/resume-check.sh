@@ -7,11 +7,12 @@
 # and the rationale in REFERENCE.md ("Why dispatch resumes open PRs",
 # "Why the implementer opens a draft PR right after the plan").
 #
-# This script is the single statement of the branch-contract match pattern.
-# gh-issue Step 4 names every implementer branch `<type>/issue-<number>-<slug>`;
-# an issue's branches are found with exactly these two forms, and nowhere else
-# in issue-runner restates them (scripts/lint.sh check 10 pins them here and in
-# classify.sh, which uses the same two):
+# This script is the statement of the branch-contract match pattern that the
+# SKILL.md prose points at. gh-issue Step 4 names every implementer branch
+# `<type>/issue-<number>-<slug>`; an issue's branches are found with exactly
+# these two forms. scripts/lint.sh check 10 pins them here and requires
+# classify.sh to use the same two (Step 3 item 4's hung-worktree lookup in
+# SKILL.md also matches the first, spelled identically):
 #   PR head match      a head branch containing  /issue-$N-
 #   remote-branch glob git ls-remote pattern     */issue-$N-*
 # `issue-7-` never matches `issue-70-`: the trailing `-` is part of the pattern.
@@ -27,10 +28,14 @@
 #                       checkpoint is an open PR)
 #   2  closing keyword  open PRs `gh pr list --search` returns for
 #                       `closes #N OR fixes #N OR resolves #N`, kept only when
-#                       the body really carries a closing keyword (close, closes,
+#                       the body carries a plain closing reference (close, closes,
 #                       closed, fix, fixes, fixed, resolve, resolves, resolved;
-#                       any case, an optional `:`) followed by `#N` — the search
-#                       also matches looser text, and `#70` never proves `#7`
+#                       any case, an optional `:`, then `#N`) — `#70` never
+#                       proves `#7`. Any other search hit is reported as
+#                       unconfirmed, for the orchestrator to judge: the search
+#                       also matches looser text, and GitHub also closes on
+#                       forms this match does not read (`owner/repo#N`, an
+#                       issue URL, a keyword in markdown emphasis)
 #   3  orphan branch    `git ls-remote --exit-code --heads origin '*/issue-N-*'`:
 #                       exit 2 = no such branch, 0 = hits, anything else = the
 #                       probe failed; a failed probe is retried once
@@ -38,10 +43,15 @@
 #
 # Output — one line per open PR (1 and 2, deduplicated by number: the
 # checkpoint body carries `Closes #N`, so a run's own PR hits both), then one
-# line per probe-3 branch that no open PR line covers, or `none`:
+# line per unconfirmed keyword hit, then one line per probe-3 branch that no
+# open PR line covers — or `none` when there is nothing at all:
 #   pr #P <branch> draft=<true|false> via=<contract|keyword|both> worktree=<path|->
 #       worktree is where <branch> is checked out (`git worktree list`), `-`
 #       when nowhere; the path is the rest of the line and may hold spaces
+#   keyword-unconfirmed #P <branch>
+#       a closing-keyword search hit whose body has no plain `<keyword> #N`:
+#       read it before deciding (it may close #N in another form, or only
+#       mention it)
 #   branch <B> <tip> orphan
 #       no PR at all, in any state: a checkpoint whose `gh pr create` never ran
 #   branch <B> <tip> stale #P
@@ -80,6 +90,7 @@ list=$(gh pr list --state open --limit 1000 --json number,headRefName,isDraft \
 prs=$(printf '%s\n' "$list" | awk -v pat="$CONTRACT" 'NF && index($2, pat) { print $1, $2, $3, "contract" }')
 
 # --- Probe 2: closing keyword -------------------------------------------------
+unconfirmed=""
 list=$(gh pr list --state open --limit 1000 --search "closes #$N OR fixes #$N OR resolves #$N" \
   --json number,headRefName,isDraft --jq '.[] | "\(.number) \(.headRefName) \(.isDraft)"' </dev/null) \
   || die "cannot search open PRs for closing keywords"
@@ -92,7 +103,7 @@ while read -r p b d; do
   body=$(gh pr view "$p" --json body --jq .body </dev/null) || die "cannot view PR #$p"
   printf '%s\n' "$body" \
     | grep -qiE "(^|[^[:alnum:]_])(close[sd]?|fix(e[sd])?|resolve[sd]?):?[[:space:]]+#$N([^[:alnum:]_]|$)" \
-    || continue
+    || { unconfirmed="${unconfirmed}keyword-unconfirmed #$p $b"$'\n'; continue; }
   prs=$(printf '%s\n%s %s %s keyword\n' "$prs" "$p" "$b" "$d" | awk 'NF')
 done <<EOF_KW
 $list
@@ -114,6 +125,7 @@ while read -r p b d via; do
 done <<EOF_PRS
 $(printf '%s\n' "$prs" | sort -n)
 EOF_PRS
+out="$out$unconfirmed"
 
 # --- Probe 3: orphan branch -----------------------------------------------------
 probe3() { refs=$(git ls-remote --exit-code --heads origin "$GLOB" 2>"$ERRF" </dev/null); rc=$?; }

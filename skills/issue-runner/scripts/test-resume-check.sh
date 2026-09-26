@@ -140,10 +140,22 @@ Fixes: #7"
 stub body-32 "See #7 for context; closes #70."
 stub body-33 "closes #7x"
 stub body-34 "RESOLVED #7"
-check "keyword hits: only bodies that really close #7 are kept" 0 \
-  "$(printf '%s\n%s\n%s' \
+check "keyword hits: plain closing references are pr lines, the rest keyword-unconfirmed" 0 \
+  "$(printf '%s\n%s\n%s\n%s\n%s' \
     "pr #31 someone/any-name draft=false via=keyword worktree=-" \
     "pr #34 fourth/name draft=true via=keyword worktree=-" \
+    "keyword-unconfirmed #32 other/name" \
+    "keyword-unconfirmed #33 third/name" \
+    "branch feat/issue-7-slug $T7 orphan")" 7
+stub_reset; stub search "$(printf '35 a/b false\n36 c/d false\n37 e/f false')"
+stub body-35 "Closes o/r#7"
+stub body-36 "Fixes https://github.com/o/r/issues/7"
+stub body-37 "**Closes** #7"
+check "cross-repo, URL and emphasized forms are never dropped: unconfirmed, for the orchestrator" 0 \
+  "$(printf '%s\n%s\n%s\n%s' \
+    "keyword-unconfirmed #35 a/b" \
+    "keyword-unconfirmed #36 c/d" \
+    "keyword-unconfirmed #37 e/f" \
     "branch feat/issue-7-slug $T7 orphan")" 7
 
 # --- Several matches ------------------------------------------------------------
