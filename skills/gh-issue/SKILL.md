@@ -406,7 +406,7 @@ Refresh Summary / Changes / Test plan on **every** push. Put iteration history o
 
 **Draft invariant.** Orchestrated: every blocker in this step first reverts the PR to draft, statelessly: `D=$(gh pr view "$PR_NUM" --json isDraft -q .isDraft) || D=unknown; [ "$D" = true ] || { gh pr ready --undo "$PR_NUM" || echo "WARNING: #$PR_NUM may still be mergeable — could not revert it to draft (isDraft=$D)" >&2; }`. Never fail open: if the query or undo fails, the blocker says the PR is non-draft and mergeable by hand (expected under `checkpoint: refused`). The no-merge stop alone leaves it non-draft. (why: Why an unfinished PR returns as a draft)
 
-**Full validation and the contract-change check, before ready.** Orchestrated: write `step=9 pr=#P` immediately before. Run the validation script with `full`, unconditionally, once per head, on the converged head (it reports `full not declared` itself); under a standing fallback authorization, validate by the conventions instead (still run `changed`). Failure → exactly a preflight failure: the Validation contract's **failed** outcome (fix and re-run first); unfixable → Block `full validation failed (exit N): <command>`. Then run it with `changed`:
+**Full validation and the contract-change check, before ready.** Orchestrated: write `step=9 pr=#P` immediately before. Run the validation script with `full`, unconditionally, once per head, on the converged head (it reports `full not declared` itself); under a standing fallback authorization, validate by the conventions instead (still run `changed`). Failure → exactly a preflight failure: the Validation contract outcomes apply (for exit 1, fix and re-run first); unfixable → Block `full validation failed (exit N): <command>`. Then run it with `changed`:
 
 - exit 0 (`contract unchanged in this PR`) → continue.
 - exit 2 or 7 → the script's `failed` class; a git failure is never "unchanged".
@@ -497,7 +497,7 @@ gh pr merge --squash --delete-branch --match-head-commit "$(git rev-parse HEAD)"
   --body "$(gh pr view --json body -q .body | awk '/^## Review notes$/{exit} {print}')"
 ```
 
-A refusal because the head moved is never retried against the new head: Block `PR head moved after the checks gate — a human must review and merge`. (why: Why the merge is pinned to the validated head)
+A refusal because the head moved is never retried against the new head: interactive — report it; orchestrated — Block `PR head moved after the checks gate — a human must review and merge`. (why: Why the merge is pinned to the validated head)
 
 Verify: `gh pr view "$PR_NUM" --json state -q .state` must be `MERGED` and `gh issue view <number> --json state` `CLOSED`. The merged PR, not the closed issue, is the proof `git branch -D` needs.
 
