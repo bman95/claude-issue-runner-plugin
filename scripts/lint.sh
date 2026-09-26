@@ -64,8 +64,8 @@
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
 #      resume-check.sh or merge-ready.sh;
-#      gh-issue's "## Validation contract" section is byte-identical across
-#      editions
+#      gh-issue's "## Validation contract" section and skills/gh-issue/REFERENCE.md
+#      are byte-identical across editions
 #  19. skills/issue-runner/scripts/test-classify.sh passes — the golden
 #      fixtures for scripts/classify.sh, the extracted Step 3 item 5 merge
 #      proof and Step 5 unfinished-PR shape classifications
@@ -77,6 +77,10 @@
 #  22. skills/issue-runner/scripts/test-merge-ready.sh passes — the fixtures
 #      for scripts/merge-ready.sh, the extracted --merge-ready state, refresh,
 #      checks re-check and head-pinned merge
+#  23. spec size ceilings: skills/issue-runner/SKILL.md at most 8000 words and
+#      skills/gh-issue/SKILL.md at most 5000 (`wc -w`), and no line in either
+#      over 1500 characters — each failure names the file, its count and the
+#      ceiling; rationale belongs in REFERENCE.md, not in the procedure
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -623,6 +627,10 @@ vc_section() { awk '/^## Validation contract$/ {f=1; print; next} f && /^## / {e
 if [ -z "$(vc_section "$SKILL_GH")" ] || [ "$(vc_section "$SKILL_GH")" != "$(vc_section "$CANON_GH")" ]; then
   err "gh-issue '## Validation contract' section missing or differs between editions"; bundled_ok=0
 fi
+# Those shared sections point at gh-issue's REFERENCE.md rationale entries, so the
+# Codex edition ships the same file.
+cmp -s "$ROOT/skills/gh-issue/REFERENCE.md" "$ROOT/codex/issue-runner/canonical/gh-issue/REFERENCE.md" \
+  || { err "skills/gh-issue/REFERENCE.md missing or differs from codex/issue-runner/canonical/gh-issue/REFERENCE.md"; bundled_ok=0; }
 [ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section byte-identical in both editions"
 
 # 19. Merge-proof and PR-shape classification fixtures ----------------------------
@@ -676,6 +684,26 @@ if [ -f "$TEST_MERGE_READY" ]; then
 else
   err "$TEST_MERGE_READY not found"
 fi
+
+# 23. Spec size ceilings -----------------------------------------------------------
+# Procedure stays in SKILL.md; rationale lives in REFERENCE.md. The ceilings stop
+# the specs regrowing: `wc -w` words per file, and no line longer than the limit.
+MAX_LINE_CHARS=1500
+size_ok=1
+while IFS='|' read -r f ceiling; do
+  words="$(wc -w < "$f" | tr -d ' ')"
+  if [ "$words" -gt "$ceiling" ]; then
+    err "${f#"$ROOT"/} has $words words, over its ceiling of $ceiling"; size_ok=0
+  fi
+  longest="$(awk '{ n = length($0); if (n > m) m = n } END { print m + 0 }' "$f")"
+  if [ "$longest" -gt "$MAX_LINE_CHARS" ]; then
+    err "${f#"$ROOT"/} has a $longest-character line, over the ceiling of $MAX_LINE_CHARS"; size_ok=0
+  fi
+done <<EOF_SIZE
+$SKILL_RUNNER|8000
+$SKILL_GH|5000
+EOF_SIZE
+[ "$size_ok" -eq 1 ] && ok "spec size ceilings hold (issue-runner SKILL.md <= 8000 words, gh-issue SKILL.md <= 5000, lines <= $MAX_LINE_CHARS chars)"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
