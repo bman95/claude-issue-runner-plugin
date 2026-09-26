@@ -277,7 +277,7 @@ holds "a process-group stop is prompt (well before the 60 s validation ends)" [ 
 holds "process-group stop: worktree back at the PR head" wt_at "$HEAD_OID"
 else ok "setsid not installed - process-group stop fixture skipped"; fi
 
-# --- interrupted while the base merge runs -> the half-done merge is undone ---
+# --- interrupted as the base merge completes (its post-merge hook) -> undone ---
 layout; advance_base b.txt new
 cat > "$TMP/repo/.git/hooks/post-merge" <<'EOF'
 #!/bin/sh
@@ -289,7 +289,7 @@ export MR_PIDFILE="$TMP/mr.pid"
 echo "$BGP" > "$MR_PIDFILE"; wait "$BGP"
 OUT=$(cat "$TMP/int.out"); RC=0
 expect "interrupted during the base merge -> stuck, interrupted" 0 "stuck refresh interrupted before it finished — re-run it"
-holds "interrupted merge: worktree back at the PR head, clean" eval 'wt_at "$HEAD_OID" && wt_clean'
+holds "interrupted after the merge commit (merged flag not yet set): worktree back at the PR head, clean" eval 'wt_at "$HEAD_OID" && wt_clean'
 rm -f "$TMP/repo/.git/hooks/post-merge"
 run refresh "$TMP/wt" 12 "$VC"
 NEW=$(git -C "$TMP/wt" rev-parse HEAD)
@@ -308,8 +308,15 @@ expect "the retry still reports the pushed head as refreshed" 0 "refreshed $HEAD
 layout; advance_base b.txt new; T0=$(origin_tip)
 echo 'git commit -q --allow-empty -m sneaky' > "$VC_STUB/full.cmd"
 run refresh "$TMP/wt" 12 "$VC"
-expect "validation moves HEAD off the base merge -> stuck, nothing pushed" 0 "stuck validation moved HEAD off the base merge — a human must reconcile"
+expect "validation moves HEAD off the base merge -> stuck, nothing pushed" 0 "stuck validation moved HEAD off the validated head — a human must reconcile"
 holds "moved HEAD: origin unchanged, worktree back at the PR head" eval '[ "$(origin_tip)" = "$T0" ] && wt_at "$HEAD_OID"'
+layout; echo 'git commit -q --allow-empty -m sneaky' > "$VC_STUB/full.cmd"
+run refresh "$TMP/wt" 12 "$VC"
+expect "validation commits with no base advance -> stuck, never unchanged" 0 "stuck validation moved HEAD off the validated head — a human must reconcile"
+holds "moved HEAD (no merge): worktree back at the PR head" wt_at "$HEAD_OID"
+rm -f "$VC_STUB/full.cmd"
+run refresh "$TMP/wt" 12 "$VC"
+expect "the re-run after a moved HEAD recovers -> unchanged" 0 "unchanged $HEAD_OID"
 
 # --- no merge-base with the base branch ---
 layout

@@ -91,10 +91,10 @@
 #       validation script unavailable or miscalled — a human must fix the install
 #                            (a path that is not absolute, names no file or lies
 #                            inside the worktree, or any other exit: 6, 7, 126, …)
-#       validation moved HEAD off the base merge — a human must reconcile
+#       validation moved HEAD off the validated head — a human must reconcile
 #       push failed after refresh — a human must retry or merge by hand
 #       refresh interrupted before it finished — re-run it   (TERM, INT or HUP)
-#     A reason gains `; reset failed` when dropping the merge commit failed.
+#     A reason gains `; reset failed` when putting the worktree back failed.
 #
 # checks <P> [--refreshed] — the plain (non-`--watch`) three-way check gh-issue
 # Step 9 computes: `gh pr checks` exit 0 → pass; its output matching `no checks
@@ -173,6 +173,7 @@ cmd_refresh() {
   # `unchanged` for a head that is new to it.
   stuck() {
     local reason=$1
+    trap '' TERM INT HUP   # finish the rollback and print one line, whatever arrives now
     if [ "$touched" -eq 1 ]; then
       git -C "$top" merge --abort </dev/null >/dev/null 2>&1
       git -C "$top" reset -q --hard "$start_oid" </dev/null >/dev/null 2>&1 || reason="$reason; reset failed"
@@ -276,17 +277,22 @@ EOF_VIEW
     fi
   done
 
+  # The head validation ran on is the PR head, or the base merge on top of it;
+  # a validation that moved HEAD (a commit, a checkout) validated neither.
+  local expect_oid=$head_oid
+  [ "$merged" -eq 1 ] && expect_oid=$merge_oid
+  [ "$(git -C "$top" rev-parse HEAD 2>/dev/null)" = "$expect_oid" ] \
+    || stuck "validation moved HEAD off the validated head — a human must reconcile"
   # Push exactly the commit the base merge produced, nothing validation made.
   if [ "$merged" -eq 1 ]; then
-    [ "$(git -C "$top" rev-parse HEAD 2>/dev/null)" = "$merge_oid" ] \
-      || stuck "validation moved HEAD off the base merge — a human must reconcile"
     git -C "$top" push -q origin "$merge_oid:refs/heads/$head_ref" </dev/null >/dev/null 2>&1 \
       || stuck "push failed after refresh — a human must retry or merge by hand"
   fi
+  trap - TERM INT HUP   # past the last step: a late signal must not print a second line
   if [ "$merged" -eq 1 ] || [ "$moved" -eq 1 ]; then
-    echo "refreshed $(git -C "$top" rev-parse HEAD)"
+    echo "refreshed $expect_oid"
   else
-    echo "unchanged $(git -C "$top" rev-parse HEAD)"
+    echo "unchanged $expect_oid"
   fi
 }
 
