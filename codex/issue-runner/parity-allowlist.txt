@@ -9,8 +9,11 @@
 # does a listed entry that is no longer a difference.
 #
 # One entry per line, each preceded by a comment giving the reason:
-#   claude-only heading: <heading line>     codex-only heading: <heading line>
-#   claude-only flag: <--name>              codex-only flag: <--name>
+#   codex-only heading: <heading line>      codex-only flag: <--name>
+# `claude-only` entries cannot occur while check 18 keeps the canonical copy
+# identical, since the Codex side then contains every Claude heading and flag.
+# A feature the Codex edition omits is recorded instead in the wrapper's
+# "## Not possible on Codex" section.
 
 # The wrapper's section mapping Claude Code primitives to Codex ones.
 codex-only heading: ## Codex adaptations
