@@ -11,8 +11,9 @@
 # call. git is real: a bare origin, a clone the `gh` subcommands run in (the
 # orchestrator's cwd), and a worktree on the PR branch the refresh works in.
 # Validation runs through a stub validation script (every exit status the #53
-# script can return) and, for four refresh calls, through the real
-# skills/gh-issue/scripts/validation-contract.sh against a contract on origin.
+# script can return) and, for five refresh calls, through the real
+# skills/gh-issue/scripts/validation-contract.sh (four of them against a
+# contract on origin).
 #
 # Run directly, or from scripts/lint.sh (and so from CI). Dependency-free:
 # bash + git + coreutils. Exits non-zero on the first-or-any failure.
@@ -426,6 +427,14 @@ git -C "$TMP/other" add .issue-runner && git -C "$TMP/other" commit -q -m spoof 
 run refresh "$TMP/wt" 12 "$REAL_VC"
 expect "real script: a command printing the fallback line never reads as no contract; full still runs" 0 "stuck full validation failed (exit 1)"
 holds "spoofed fallback: merge dropped" wt_at "$HEAD_OID"
+layout
+git -C "$TMP/other" checkout -q main
+mkdir -p "$TMP/other/.issue-runner"
+printf 'preflight: printf "a\\\\0b\\\\n"\n' > "$TMP/other/.issue-runner/validation"
+git -C "$TMP/other" add .issue-runner && git -C "$TMP/other" commit -q -m nul && git -C "$TMP/other" push -q origin main
+run refresh "$TMP/wt" 12 "$REAL_VC"
+NEW=$(git -C "$TMP/wt" rev-parse HEAD)
+expect "real script: a passing command whose output has a NUL byte -> refreshed, never read as binary" 0 "refreshed $NEW"
 
 # --- the output record cannot be written -> stuck, never a pass that hid the fallback line ---
 layout; mkdir -p "$TMP/badtmp"

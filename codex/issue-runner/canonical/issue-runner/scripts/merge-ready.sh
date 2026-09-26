@@ -212,7 +212,7 @@ cmd_refresh() {
   run_vs() {
     local ts
     (cd "$top" && bash "$vs" "$1" "$base" </dev/null 2>&1) | tee "$tmpf" >&2; rc=${PIPESTATUS[0]} ts=${PIPESTATUS[1]}
-    first=$(grep -m 1 '^validation: ' "$tmpf" 2>/dev/null)
+    first=$(grep -a -m 1 '^validation: ' "$tmpf" 2>/dev/null)   # -a: a NUL in the output must not read as binary
     [ "$ts" -eq 0 ] || stuck "cannot record the validation output — temporary file failed"
     [ "$rc" -ne 0 ] || [ -n "$first" ] || stuck "cannot record the validation output — temporary file failed"
   }
