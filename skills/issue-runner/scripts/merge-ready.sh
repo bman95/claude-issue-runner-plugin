@@ -89,7 +89,7 @@
 #       cannot resolve the base branch (validation exit 2)
 #       no validation contract and no --fallback-cmd given
 #       fallback tests failed (exit <N>)
-#       cannot create a temporary file
+#       cannot record the validation output — temporary file failed
 #       validation script unavailable or miscalled — a human must fix the install
 #                            (a path that is not absolute, names no file or lies
 #                            inside the worktree, or any other exit: 6, 7, 126, …)
@@ -202,12 +202,16 @@ cmd_refresh() {
 
   # run_vs MODE: the validation script's MODE on the worktree, its output
   # streamed to stderr as it runs (tee) and kept only for its first line; sets
-  # rc (the script's own exit status) and first.
-  tmpf=$(mktemp) || stuck "cannot create a temporary file"   # global: the EXIT trap runs after this function returns
+  # rc (the script's own exit status) and first. Fails closed: every mode of
+  # the script prints a first line, so a tee that failed or an empty record
+  # never reads as a pass that hid the `fallback` line.
+  tmpf=$(mktemp) || stuck "cannot record the validation output — temporary file failed"   # global: the EXIT trap runs after this function returns
   trap 'rm -f "${tmpf:-}"' EXIT
   run_vs() {
-    (cd "$top" && bash "$vs" "$1" "$base" </dev/null 2>&1) | tee "$tmpf" >&2; rc=${PIPESTATUS[0]}
-    first=$(head -n 1 "$tmpf")
+    local ts
+    (cd "$top" && bash "$vs" "$1" "$base" </dev/null 2>&1) | tee "$tmpf" >&2; rc=${PIPESTATUS[0]} ts=${PIPESTATUS[1]}
+    first=$(head -n 1 "$tmpf" 2>/dev/null)
+    [ "$ts" -eq 0 ] && [ -n "$first" ] || stuck "cannot record the validation output — temporary file failed"
   }
 
   view=$(gh pr view "$p" --json headRefName,headRefOid,baseRefName \

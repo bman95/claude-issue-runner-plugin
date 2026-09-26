@@ -11,7 +11,7 @@
 # call. git is real: a bare origin, a clone the `gh` subcommands run in (the
 # orchestrator's cwd), and a worktree on the PR branch the refresh works in.
 # Validation runs through a stub validation script (every exit status the #53
-# script can return) and, for two fixtures, through the real
+# script can return) and, for three fixtures, through the real
 # skills/gh-issue/scripts/validation-contract.sh against a contract on origin.
 #
 # Run directly, or from scripts/lint.sh (and so from CI). Dependency-free:
@@ -279,7 +279,7 @@ holds "process-group stop: worktree back at the PR head" wt_at "$HEAD_OID"
 else ok "setsid not installed - process-group stop fixture skipped"; fi
 
 # --- validation output streams to stderr while it runs (the SKILL's stall rule watches it grow) ---
-layout; printf 'echo progress-1; sleep 3\n' > "$VC_STUB/preflight.cmd"
+layout; printf 'echo progress-1; sleep 8\n' > "$VC_STUB/preflight.cmd"
 (cd "$TMP/repo" && exec bash "$SCRIPT" refresh "$TMP/wt" 12 "$VC" >"$TMP/int.out" 2>"$TMP/int.err") & BGP=$!
 for _ in $(seq 1 50); do grep -q '^progress-1' "$TMP/int.err" 2>/dev/null && break; sleep 0.1; done
 # shellcheck disable=SC2016 # evaluated by holds, on purpose
@@ -418,6 +418,13 @@ git -C "$TMP/other" add .issue-runner && git -C "$TMP/other" commit -q -m spoof 
 run refresh "$TMP/wt" 12 "$REAL_VC"
 expect "real script: a command printing the fallback line never reads as no contract; full still runs" 0 "stuck full validation failed (exit 1)"
 holds "spoofed fallback: merge dropped" wt_at "$HEAD_OID"
+
+# --- the output record cannot be written -> stuck, never a pass that hid the fallback line ---
+layout; mkdir -p "$TMP/badtmp"
+printf '#!/bin/sh\nf=$(command -p mktemp) && chmod 000 "$f" && echo "$f"\n' > "$TMP/badtmp/mktemp"
+chmod +x "$TMP/badtmp/mktemp"
+PATH="$TMP/badtmp:$PATH" run refresh "$TMP/wt" 12 "$REAL_VC"
+expect "unwritable output record, no contract on the base -> stuck, never unchanged" 0 "stuck cannot record the validation output — temporary file failed"
 
 layout; run refresh "$TMP/wt" 12 "$VC" --fallback-cmd ""
 expect "an empty --fallback-cmd -> exit 2, never an empty test run" 2 ""
