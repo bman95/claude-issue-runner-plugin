@@ -12,7 +12,7 @@
 # fetches and probes its `origin`.
 #
 # Usage:
-#   classify.sh result <N> <worktree> <recorded-branch> <outcome> [<error>]
+#   classify.sh result <N> <worktree> <recorded-branch> <outcome> <error-file>
 #     <worktree>         the implementer's worktree path, or "" when none is known
 #                        (never run `git -C ""`: it silently reads the cwd)
 #     <recorded-branch>  $STATE_DIR/issue-N/branch (Step 3a's non-contract resume
@@ -22,38 +22,43 @@
 #                        message when the file is absent or unreadable;
 #                        hung — stopped by Step 3 item 4;
 #                        none — crashed, nothing to classify
-#     <error>            the implementer's `blocker` string or message, or item
-#                        4's hang string; "" when there is none. Newlines, CRs
-#                        and tabs are collapsed to spaces so the line stays one line.
+#     <error-file>       $STATE_DIR/issue-N/error, holding the implementer's
+#                        `blocker` string or message, or item 4's hang string,
+#                        verbatim — written by the caller as a file, never passed
+#                        on a command line (it is untrusted text: in a shell
+#                        argument, backticks and $(...) would run). Absent or empty
+#                        = no error. The script rewrites it in place with the final
+#                        error text (removes it when there is none) before it prints.
 #
 #   classify.sh pr-shape <N> <default-branch>
 #     for an issue that is not `done` or `ready`: its open PR on the
 #     `/issue-N-` branch contract, and its orphan branches (Step 3a probe 3)
 #
-# Output — `result` prints exactly one line, `<status> <pr> <error>` (<pr> is
-# `#P` or `-`; <error> is the rest of the line, possibly empty):
-#   done #P                     CLOSED, and a merged PR on the proof branch whose
-#                               headRefOid is the worktree's HEAD — the only
-#                               status that authorizes Step 5's `git branch -D`
-#   closed-externally - closed without a merged implementer PR
-#                               CLOSED without that proof (worktree gone, a branch
-#                               outside the contract, another head's merged PR)
-#   blocked #P PR #P merged but issue still open — confirm and close by hand[: <error>]
-#                               open, with that proof; the suffix carries <error>
-#                               when there is one, except for outcome `merged`
-#   blocked - <error>           open, no proof, outcome `blocker`, worktree real
-#   ready #P                    open, no proof, outcome `ready`, and an open,
-#                               non-draft PR #P on the proof branch
-#   failed - <error>            open, no proof, and outcome `failed`, `hung` or
-#                               `none` — or outcome `blocker` with the worktree
-#                               gone (an empty or unreadable branch)
-#   failed - result.json claims merged but no merged PR on <branch>
-#   failed - result.json claims ready but no open, non-draft PR on <branch>
-#                               <branch> is the worktree's branch, `(none)` if gone
+# Output — `result` prints exactly one line, `<status> <pr>` (<pr> is the bare
+# PR number, or `-`), and leaves the final error in <error-file>:
+#   done P               CLOSED, and a merged PR P on the proof branch whose
+#                        headRefOid is the worktree's HEAD — the only status that
+#                        authorizes Step 5's `git branch -D`; no error
+#   closed-externally -  CLOSED without that proof (worktree gone, a branch outside
+#                        the contract, another head's merged PR); error
+#                        `closed without a merged implementer PR`
+#   blocked P            open, with that proof; error `PR #P merged but issue still
+#                        open — confirm and close by hand`, followed by `: <error>`
+#                        when there is one, except for outcome `merged`
+#   blocked -            open, no proof, outcome `blocker`, worktree real; error kept
+#   ready P              open, no proof, outcome `ready`, and an open, non-draft PR P
+#                        on the proof branch; no error
+#   failed -             open, no proof, and outcome `failed`, `hung` or `none` — or
+#                        outcome `blocker` with the worktree gone (an empty or
+#                        unreadable branch); error kept. Outcome `merged`: error
+#                        `result.json claims merged but no merged PR on <branch>`;
+#                        outcome `ready`: `result.json claims ready but no open,
+#                        non-draft PR on <branch>` (<branch> is the worktree's
+#                        branch, `(none)` if gone)
 #
 # `pr-shape` prints one line per open contract PR and per orphan branch, or
 # `none` when there is neither:
-#   pr #P <branch> draft (checkpoint)                 body still has `## Plan` and the
+#   pr #P <branch> draft (checkpoint)                 body still has a `## Plan` heading and the
 #                                                     branch holds only the checkpoint
 #                                                     commit (1 commit ahead of the
 #                                                     default branch)
@@ -63,11 +68,14 @@
 #                                                     failed revert, or a crash inside
 #                                                     the ready→merge window)
 #   branch <B> branch only (no PR)                    a pushed `/issue-N-` branch with no
-#                                                     open PR on it
+#                                                     PR at all, in any state (Step 3a's
+#                                                     orphan); a branch whose only PRs
+#                                                     are merged or closed is not listed
 #
-# Exit status: 0 with the lines above. Non-zero prints nothing on stdout and
-# is never a classification: 1 — a query failed (gh, the fetch, ls-remote,
-# rev-list): an environment failure; 2 — a usage error.
+# Exit status: 0 with the lines above. Non-zero prints nothing on stdout,
+# leaves <error-file> untouched, and is never a classification: 1 — a query
+# failed (gh, the fetch, ls-remote, rev-list) or <error-file> could not be
+# read or rewritten: an environment failure; 2 — a usage error.
 #
 # Dependencies: bash 3.2, coreutils, grep, awk, git, gh (its built-in --jq only
 # projects fields; every decision is made here).
@@ -82,11 +90,28 @@ MODE=${1:-}
 N=${2:-}
 case $N in ''|*[!0-9]*) usage "issue number must be a positive integer, got '${N}'" ;; esac
 
+# finish STATUS PR ERROR: rewrite the error file (through a temp file in the
+# same directory, so a failed write never leaves it half-written), then print.
+finish() {
+  local tmp
+  if [ -n "$3" ]; then
+    tmp="$ERROR_FILE.classify.$$"
+    # shellcheck disable=SC2015 # intended: clean up and die when either the write or the mv fails
+    printf '%s\n' "$3" > "$tmp" && mv -f "$tmp" "$ERROR_FILE" \
+      || { rm -f "$tmp"; die "cannot write $ERROR_FILE"; }
+  else
+    rm -f "$ERROR_FILE" || die "cannot remove $ERROR_FILE"
+  fi
+  echo "$1 $2"
+}
+
 classify_result() {
-  local wt="$1" recorded="$2" outcome="$3" error="$4"
+  local wt="$1" recorded="$2" outcome="$3" error=""
   local state wt_branch="" wt_head="" proof_branch="" merged_pr="" list pr draft
   case $outcome in merged|ready|blocker|failed|hung|none) ;; *) usage "unknown outcome '$outcome'" ;; esac
-  error=$(printf '%s' "$error" | tr '\r\n\t' '   ')
+  if [ -e "$ERROR_FILE" ]; then
+    error=$(cat "$ERROR_FILE") || die "cannot read $ERROR_FILE"
+  fi
 
   state=$(gh issue view "$N" --json state --jq .state) || die "cannot query the state of issue #$N"
   case $state in OPEN|CLOSED) ;; *) die "unexpected state '$state' for issue #$N" ;; esac
@@ -109,37 +134,37 @@ classify_result() {
   fi
 
   if [ "$state" = CLOSED ]; then
-    if [ -n "$merged_pr" ]; then echo "done #$merged_pr"
-    else echo "closed-externally - closed without a merged implementer PR"; fi
+    if [ -n "$merged_pr" ]; then finish "done" "$merged_pr" ""
+    else finish closed-externally - "closed without a merged implementer PR"; fi
     return
   fi
   if [ -n "$merged_pr" ]; then
     local msg="PR #$merged_pr merged but issue still open — confirm and close by hand"
     [ "$outcome" != merged ] && [ -n "$error" ] && msg="$msg: $error"
-    echo "blocked #$merged_pr $msg"
+    finish blocked "$merged_pr" "$msg"
     return
   fi
   case $outcome in
     blocker)
-      if [ -n "$wt_branch" ]; then echo "blocked - $error"; else echo "failed - $error"; fi ;;
+      if [ -n "$wt_branch" ]; then finish blocked - "$error"; else finish failed - "$error"; fi ;;
     failed|hung|none)
-      echo "failed - $error" ;;
+      finish failed - "$error" ;;
     merged)
-      echo "failed - result.json claims merged but no merged PR on ${wt_branch:-(none)}" ;;
+      finish failed - "result.json claims merged but no merged PR on ${wt_branch:-(none)}" ;;
     ready)
       if [ -n "$proof_branch" ]; then
         list=$(gh pr list --head "$proof_branch" --state open --json number,isDraft \
           --jq '.[] | "\(.number) \(.isDraft)"') || die "cannot list open PRs on $proof_branch"
         pr=$(printf '%s\n' "$list" | awk 'NF { print $1; exit }')
         draft=$(printf '%s\n' "$list" | awk 'NF { print $2; exit }')
-        if [ -n "$pr" ] && [ "$draft" = false ]; then echo "ready #$pr"; return; fi
+        if [ -n "$pr" ] && [ "$draft" = false ]; then finish ready "$pr" ""; return; fi
       fi
-      echo "failed - result.json claims ready but no open, non-draft PR on ${wt_branch:-(none)}" ;;
+      finish failed - "result.json claims ready but no open, non-draft PR on ${wt_branch:-(none)}" ;;
   esac
 }
 
 classify_pr_shape() {
-  local default="$1" list prs out="" p b view draft body count shape refs rc ref
+  local default="$1" list prs out="" p b view draft body count shape refs rc ref any
   [ -n "$default" ] || usage "empty default branch"
   list=$(gh pr list --state open --json number,headRefName,isDraft \
     --jq '.[] | "\(.number) \(.headRefName) \(.isDraft)"') || die "cannot list open PRs"
@@ -150,13 +175,13 @@ classify_pr_shape() {
     # Explicit destinations: a single-branch clone would fetch only into
     # FETCH_HEAD. Both refs: a stale default branch inflates the count.
     git fetch -q origin "+refs/heads/$default:refs/remotes/origin/$default" \
-      "+refs/heads/$b:refs/remotes/origin/$b" 2>/dev/null || die "cannot fetch origin/$default and origin/$b"
-    count=$(git rev-list --count "origin/$default..origin/$b" 2>/dev/null) || die "cannot count origin/$default..origin/$b"
-    view=$(gh pr view "$p" --json isDraft,body --jq '.isDraft, .body') || die "cannot view PR #$p"
+      "+refs/heads/$b:refs/remotes/origin/$b" </dev/null 2>/dev/null || die "cannot fetch origin/$default and origin/$b"
+    count=$(git rev-list --count "origin/$default..origin/$b" </dev/null 2>/dev/null) || die "cannot count origin/$default..origin/$b"
+    view=$(gh pr view "$p" --json isDraft,body --jq '.isDraft, .body' </dev/null) || die "cannot view PR #$p"
     draft=$(printf '%s\n' "$view" | head -n 1)
     body=$(printf '%s\n' "$view" | tail -n +2 | tr -d '\r')
     shape="implemented, not ready"
-    if [ "$count" = 1 ] && printf '%s\n' "$body" | grep -qE '^## Plan[[:space:]]*$'; then shape=checkpoint; fi
+    if [ "$count" = 1 ] && printf '%s\n' "$body" | grep -qE '^## Plan([[:space:]]|$)'; then shape=checkpoint; fi
     case $draft in
       true)  out="${out}pr #$p $b draft ($shape)"$'\n' ;;
       false) out="${out}pr #$p $b non-draft ($shape)"$'\n' ;;
@@ -174,6 +199,9 @@ EOF_PRS
          b=${ref#refs/heads/}
          [ -n "$b" ] || continue
          printf '%s\n' "$prs" | awk -v b="$b" '$2 == b { f = 1 } END { exit !f }' && continue
+         any=$(gh pr list --head "$b" --state all --json number --jq '.[] | .number' </dev/null) \
+           || die "cannot list PRs on $b"
+         [ -n "$any" ] && continue
          out="${out}branch $b branch only (no PR)"$'\n'
        done <<EOF_REFS
 $refs
@@ -188,8 +216,9 @@ EOF_REFS
 
 case $MODE in
   result)
-    [ $# -ge 5 ] || usage "result needs <N> <worktree> <recorded-branch> <outcome> [<error>]"
-    classify_result "$3" "$4" "$5" "${6:-}" ;;
+    [ $# -ge 6 ] && [ -n "$6" ] || usage "result needs <N> <worktree> <recorded-branch> <outcome> <error-file>"
+    ERROR_FILE=$6
+    classify_result "$3" "$4" "$5" ;;
   pr-shape)
     [ $# -ge 3 ] || usage "pr-shape needs <N> <default-branch>"
     classify_pr_shape "$3" ;;

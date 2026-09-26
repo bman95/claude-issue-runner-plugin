@@ -39,6 +39,7 @@ if [ ! -f "$SCRIPT" ]; then err "classify.sh not found"; exit 1; fi
 #   merged-<branch>      `gh pr list --head B --state merged`  "number oid" lines
 #   open-<branch>        `gh pr list --head B --state open`    "number isDraft" lines
 #   open-all             `gh pr list --state open`             "number branch isDraft" lines
+#   all-<branch>         `gh pr list --head B --state all`     "number" lines (absent = no PR)
 #   view-<P>             `gh pr view P`                        isDraft line, then the body
 #   fail-prlist          any `gh pr list` fails
 #   fail-prlist-<state>  `gh pr list --state <state>` fails
@@ -113,6 +114,30 @@ check() {
     sed 's/^/  stderr  > /' "$TMP/stderr" >&2
   fi
 }
+
+# rcheck NAME EXPECTED_EXIT "STATUS PR" EXPECTED_ERROR WORKTREE RECORDED OUTCOME INPUT_ERROR
+#   Writes INPUT_ERROR to the error file the way the orchestrator does (a file,
+#   never an argument; "" = no file), runs `result`, and checks both the stdout
+#   line and the error file the script leaves behind ("" = no file). On a
+#   non-zero exit the error file must be exactly as it was.
+ERRF="$TMP/issue-error"
+rcheck() {
+  local name="$1" want_rc="$2" want_out="$3" want_err="$4" wt="$5" rec="$6" outcome="$7" in_err="$8"
+  local out rc got_err want_file
+  rm -f "$ERRF"; [ -n "$in_err" ] && printf '%s\n' "$in_err" > "$ERRF"
+  out=$(cd "$REPO" && bash "$SCRIPT" result 7 "$wt" "$rec" "$outcome" "$ERRF" 2>"$TMP/stderr"); rc=$?
+  if [ -e "$ERRF" ]; then got_err=$(cat "$ERRF"); else got_err="<no file>"; fi
+  want_file=$want_err; [ -n "$want_file" ] || want_file="<no file>"
+  [ "$rc" = 0 ] || want_file=${in_err:-<no file>}
+  if [ "$rc" = "$want_rc" ] && [ "$out" = "$want_out" ] && [ "$got_err" = "$want_file" ]; then
+    ok "$name"
+  else
+    err "$name (exit $rc, want $want_rc)"
+    printf '%s | error: %s\n' "$want_out" "$want_file" | sed 's/^/  expected> /' >&2
+    printf '%s | error: %s\n' "$out" "$got_err" | sed 's/^/  actual  > /' >&2
+    sed 's/^/  stderr  > /' "$TMP/stderr" >&2
+  fi
+}
 # no_head_query NAME: no `gh pr list --head` call was made at all
 no_head_query() {
   if grep -qF '[--head]' "$GH_STUB/log"; then err "$1: a --head query ran:"; sed 's/^/  call> /' "$GH_STUB/log" >&2
@@ -126,117 +151,131 @@ no_empty_head() {
 
 MERGED_OPEN="PR #11 merged but issue still open — confirm and close by hand"
 HANG="implementer hung (no completion): progress unchanged for 47m (--hang-minutes 30)"
+CLOSED_EXT="closed without a merged implementer PR"
 
 # --- result: rows 5, 6 ----------------------------------------------------------
 stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
-check "row 5: CLOSED + merged PR carrying the worktree's HEAD -> done" 0 "done #11" -- \
-  result 7 "$W_CONTRACT" "" merged ""
+rcheck "row 5: CLOSED + merged PR carrying the worktree's HEAD -> done" 0 "done 11" "" \
+  "$W_CONTRACT" "" merged ""
+rcheck "row 21: hung after the merge, issue CLOSED -> done, the hang string cleared" 0 "done 11" "" \
+  "$W_CONTRACT" "" hung "$HANG"
 
 stub_reset; stub issue-state CLOSED
-check "row 6: CLOSED + no merged PR -> closed-externally" 0 \
-  "closed-externally - closed without a merged implementer PR" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "row 6: CLOSED + no merged PR -> closed-externally" 0 "closed-externally -" "$CLOSED_EXT" \
+  "$W_CONTRACT" "" merged ""
 
 # --- result: row 11, the empty-branch guard ---------------------------------------
 stub_reset; stub issue-state CLOSED; stub merged- "99 $H_CONTRACT"   # what an unfiltered --head "" would match
-check "row 11: CLOSED + worktree gone -> closed-externally, never done" 0 \
-  "closed-externally - closed without a merged implementer PR" -- result 7 "$TMP/gone" "" merged ""
+rcheck "row 11: CLOSED + worktree gone -> closed-externally, never done" 0 "closed-externally -" "$CLOSED_EXT" \
+  "$TMP/gone" "" merged ""
 no_empty_head "row 11: worktree gone never runs gh pr list --head \"\""
 no_head_query "row 11: worktree gone runs no --head query at all"
 
 stub_reset; stub issue-state CLOSED; stub merged- "99 $H_CONTRACT"
-check "row 11: CLOSED + no worktree path at all -> closed-externally" 0 \
-  "closed-externally - closed without a merged implementer PR" -- result 7 "" "" none ""
+rcheck "row 11: CLOSED + no worktree path at all -> closed-externally" 0 "closed-externally -" "$CLOSED_EXT" \
+  "" "" none ""
 no_empty_head "row 11: an empty worktree path never runs gh pr list --head \"\""
 
 stub_reset; stub issue-state OPEN
-check "row 11: open + worktree gone, blocker -> failed" 0 "failed - Codex gate cap-stop" -- \
-  result 7 "$TMP/gone" "" blocker "Codex gate cap-stop"
-check "row 15: open + no worktree, agent crashed -> failed" 0 "failed - agent crashed" -- \
-  result 7 "" "" none "agent crashed"
+rcheck "row 11: open + worktree gone, blocker -> failed" 0 "failed -" "Codex gate cap-stop" \
+  "$TMP/gone" "" blocker "Codex gate cap-stop"
+rcheck "row 15: open + no worktree, agent crashed -> failed" 0 "failed -" "agent crashed" \
+  "" "" none "agent crashed"
 
 # --- result: row 14, an unproven merged claim --------------------------------------
 stub_reset; stub issue-state OPEN
-check "row 14: open + outcome merged + no merged PR -> failed" 0 \
-  "failed - result.json claims merged but no merged PR on feat/issue-7-slug" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "row 14: open + outcome merged + no merged PR -> failed" 0 "failed -" \
+  "result.json claims merged but no merged PR on feat/issue-7-slug" "$W_CONTRACT" "" merged ""
+rcheck "row 14: worktree gone names the branch (none)" 0 "failed -" \
+  "result.json claims merged but no merged PR on (none)" "$TMP/gone" "" merged ""
 stub_reset; stub issue-state CLOSED
-check "row 14: CLOSED + outcome merged + no merged PR -> closed-externally" 0 \
-  "closed-externally - closed without a merged implementer PR" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "row 14: CLOSED + outcome merged + no merged PR -> closed-externally" 0 "closed-externally -" "$CLOSED_EXT" \
+  "$W_CONTRACT" "" merged ""
 
 # --- result: row 16, merged but still open (and its suffixes) ----------------------
 stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
-check "row 16: open + merged PR, outcome merged -> blocked, no suffix" 0 "blocked #11 $MERGED_OPEN" -- \
-  result 7 "$W_CONTRACT" "" merged ""
-check "row 16: open + merged PR, outcome blocker -> blocked with the blocker suffix" 0 \
-  "blocked #11 $MERGED_OPEN: base freshness conflict" -- result 7 "$W_CONTRACT" "" blocker "base freshness conflict"
-check "row 21: hung after merge, issue still open -> blocked with the hang suffix" 0 \
-  "blocked #11 $MERGED_OPEN: $HANG" -- result 7 "$W_CONTRACT" "" hung "$HANG"
-check "row 16: open + merged PR, no error at all -> blocked, no suffix" 0 "blocked #11 $MERGED_OPEN" -- \
-  result 7 "$W_CONTRACT" "" none ""
+rcheck "row 16: open + merged PR, outcome merged -> blocked, no suffix" 0 "blocked 11" "$MERGED_OPEN" \
+  "$W_CONTRACT" "" merged "stale text from the file"
+rcheck "row 16: open + merged PR, outcome blocker -> blocked with the blocker suffix" 0 "blocked 11" \
+  "$MERGED_OPEN: base freshness conflict" "$W_CONTRACT" "" blocker "base freshness conflict"
+rcheck "row 21: hung after merge, issue still open -> blocked with the hang suffix" 0 "blocked 11" \
+  "$MERGED_OPEN: $HANG" "$W_CONTRACT" "" hung "$HANG"
+rcheck "row 16: open + merged PR, no error at all -> blocked, no suffix" 0 "blocked 11" "$MERGED_OPEN" \
+  "$W_CONTRACT" "" none ""
 
 # --- result: row 17, a branch outside the contract ---------------------------------
 stub_reset; stub issue-state CLOSED
-check "row 17: scratch branch, CLOSED -> closed-externally" 0 \
-  "closed-externally - closed without a merged implementer PR" -- result 7 "$W_SCRATCH" "" merged ""
+rcheck "row 17: scratch branch, CLOSED -> closed-externally" 0 "closed-externally -" "$CLOSED_EXT" \
+  "$W_SCRATCH" "" merged ""
 no_head_query "row 17: scratch branch runs no --head query"
 stub_reset; stub issue-state OPEN
-check "row 17: scratch branch, open, blocker -> blocked" 0 "blocked - Agent tool unavailable" -- \
-  result 7 "$W_SCRATCH" "" blocker "Agent tool unavailable"
+rcheck "row 17: scratch branch, open, blocker -> blocked" 0 "blocked -" "Agent tool unavailable" \
+  "$W_SCRATCH" "" blocker "Agent tool unavailable"
 no_head_query "row 17: scratch branch (open) runs no --head query"
 stub_reset; stub issue-state CLOSED; stub merged-feat_issue-70-slug "70 $H_SEVENTY"
-check "row 17: #70's worktree never proves #7 (trailing dash)" 0 \
-  "closed-externally - closed without a merged implementer PR" -- result 7 "$W_SEVENTY" "" merged ""
+rcheck "row 17: #70's worktree never proves #7 (trailing dash)" 0 "closed-externally -" "$CLOSED_EXT" \
+  "$W_SEVENTY" "" merged ""
 no_head_query "row 17: #70's branch runs no --head query for #7"
 stub_reset; stub issue-state CLOSED; stub merged-someone_unrelated-name "31 $H_OTHER"
-check "row 17: the branch Step 3a recorded is accepted as proof branch" 0 "done #31" -- \
-  result 7 "$W_OTHER" "someone/unrelated-name" merged ""
+rcheck "row 17: the branch Step 3a recorded is accepted as proof branch" 0 "done 31" "" \
+  "$W_OTHER" "someone/unrelated-name" merged ""
 
 # --- result: row 18, a previous run's merged PR on the same name --------------------
 stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "9 $OLD_OID"
-check "row 18: merged PR with another headRefOid, open, blocker -> blocked" 0 "blocked - checks failed" -- \
-  result 7 "$W_CONTRACT" "" blocker "checks failed"
+rcheck "row 18: merged PR with another headRefOid, open, blocker -> blocked" 0 "blocked -" "checks failed" \
+  "$W_CONTRACT" "" blocker "checks failed"
 stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "9 $OLD_OID"
-check "row 18: merged PR with another headRefOid, CLOSED -> closed-externally" 0 \
-  "closed-externally - closed without a merged implementer PR" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "row 18: merged PR with another headRefOid, CLOSED -> closed-externally" 0 "closed-externally -" "$CLOSED_EXT" \
+  "$W_CONTRACT" "" merged ""
 stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "$(printf '9 %s\n12 %s' "$OLD_OID" "$H_CONTRACT")"
-check "row 18: the PR carrying this HEAD wins among several" 0 "done #12" -- \
-  result 7 "$W_CONTRACT" "" merged ""
+rcheck "row 18: the PR carrying this HEAD wins among several" 0 "done 12" "" \
+  "$W_CONTRACT" "" merged ""
 
 # --- result: rows 21, 15 — the other open outcomes ---------------------------------
 stub_reset; stub issue-state OPEN
-check "row 21: hung, open, no merged PR -> failed with the hang string" 0 "failed - $HANG" -- \
-  result 7 "$W_CONTRACT" "" hung "$HANG"
-check "open + outcome failed -> failed" 0 "failed - validation: cannot resolve the base branch" -- \
-  result 7 "$W_CONTRACT" "" failed "validation: cannot resolve the base branch"
-check "a multi-line error stays on one line" 0 "failed - line one line two" -- \
-  result 7 "$W_CONTRACT" "" failed $'line one\nline two'
+rcheck "row 21: hung, open, no merged PR -> failed with the hang string" 0 "failed -" "$HANG" \
+  "$W_CONTRACT" "" hung "$HANG"
+rcheck "open + outcome failed -> failed" 0 "failed -" "validation: cannot resolve the base branch" \
+  "$W_CONTRACT" "" failed "validation: cannot resolve the base branch"
+rcheck "a multi-line error is kept verbatim" 0 "failed -" $'line one\nline two' \
+  "$W_CONTRACT" "" failed $'line one\nline two'
+# Untrusted text: it reaches the script as a file, so nothing in it ever runs.
+# shellcheck disable=SC2016 # literal on purpose: the text must never expand
+INJECT='revert to draft failed: `touch '"$TMP"'/pwned` $(touch '"$TMP"'/pwned2) "quoted" \ back'
+rcheck "shell metacharacters in the error are data, kept verbatim" 0 "blocked -" "$INJECT" \
+  "$W_CONTRACT" "" blocker "$INJECT"
+if [ -e "$TMP/pwned" ] || [ -e "$TMP/pwned2" ]; then err "an error string executed a command"
+else ok "no command in the error string ran"; fi
 
 # --- result: row 35, the ready claim ------------------------------------------------
 stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 false"
-check "row 35: open, non-draft PR on the branch -> ready" 0 "ready #12" -- result 7 "$W_CONTRACT" "" ready ""
+rcheck "row 35: open, non-draft PR on the branch -> ready" 0 "ready 12" "" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state OPEN; stub open-feat_issue-7-slug "12 true"
-check "row 35: the PR is a draft -> failed" 0 \
-  "failed - result.json claims ready but no open, non-draft PR on feat/issue-7-slug" -- result 7 "$W_CONTRACT" "" ready ""
+rcheck "row 35: the PR is a draft -> failed" 0 "failed -" \
+  "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state OPEN
-check "row 35: no open PR -> failed" 0 \
-  "failed - result.json claims ready but no open, non-draft PR on feat/issue-7-slug" -- result 7 "$W_CONTRACT" "" ready ""
+rcheck "row 35: no open PR -> failed" 0 "failed -" \
+  "result.json claims ready but no open, non-draft PR on feat/issue-7-slug" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state OPEN; stub open-worktree-agent-abc123 "12 false"
-check "row 35: scratch branch is no proof branch -> failed" 0 \
-  "failed - result.json claims ready but no open, non-draft PR on worktree-agent-abc123" -- result 7 "$W_SCRATCH" "" ready ""
+rcheck "row 35: scratch branch is no proof branch -> failed" 0 "failed -" \
+  "result.json claims ready but no open, non-draft PR on worktree-agent-abc123" "$W_SCRATCH" "" ready ""
 no_head_query "row 35: scratch branch runs no --head query"
 
 # --- result: failures and usage ------------------------------------------------------
 stub_reset
-check "issue state query fails -> exit 1, no classification" 1 "" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "issue state query fails -> exit 1, no classification, error file untouched" 1 "" "" \
+  "$W_CONTRACT" "" blocker "kept as it was"
 stub_reset; stub issue-state CLOSED; : > "$GH_STUB/fail-prlist"
-check "merged-PR query fails -> exit 1, never read as no proof" 1 "" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "merged-PR query fails -> exit 1, never read as no proof" 1 "" "" "$W_CONTRACT" "" merged ""
 stub_reset; stub issue-state OPEN; : > "$GH_STUB/fail-prlist-open"
-check "ready's open-PR query fails -> exit 1" 1 "" -- result 7 "$W_CONTRACT" "" ready ""
+rcheck "ready's open-PR query fails -> exit 1" 1 "" "" "$W_CONTRACT" "" ready ""
 stub_reset; stub issue-state MERGED
-check "unexpected issue state -> exit 1" 1 "" -- result 7 "$W_CONTRACT" "" merged ""
+rcheck "unexpected issue state -> exit 1" 1 "" "" "$W_CONTRACT" "" merged ""
 stub_reset; stub issue-state OPEN
-check "unknown outcome -> exit 2" 2 "" -- result 7 "$W_CONTRACT" "" success ""
-check "non-numeric issue -> exit 2" 2 "" -- result 7x "$W_CONTRACT" "" merged ""
-check "missing arguments -> exit 2" 2 "" -- result 7 "$W_CONTRACT"
+rcheck "unknown outcome -> exit 2" 2 "" "" "$W_CONTRACT" "" success ""
+check "non-numeric issue -> exit 2" 2 "" -- result 7x "$W_CONTRACT" "" merged "$ERRF"
+check "missing error-file argument -> exit 2" 2 "" -- result 7 "$W_CONTRACT" "" merged
+check "empty error-file argument -> exit 2" 2 "" -- result 7 "$W_CONTRACT" "" merged ""
 check "unknown mode -> exit 2" 2 "" -- classify 7
 
 # --- pr-shape ---------------------------------------------------------------------------
@@ -248,7 +287,7 @@ git init -q --bare "$PO"; git -C "$PO" symbolic-ref HEAD refs/heads/main
 git init -q "$PUSHER"; git -C "$PUSHER" symbolic-ref HEAD refs/heads/main
 git -C "$PUSHER" commit -q --allow-empty -m base
 git -C "$PUSHER" remote add origin "$PO"; git -C "$PUSHER" push -q origin main
-git clone -q "$PO" "$PR_REPO"                                    # origin/main = base
+git clone -q --single-branch "$PO" "$PR_REPO"                   # origin/main = base; fetches only main
 git -C "$PUSHER" commit -q --allow-empty -m "sibling merge"      # main advances
 git -C "$PUSHER" push -q origin main
 push_branch() {   # push_branch BRANCH NCOMMITS — forked from the advanced main
@@ -276,17 +315,24 @@ stub view-21 "true"$'\n'"$IMPL_BODY"
 check "draft, one commit, body rewritten (no ## Plan) -> draft (implemented, not ready)" 0 \
   "pr #21 feat/issue-7-slug draft (implemented, not ready)" -- pr-shape 7 main
 stub view-21 "false"$'\n'"$IMPL_BODY"
-stub view-22 "false"$'\n'"$PLAN_BODY"
 check "row 25: non-draft implemented PR -> non-draft (implemented, not ready)" 0 \
   "pr #21 feat/issue-7-slug non-draft (implemented, not ready)" -- pr-shape 7 main
 stub view-21 "false"$'\n'"$PLAN_BODY"
 check "non-draft checkpoint (drafts refused) -> non-draft (checkpoint)" 0 \
   "pr #21 feat/issue-7-slug non-draft (checkpoint)" -- pr-shape 7 main
+stub view-21 "true"$'\n## Summary\r\n\r\n## Plan \r\n\r\n1. Do it.\r'
+check "a CRLF body with a trailing-space ## Plan heading is still the checkpoint" 0 \
+  "pr #21 feat/issue-7-slug draft (checkpoint)" -- pr-shape 7 main
+stub view-21 "true"$'\n## Summary\n\n## Planning notes\n'
+check "## Planning is not the ## Plan heading" 0 \
+  "pr #21 feat/issue-7-slug draft (implemented, not ready)" -- pr-shape 7 main
 
 stub_reset; stub open-all "70 feat/issue-70-slug true"
 check "row 23: pushed branch, no open PR -> branch only (no PR)" 0 \
   "branch feat/issue-9-orphan branch only (no PR)" -- pr-shape 9 main
 check "no PR and no branch -> none" 0 "none" -- pr-shape 11 main
+stub all-feat_issue-9-orphan "41"
+check "row 23: a branch whose only PR is merged or closed is no orphan -> none" 0 "none" -- pr-shape 9 main
 
 push_branch chore/issue-7-second 1
 stub_reset; stub open-all "21 feat/issue-7-slug true"; stub view-21 "true"$'\n'"$PLAN_BODY"
