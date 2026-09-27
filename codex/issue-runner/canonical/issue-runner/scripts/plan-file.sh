@@ -37,10 +37,12 @@
 # The JSON is parsed here (bash + awk, no jq). Schema version 1: an object with
 # `version` (the integer 1) and `issues`, an array of objects, each with `n` (a
 # positive integer, unique), `blocked_by` (an array of positive integers) and
-# `files` (an array of strings without control characters). Other keys are
-# ignored, except that a key containing `.`, `[` or `]` makes the block invalid
-# (it could collide with the paths the parser records). Any other version is
-# unknown, and the file is ignored.
+# `files` (an array of strings without control characters). Positive integers
+# have at most 9 digits. Other keys are ignored, except that a duplicate key or
+# a key containing `.`, `[` or `]` makes a version-1 block invalid (it could
+# collide with the paths the parser records). Any other version is unknown,
+# whatever its keys, and the file is ignored. On the issue side, control
+# characters in a path are printed as `?`.
 #
 # The issue side is parsed with Step 2's rules:
 #   blocked_by  every `#X` on a bullet line (`-`, `*` or `+`) of the body's
@@ -88,6 +90,8 @@
 set -u
 set +e +o pipefail   # every exit status below is read explicitly
 export LC_ALL=C      # byte semantics for awk and sort
+# C0 controls, DEL and C1 controls (U+0080-U+009F, UTF-8 C2 80-C2 9F): never printed
+CTRL_RE=$(printf '[\001-\037\177]|\302[\200-\237]')
 
 usage() { echo "plan-file.sh: $1" >&2; exit 2; }
 say()   { printf 'plan file: %s\n' "$1"; }
@@ -108,12 +112,15 @@ trap 'rm -rf "$TMP"' EXIT
 #         lines after an `ok` line; or one `version V` line (not 1); or one
 #         `malformed <reason>` line
 json_awk() {
-  awk -v mode="$1" -v want="${2:-}" '
-  BEGIN { CTRL = "[" sprintf("%c", 1) "-" sprintf("%c", 31) sprintf("%c", 127) "]" }
+  awk -v mode="$1" -v want="${2:-}" -v CTRL="$CTRL_RE" '
   function fail(m) { if (ERR == "") ERR = m " at byte " P; return 0 }
   function ws() { while (P <= N && (C[P] == " " || C[P] == "\t" || C[P] == "\n" || C[P] == "\r")) P++ }
   function rec(path, t, v) {
-    if (path in TYPE) return fail("duplicate key " path)
+    if (path in TYPE) {
+      # plan mode: a schema error, raised only once the version is known to be 1
+      if (mode == "plan") { if (SCHEMA == "") SCHEMA = "duplicate key " path; return 1 }
+      return fail("duplicate key " path)
+    }
     TYPE[path] = t; VAL[path] = v; return 1
   }
   function val(path,   c) {
@@ -136,9 +143,12 @@ json_awk() {
       ws(); if (C[P] != "\"") return fail("expected a key")
       if (!str()) return 0
       k = SV
-      if (mode == "plan" && k ~ /[].[]/) return fail("unexpected key")
       ws(); if (C[P] != ":") return fail("expected :"); P++
-      if (!val(path "." k)) return 0
+      if (mode == "plan" && k ~ /[].[]/) {
+        # it could collide with a recorded path: parse its value out of the way
+        if (SCHEMA == "") SCHEMA = "unexpected key " k
+        if (!val(sprintf("%c", 1) path "." k)) return 0
+      } else if (!val(path "." k)) return 0
       ws()
       if (C[P] == ",") { P++; continue }
       if (C[P] == "}") { P++; return 1 }
@@ -217,12 +227,13 @@ json_awk() {
     }
     return fail("unterminated string")
   }
-  function posint(v) { return v ~ /^[1-9][0-9]*$/ }
+  function posint(v) { return v ~ /^[1-9][0-9]*$/ && length(v) <= 9 }
   function plan(   i, j, p, n, seen, out) {
     if (TYPE[""] != "o") return "malformed the top level is not an object"
     if (!(".version" in TYPE)) return "malformed no version"
     if (TYPE[".version"] != "n" || VAL[".version"] !~ /^-?[0-9]+$/) return "malformed version is not an integer"
     if (VAL[".version"] != "1") return "version " VAL[".version"]
+    if (SCHEMA != "") return "malformed " SCHEMA
     if (TYPE[".issues"] != "a") return "malformed issues is not an array"
     out = "ok"
     for (i = 0; (".issues[" i "]") in TYPE; i++) {
@@ -263,11 +274,12 @@ json_awk() {
 # --- Issue-side parsing (Step 2's rules) -----------------------------------------
 # norm_paths: one raw element per line in, one normalized path per line out
 norm_paths() {
-  awk '{ p = $0; gsub(/^[ \t]+|[ \t]+$/, "", p)
+  awk -v CTRL="$CTRL_RE" '{ p = $0; gsub(/^[ \t]+|[ \t]+$/, "", p)
          while (p ~ /^`/) p = substr(p, 2)
          while (p ~ /`$/) p = substr(p, 1, length(p) - 1)
          gsub(/^[ \t]+|[ \t]+$/, "", p)
          if (substr(p, 1, 2) == "./") p = substr(p, 3)
+         gsub(CTRL, "?", p)   # issue bodies are untrusted: no control byte reaches the printout
          if (p != "") print p }'
 }
 # body_deps < body: one dependency per line, or `nosection`

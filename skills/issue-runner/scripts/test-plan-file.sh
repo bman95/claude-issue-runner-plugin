@@ -139,6 +139,9 @@ issue 12 "$(slice 10 '- #11' 'src/api/')"
 tracking 10 "$(block '{"version":2,"slices":{}}')"
 expect "unknown version is reported and ignored" \
   "plan file: ignored (#10's plan file has unknown version 2)"
+tracking 10 "$(block '{"version":2,"issues":{"src/a.ts":{}},"x":1,"x":2}')"
+expect "an unknown version stays unknown whatever its keys" \
+  "plan file: ignored (#10's plan file has unknown version 2)"
 
 for bad in '{"version":1,"issues":[{"n":"11","blocked_by":[],"files":[]}]}|issues[0].n is not a positive integer' \
            '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":[]},{"n":11,"blocked_by":[],"files":[]}]}|#11 listed twice' \
@@ -146,6 +149,9 @@ for bad in '{"version":1,"issues":[{"n":"11","blocked_by":[],"files":[]}]}|issue
            '{"version":1,"issues":[{"n":11,"blocked_by":[0],"files":[]}]}|issues[0].blocked_by[0] is not a positive integer' \
            '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":[3]}]}|issues[0].files[0] is not a string without control characters' \
            '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["a\u001b[2J"]}]}|issues[0].files[0] is not a string without control characters' \
+           '{"version":1,"issues":[{"n":11,"blocked_by":[1234567890],"files":[]}]}|issues[0].blocked_by[0] is not a positive integer' \
+           '{"version":1,"issues":[],"a.b":1}|unexpected key a.b' \
+           '{"version":1,"issues":[],"issues":[]}|duplicate key .issues' \
            '{"version":"1","issues":[]}|version is not an integer' \
            '[1]|the top level is not an object'; do
   fixture schema
@@ -240,6 +246,23 @@ printf '%s\n' '{"body":"Part of #10@r@n@r@n## Blocked by@r@n@r@n- #9 @u2014 done
 tracking 10 "$(block "$(printf '%s' '{"version":1,"issues":[{"n":11,"blocked_by":[9],"files":["src/é😀.ts"]}]}')")"
 grep -q 'u00e9' "$SD/issue-11/details.json" || err "escapes fixture lost its \\u escapes"
 expect "JSON escapes (\\r\\n, \\u0060, \\u00e9, a surrogate pair) decode to the raw characters" \
+  'plan file: #10 matches the in-scope issue bodies (1 issues)'
+
+fixture issue-ctrl
+mkdir -p "$SD/issue-11"; printf '11\n' > "$SD/scope.txt"
+printf '%s\n' '{"body":"Part of #10@n@n## Blocked by@n@nNone@n@nFiles likely touched: src/a.ts@u001b[2J@rFAKE@u009b1m","number":11}' \
+  | sed 's/@/\\/g' > "$SD/issue-11/details.json"
+tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["src/a.ts"]}]}')"
+expect "C0 and C1 control characters from an issue body are never printed raw" \
+  'plan file: #11 files differs: plan [src/a.ts] vs issue [src/a.ts?[2J?FAKE?1m]'
+tracking 10 "$(block "$(printf '%s' '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["a@u009b1m"]}]}' | sed 's/@/\\/g')")"
+expect "a C1 control character in a plan path is a schema error" \
+  "plan file: ignored (#10's plan file is not valid: issues[0].files[0] is not a string without control characters)"
+
+fixture section-end
+issue 11 "$(printf 'Part of #10\n\n## Blocked by\n\n- #9\n\n## Interfaces\n\n- #99 provides x\n\nFiles likely touched: src/a.ts\n')"
+tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[9],"files":["src/a.ts"]}]}')"
+expect "a heading after ## Blocked by ends the section" \
   'plan file: #10 matches the in-scope issue bodies (1 issues)'
 
 # --- usage ------------------------------------------------------------------------
