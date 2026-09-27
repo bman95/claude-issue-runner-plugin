@@ -77,8 +77,8 @@ expect "fresh init: lock holds the owner pid" test "$(cat "$RUN_ROOT/lock")" = "
 expect "fresh init: session pointer written" test "$(cat "$RUN_ROOT/session")" = sess-A
 expect "fresh init: state dir created, no temp pointer left" \
   eval '[ -d "$STATE_DIR" ] && [ -z "$(ls "$RUN_ROOT" | grep session.tmp)" ]'
-expect "fresh init: run-id is the repo key plus a UTC timestamp, invocation a UTC timestamp" \
-  eval 'grep -qE "^$KEY@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\$" "$STATE_DIR/run-id" && grep -qE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\$" "$STATE_DIR/invocation"'
+expect "fresh init: run-id is the repo key plus a UTC timestamp and a per-call suffix; invocation likewise" \
+  eval 'grep -qE "^$KEY@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z-[0-9]+-[0-9]+\$" "$STATE_DIR/run-id" && grep -qE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z-[0-9]+-[0-9]+\$" "$STATE_DIR/invocation"'
 
 # --- live lock refusal ----------------------------------------------------------
 fresh live-pid
@@ -143,6 +143,10 @@ printf 'kept-id\n' > "$STATE_DIR/run-id"; printf 'old-invocation\n' > "$STATE_DI
 rs init "$LIVE" 120
 expect "re-entry keeps the run id and rewrites the invocation" \
   eval '[ "$RC" -eq 0 ] && [ "$(cat "$STATE_DIR/run-id")" = kept-id ] && ! grep -qx old-invocation "$STATE_DIR/invocation" && [ -s "$STATE_DIR/invocation" ]'
+INV1=$(cat "$STATE_DIR/invocation"); rm -f "$RUN_ROOT/lock"
+rs init "$LIVE" 120
+expect "two inits in the same second still get distinct invocations" \
+  eval '[ "$RC" -eq 0 ] && [ -s "$STATE_DIR/invocation" ] && [ "$(cat "$STATE_DIR/invocation")" != "$INV1" ]'
 rm -f "$STATE_DIR/run-id"; rm -f "$RUN_ROOT/lock"
 rs init "$LIVE" 120
 expect "a kept state with no run id (an older plugin's) gets one minted" \

@@ -57,7 +57,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
   - A row-16 `blocked` issue's `merged` waits for Step 4's answer, and a previous run's PR removes its `merge-oid`.
   - Every command runs in its own process group under a fixed 60-second bound (TERM, then KILL, then a sweep of the group). A failure or timeout is a Step 5 report line, never a blocker.
   - `/issue-runner --flush` sends `flush` for the default branch's tip in the foreground, and never locks or writes run state.
-  - `classify.sh result` now records `issue-N/merge-oid` (`<oid> <base> <P>`) on merge proof, from the same query, which adds `mergeCommit` and `baseRefName`. `run-state.sh init` writes `run-id` (once per run) and `invocation`.
+  - `classify.sh result` now records `issue-N/merge-oid` (`<oid> <base> <P>`) on merge proof, from the same query, which adds `mergeCommit` and `baseRefName`. `run-state.sh init` writes `run-id` (once per run) and `invocation`, each a UTC timestamp with a per-call suffix.
   - The `--merge-ready` refresh's new *stuck* reason is `integration contract changed after ready — a human must review and merge`, and Step 4 never retries the matching implementer blocker.
   - To fit the slice under the spec's word ceiling, Step 3 item 4's hang threshold and stopped-implementer worktree lookup moved into `classify.sh` (`hang`, `worktree`), with their logic unchanged and new fixtures.
   - The RFC's §15 records where the build differs from the RFC. New lint check 26 runs `scripts/test-integration-contract.sh`. Expected behavior gains scenarios rows 67–72; flagged for the release slice (#62).

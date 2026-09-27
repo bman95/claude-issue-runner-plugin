@@ -49,8 +49,8 @@
 #              carry the path literally, so a relative one would resolve against
 #              whatever cwd reads it).
 #   STATE_DIR  $RUN_ROOT/state
-#   In state/, `init` writes `run-id` (`<REPO_KEY>@<UTC start timestamp>`, once
-#   per run; a non-empty one is never overwritten) and `invocation` (this init's UTC timestamp), the
+#   In state/, `init` writes `run-id` (`<REPO_KEY>@<UTC start timestamp>-<pid>-<random>`, once
+#   per run; a non-empty one is never overwritten) and `invocation` (this init's UTC timestamp, same suffix), the
 #   integration hints' ISSUE_RUNNER_RUN and ISSUE_RUNNER_INVOCATION.
 #   Beside state/: `lock` (the owner PID; its mtime is the heartbeat),
 #   `session` (the orchestrator's $CLAUDE_CODE_SESSION_ID, one line) and
@@ -220,7 +220,9 @@ cmd_init() {
   # run-id is written once per run: a fresh state dir has none, and a kept one
   # left by a plugin version that predates it gets one now. It is never
   # overwritten. invocation is rewritten by every init.
-  NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  # Second-resolution time alone collides for two inits in one second: a per-call
+  # suffix (this process id and a random number) keeps both ids unique.
+  NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)-$$-$RANDOM
   if [ ! -s "$STATE_DIR/run-id" ]; then
     printf '%s@%s\n' "$REPO_KEY" "$NOW" > "$STATE_DIR/run-id" 2>/dev/null || fail_locked "cannot write run id: $STATE_DIR/run-id"
   fi
