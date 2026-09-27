@@ -295,13 +295,14 @@ fi
 # test-classify.sh), Step 3a/Step 4/Step 5 (live GitHub state, human escalation),
 # or Step 1/2/State (scope, DAG construction, the run lock), gh-issue (its
 # gate cap is row 50, its prose review profile rows 51-59, its reviewer and gate
-# liveness rows 60-62), or the planner (issue-plan reconciliation, rows 45-49) —
+# liveness rows 60-62), the planner (issue-plan reconciliation, rows 45-49), or
+# Step 2's plan-file check (rows 63-66, fixtured by test-plan-file.sh) —
 # judgement or live-repo work outside a pure status-files-and-dag.txt state
 # machine, so
 # there is nothing here to fixture. Pin the total row count so a scenarios.md
 # edit that adds or removes a row is caught here for review, not silently.
 IN_SCOPE_ROWS="1 2 3 4 29 32 34"
-EXPECTED_ROW_COUNT=62
+EXPECTED_ROW_COUNT=66
 
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"

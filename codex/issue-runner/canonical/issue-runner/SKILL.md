@@ -208,7 +208,18 @@ Persist `dag.json`, and beside it `dag.txt` (the scheduler's input, Step 3): one
 - one line per issue: number, deps, title, and requested profile — `profile: prose (flag)` or `profile: prose (escalation)` from its `profile` file, else `profile: standard`; suffix `(not honored: gate waived)` in a gateless run (the implementer's guard decides the effective one; Step 5 reports it);
 - the conflicts forced into serial order, headed `Conflicts (Files likely touched intersection; LLM refinement skipped)`, `Conflicts (LLM refinement; #X, #Y lack Files likely touched:)`, or `Conflicts: none computed (--no-llm-refine; #X, #Y lack Files likely touched:)`;
 - the critical-path length (issues on the longest dependency chain; `n/a` when the walk appended unplaced issues);
-- if it appended any, `Cycle (unresolved; Step 3 item 6 will skip): #A, #B`.
+- if it appended any, `Cycle (unresolved; Step 3 item 6 will skip): #A, #B`;
+- the plan-file check, run from the repository root: print its `plan file: …` lines verbatim. Drift is a warning, never a stop: the DAG above stays the issue bodies' (why: Why the plan file is not authoritative).
+
+  ```bash
+  PLAN_FILE_SCRIPT=""
+  for c in "${CLAUDE_PLUGIN_ROOT:-/nonexistent}/skills/issue-runner/scripts/plan-file.sh" \
+           "$HOME/.claude/skills/issue-runner/scripts/plan-file.sh"; do
+    [ -f "$c" ] && PLAN_FILE_SCRIPT="$c" && break
+  done
+  if [ -z "$PLAN_FILE_SCRIPT" ]; then echo "plan file: not checked (plan-file.sh not found)"
+  else bash "$PLAN_FILE_SCRIPT" "$STATE_DIR" || echo "plan file: not checked (exit $?)"; fi
+  ```
 
 **Estimate the agent spend.** Resolve `MAX_CODEX_ITERATIONS` (default 3; `--max-codex-iterations`) and whether the run is gateless (`--no-codex-gate`, or the user's Step 0 proceed-without-gate) — Step 3a's dispatch template needs both too. Then print one closing line, `N` = `scope.txt`'s issue count (why: How the agent-spend estimate is computed):
 

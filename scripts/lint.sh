@@ -65,7 +65,8 @@
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
-#      resume-check.sh, merge-ready.sh, run-state.sh or scheduler.sh;
+#      resume-check.sh, merge-ready.sh, run-state.sh, scheduler.sh or
+#      plan-file.sh;
 #      gh-issue's "## Validation contract" section, skills/gh-issue/REFERENCE.md
 #      and skills/issue-runner/{SKILL,REFERENCE}.md are byte-identical across
 #      editions
@@ -89,6 +90,11 @@
 #      plus the wrapper skill that adapts it) agree, except for the differences
 #      recorded in codex/issue-runner/parity-allowlist.txt; a stale allowlist
 #      entry fails too
+#  25. skills/issue-runner/scripts/test-plan-file.sh passes — the fixtures for
+#      scripts/plan-file.sh, Step 2's plan-file drift check — and
+#      the plan-file contract strings (the `## Plan file` heading and the
+#      ```issue-runner-plan fence) appear in the script and in both editions'
+#      issue-plan
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -641,7 +647,8 @@ for c in "$ROOT"/codex/issue-runner/canonical/*/scripts/*; do
 done
 for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/classify.sh \
                 issue-runner/scripts/resume-check.sh issue-runner/scripts/merge-ready.sh \
-                issue-runner/scripts/run-state.sh issue-runner/scripts/scheduler.sh; do
+                issue-runner/scripts/run-state.sh issue-runner/scripts/scheduler.sh \
+                issue-runner/scripts/plan-file.sh; do
   [ -f "$ROOT/codex/issue-runner/canonical/$required" ] \
     || { err "codex/issue-runner/canonical/$required missing (the Codex canonical procedure runs it)"; bundled_ok=0; }
 done
@@ -776,6 +783,30 @@ else
   fi
   [ "$parity_ok" -eq 1 ] && ok "issue-runner headings and --flag names agree between editions ($(grep -c . "$TMP/parity.allow") allowlisted differences)"
 fi
+
+# 25. Plan-file drift check fixtures and contract strings --------------------------
+# issue-plan writes the block the runner's plan-file.sh reads: the heading and
+# the fence's info string must be spelled the same on both sides.
+TEST_PLAN_FILE="$ROOT/skills/issue-runner/scripts/test-plan-file.sh"
+PLAN_FILE_SH="$ROOT/skills/issue-runner/scripts/plan-file.sh"
+if [ -f "$TEST_PLAN_FILE" ]; then
+  if bash "$TEST_PLAN_FILE" >"$TMP/test-plan-file.out" 2>&1; then
+    ok "plan-file fixtures pass (skills/issue-runner/scripts/test-plan-file.sh)"
+  else
+    err "plan-file fixtures failed:"
+    cat "$TMP/test-plan-file.out" >&2
+  fi
+else
+  err "$TEST_PLAN_FILE not found"
+fi
+pf_ok=1
+for f in "$PLAN_FILE_SH" "$SKILL_PLAN" "$CANON_PLAN"; do
+  for s in '## Plan file' '```issue-runner-plan'; do
+    grep -qF -- "$s" "$f" 2>/dev/null \
+      || { err "plan-file contract string '$s' missing from ${f#"$ROOT"/}"; pf_ok=0; }
+  done
+done
+[ "$pf_ok" -eq 1 ] && ok "plan-file contract strings present in plan-file.sh and both editions' issue-plan"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
