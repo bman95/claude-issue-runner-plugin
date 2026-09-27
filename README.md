@@ -125,6 +125,8 @@ This repository's own contract is `preflight: bash scripts/lint.sh` with no `ful
 - **Git >= 2.5** (worktrees).
 - **CI that runs on draft PRs.** An orchestrated PR is a draft from planning until the merge step, so a workflow that skips drafts (`if: github.event.pull_request.draft == false`) must list `ready_for_review` in its `pull_request` `types` **alongside** the defaults (`opened`, `synchronize`, `reopened` — a `types` list replaces them, and a workflow keyed on `ready_for_review` alone never tests a later push, draft or not); otherwise the merge's checks gate sees no checks, or only `skipped` ones, and reports the merge as uncovered. A bare `on: pull_request` is fine.
 - **A validation contract is optional.** `.issue-runner/validation` (above) tells implementers what to run; without it they fall back to the project's conventions.
+- **An integration contract is optional.** `.issue-runner/integration` declares a `hint:` command the orchestrator runs at run start, after each merge, at run end and on `--flush` (`docs/integration-rfc.md`, slice 1); without it no hint is sent.
+- **`jq`**, only for the release smoke test's `check.sh` (below).
 
 The `gh-issue` implementer skill is bundled — no separate installation.
 
