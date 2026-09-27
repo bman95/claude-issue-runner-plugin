@@ -16,9 +16,12 @@
 #   - the conflicting pair was serialized: recorded in conflicts.json, and the
 #     conflicting issue paused behind the independent one the same way (a
 #     conflict is a `depends` edge, runner Step 2);
-#   - every open PR's body carries `## Review notes` (issue #61 asks for it;
-#     gh-issue writes it for iteration history) and a `## Test plan` naming the
-#     contract's validation, `preflight` or its command (gh-issue Step 7);
+#   - every open PR's body carries the review notes (issue #61): `## Review
+#     notes`, required when its result.json shows a state gh-issue records
+#     there (inline Phase 1, a degraded, waived or capped gate, a revoked
+#     profile) and otherwise optional, since gh-issue writes the heading only
+#     for iteration history; and a `## Test plan` naming the contract's
+#     validation, `preflight` or its command (gh-issue Step 7);
 #   - every dispatched issue's result.json exists and is one result object
 #     (an outcome of merged/blocker/failed/ready, a non-empty worktree).
 #
@@ -174,10 +177,20 @@ check_waited "$C" "(conflict)"
 PRS=$(gh pr list --repo "$REPO" --state open --limit 100 --json number --jq '.[].number') || die "cannot list open PRs of $REPO"
 [ -n "$PRS" ] || fail "the run left at least one open PR"
 for p in $PRS; do
-  body=$(gh pr view "$p" --repo "$REPO" --json body --jq .body) || { fail "PR #$p body cannot be read"; continue; }
-  body=$(tr -d '\r' <<<"$body")
+  pj=$(gh pr view "$p" --repo "$REPO" --json body,headRefName) || { fail "PR #$p body cannot be read"; continue; }
+  body=$(jq -r .body <<<"$pj" | tr -d '\r')
+  # gh-issue reserves ## Review notes for iteration history and requires a line
+  # there only for these result.json states; with none of them a clean PR may
+  # have no such heading.
+  n=$(jq -r .headRefName <<<"$pj" | sed -n 's|.*/issue-\([0-9][0-9]*\)-.*|\1|p')
+  why=$(jq -r '[if .phase1_inline == true then "inline Phase 1" else empty end,
+               if (.gate_state == "degraded" or .gate_state == "waived" or .gate_state == "cap-stop") then "gate \(.gate_state)" else empty end,
+               if .review_profile == "revoked" then "profile revoked" else empty end] | join(", ")' \
+          "$STATE_DIR/issue-$n/result.json" 2>/dev/null) || why="no readable issue-$n/result.json"
   if grep -qx '## Review notes' <<<"$body"; then pass "PR #$p carries ## Review notes"
-  else fail "PR #$p carries ## Review notes"; fi
+  elif [ -z "$why" ]; then
+    pass "PR #$p carries the review notes its run requires (none: its result.json records no state gh-issue notes there)"
+  else fail "PR #$p carries ## Review notes${why:+ (required: $why)}"; fi
   # gh-issue Step 7: the Test plan names the validation that ran.
   if awk '/^## /{f = ($0 == "## Test plan")} f' <<<"$body" | grep -Eqi 'preflight|bash test\.sh'; then
     pass "PR #$p carries a validation line (its Test plan names the contract's preflight)"

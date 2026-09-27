@@ -13,7 +13,8 @@
 # how to grant it (`gh auth refresh -h github.com -s delete_repo`) and deletes
 # nothing. Local files are removed only after the repository is deleted, or
 # when it does not exist (setup failed before creating it, or it was deleted;
-# a 404 counts as absent only when the authenticated gh user owns the name).
+# a 404 counts as absent only when the authenticated gh user owns the name
+# and its token lists the `repo` scope).
 #
 # Needs: bash, git, gh (authenticated).
 
@@ -59,6 +60,8 @@ fi
 # An absent repository (setup failed before creating it, or an earlier
 # teardown deleted it) leaves only the local files; any other lookup failure stops.
 REPO_EXISTS=1
+SCOPES=$(gh api -i user 2>/dev/null | tr -d '\r' | sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p')
+has_scope() { printf '%s\n' "$SCOPES" | tr ',' '\n' | sed 's/^ *//' | grep -qx "$1"; }
 PROBE_ERR=$(mktemp) || die "mktemp failed"
 trap 'rm -f "$PROBE_ERR"' EXIT
 if ! gh api "repos/$REPO" --silent 2>"$PROBE_ERR"; then
@@ -68,6 +71,11 @@ if ! gh api "repos/$REPO" --silent 2>"$PROBE_ERR"; then
   LOGIN=$(gh api user -q .login) && [ -n "$LOGIN" ] || die "cannot resolve the authenticated gh user"
   [ "$(printf '%s' "$LOGIN" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "${REPO%%/*}" | tr '[:upper:]' '[:lower:]')" ] \
     || die "$REPO answers 404 to gh user $LOGIN, which cannot see another account's private repository: switch to ${REPO%%/*} (gh auth switch) and re-run - nothing deleted"
+  # So does the owner's own private repository to a token that cannot read it
+  # (a fine-grained token, or a classic one without `repo`): "gone" only when
+  # the token lists the `repo` scope.
+  has_scope repo \
+    || die "$REPO answers 404, but this gh token does not list the repo scope, so it may just be hidden: re-run with the token that created it (gh auth login) - nothing deleted"
   REPO_EXISTS=0
 fi
 
@@ -75,8 +83,7 @@ fi
 # in X-OAuth-Scopes; a fine-grained token sends no such header, and the delete
 # below reports its own refusal.
 if [ "$REPO_EXISTS" -eq 1 ]; then
-  SCOPES=$(gh api -i user 2>/dev/null | tr -d '\r' | sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p')
-  if [ -n "$SCOPES" ] && ! printf '%s\n' "$SCOPES" | tr ',' '\n' | sed 's/^ *//' | grep -qx delete_repo; then
+  if [ -n "$SCOPES" ] && ! has_scope delete_repo; then
     die "the gh token lacks the delete_repo scope; $SCOPE_HINT"
   fi
 fi
