@@ -259,6 +259,16 @@ tracking 10 "$(block "$(printf '%s' '{"version":1,"issues":[{"n":11,"blocked_by"
 expect "a C1 control character in a plan path is a schema error" \
   "plan file: ignored (#10's plan file is not valid: issues[0].files[0] is not a string without control characters)"
 
+tracking 10 "$(block "$(printf '%s' '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["a@u0000b"]}]}' | sed 's/@/\\/g')")"
+expect "an escaped NUL in a plan path is a schema error, never dropped" \
+  "plan file: ignored (#10's plan file is not valid: issues[0].files[0] is not a string without control characters)"
+
+fixture path-named-like-a-marker
+issue 11 "$(slice 10 'None - can start immediately' 'noline, nosection')"
+tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["noline","nosection"]}]}')"
+expect "a path that spells an internal marker is still a path" \
+  'plan file: #10 matches the in-scope issue bodies (1 issues)'
+
 fixture section-end
 issue 11 "$(printf 'Part of #10\n\n## Blocked by\n\n- #9\n\n## Interfaces\n\n- #99 provides x\n\nFiles likely touched: src/a.ts\n')"
 tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[9],"files":["src/a.ts"]}]}')"

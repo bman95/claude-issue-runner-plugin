@@ -92,6 +92,7 @@ set +e +o pipefail   # every exit status below is read explicitly
 export LC_ALL=C      # byte semantics for awk and sort
 # C0 controls, DEL and C1 controls (U+0080-U+009F, UTF-8 C2 80-C2 9F): never printed
 CTRL_RE=$(printf '[\001-\037\177]|\302[\200-\237]')
+NOLINE=$(printf '\001')   # body_files' "no Files likely touched: line" marker
 
 usage() { echo "plan-file.sh: $1" >&2; exit 2; }
 say()   { printf 'plan file: %s\n' "$1"; }
@@ -220,7 +221,7 @@ json_awk() {
           lo = hexval(substr(S, P + 3, 4))
           if (lo >= 56320 && lo <= 57343) { cp = 65536 + (cp - 55296) * 1024 + (lo - 56320); P += 6 }
         }
-        if (cp > 0) SV = SV utf8(cp)
+        SV = SV (cp > 0 ? utf8(cp) : sprintf("%c", 1))   # NUL: a control byte, never dropped
       }
       else return fail("bad escape")
       P++
@@ -293,7 +294,8 @@ body_deps() {
        }
        END { if (!seen) print "nosection" }'
 }
-# body_files < body: one normalized path per line, or `noline`
+# body_files < body: one normalized path per line, or the single line $NOLINE
+# (a control byte, which norm_paths never lets through, so never a path)
 body_files() {
   local raw
   raw=$(awk '{ sub(/\r$/, "") } /^Files likely touched:/ { l = $0; have = 1 }
@@ -301,7 +303,7 @@ body_files() {
                    sub(/^Files likely touched:/, "", l); n = split(l, a, ",")
                    for (i = 1; i <= n; i++) print a[i] }' | norm_paths)
   if [ -z "$raw" ] || { [ "$(printf '%s\n' "$raw" | grep -c .)" -eq 1 ] && [ "$(printf '%s' "$raw" | tr 'A-Z' 'a-z')" = none ]; }; then
-    echo noline
+    printf '%s\n' "$NOLINE"
   else
     printf '%s\n' "$raw"
   fi
@@ -380,7 +382,7 @@ for N in $SCOPE; do
   fi
   pf=$(awk -v n="$N" '$1 == "file" && $2 == n { sub(/^file [0-9]+ /, ""); print }' "$TMP/plan" | norm_paths | sort -u)
   if_=$(body_files < "$TMP/body-$N")
-  if [ "$if_" = noline ]; then
+  if [ "$if_" = "$NOLINE" ]; then
     say "#$N files differs: plan [$(printf '%s\n' "$pf" | grep . | join_list)] vs issue (no Files likely touched: line)"; drift=1
   else
     if_=$(printf '%s\n' "$if_" | sort -u)
