@@ -122,9 +122,9 @@ done
 
 **Session pointer**: nothing to write here; `run-state.sh init` records it (State).
 
-**Codex preflight**: `command -v codex >/dev/null`, then `codex debug models 2>/dev/null | grep -Eq '"slug": *"gpt-6-sol"'` (gh-issue Step 8 Phase 2's pinned model). Either failing without `--no-codex-gate` → tell the user codex is absent or does not list `gpt-6-sol` (upgrade to 0.155 or later, or check `codex login` and network; include `codex --version`) and ask via `AskUserQuestion`: abort *(recommended)* or proceed without the gate (≡ `--no-codex-gate`).
+**Codex preflight** (not `--flush`): `command -v codex >/dev/null`, then `codex debug models 2>/dev/null | grep -Eq '"slug": *"gpt-6-sol"'` (gh-issue Step 8 Phase 2's pinned model). Either failing without `--no-codex-gate` → tell the user codex is absent or does not list `gpt-6-sol` (upgrade to 0.155 or later, or check `codex login` and network; include `codex --version`) and ask via `AskUserQuestion`: abort *(recommended)* or proceed without the gate (≡ `--no-codex-gate`).
 
-**Validation-contract preflight** (skipped by `--plan` and `--status`): learn whether the base branch carries a `.issue-runner/validation` contract (gh-issue "Validation contract"). Resolve `DEFAULT_BRANCH` as Step 5's cleanup does (reference that one-liner, never copy it). `VALIDATION_CONTRACT_SCRIPT` is the copy beside `GH_ISSUE_SKILL`, the one implementers run; pass it literally to any subagent that runs it (the `--merge-ready` refresh). In one tool call:
+**Validation-contract preflight** (skipped by `--plan`, `--status` and `--flush`): learn whether the base branch carries a `.issue-runner/validation` contract (gh-issue "Validation contract"). Resolve `DEFAULT_BRANCH` as Step 5's cleanup does (reference that one-liner, never copy it). `VALIDATION_CONTRACT_SCRIPT` is the copy beside `GH_ISSUE_SKILL`, the one implementers run; pass it literally to any subagent that runs it (the `--merge-ready` refresh). In one tool call:
 
 ```bash
 VALIDATION_CONTRACT_SCRIPT="$(dirname "<GH_ISSUE_SKILL>")/scripts/validation-contract.sh"   # the resolved absolute path from the block above
@@ -470,7 +470,7 @@ Escalations, cheapest first:
 
 **Run paused on host credit/usage-limit (`$RUN_ROOT/paused` exists).** Open the closing message with: the pause, quoting the file's reason and timestamp; the issue(s) `blocked` on the dispatch failure; every other issue `pending` only for lack of a slot, listed as **paused**, never `skipped` or `failed` (one that reached `failed`/`skipped`/`closed-externally` through item 1's cascade keeps that status); and how to resume — after the reset, confirm no implementer is running, delete `$RUN_ROOT/lock`, re-invoke `/issue-runner` with the unfinished numbers, in this session (keeps guidance and retry history) or after `claude --resume` (Recovery) if it ended. Then finish this step for issues that reached a terminal or `blocked` status, but **skip the final lock/session release** (why: Why the run lock is released last in Step 5).
 
-**Integration first**: `bash "<INTEGRATION_SCRIPT>" run-complete "$STATE_DIR" <reason>` (`paused` while `$RUN_ROOT/paused` exists, `stopped` after a Step 4 abort, else `completed`); print its lines atop the summary.
+**Integration first**: `bash "<INTEGRATION_SCRIPT>" run-complete "$STATE_DIR" <reason>` (tool timeout ≥ 150 s) (`paused` while `$RUN_ROOT/paused` exists, `stopped` after a Step 4 abort, else `completed`); print its lines atop the summary (a missing script: repeat Step 0's disabled line).
 
 Resolve the default branch first; no deletion below may target it. Repair the local `origin/HEAD` symref from the remote before trusting it (why: Why the default-branch guard repairs `origin/HEAD`):
 

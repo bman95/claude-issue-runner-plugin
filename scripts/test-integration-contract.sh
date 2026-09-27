@@ -297,6 +297,31 @@ if [ -n "$WPID" ] && ! kill -0 "$WPID" 2>/dev/null; then ok "the sweep killed th
 else err "the detached worker $WPID outlived the wrapper"; kill "$WPID" 2>/dev/null; fi
 export INTEGRATION_HINT_BOUND=60
 
+# The call itself killed mid-wait (a host tool timeout): the adapter's group goes too.
+set_contract "hint: echo \$\$ > $TMP/adapter.pid; trap '' TERM; sleep 60\n"
+new_state; run discover main "$SD" >/dev/null
+rm -f "$TMP/adapter.pid"
+(cd "$REPO" && exec bash "$SCRIPT" run-complete "$SD" completed) >/dev/null 2>&1 &
+CALL=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$TMP/adapter.pid" ] && break; sleep 0.5; done
+kill -TERM "$CALL" 2>/dev/null; wait "$CALL" 2>/dev/null
+sleep 2
+APID=$(cat "$TMP/adapter.pid" 2>/dev/null)
+if [ -n "$APID" ] && ! kill -0 "$APID" 2>/dev/null; then ok "a killed run-complete takes its adapter's process group down"
+else err "adapter $APID outlived the killed call"; kill -KILL "$APID" 2>/dev/null; fi
+
+# Markers the drain finds with no live wrapper: this invocation's is reported, an earlier one's dropped.
+set_contract "hint: true\n"
+new_state; run discover main "$SD" >/dev/null
+sh -c 'exit 0' & DEADPID=$!; wait "$DEADPID"
+mkdir -p "$SD/integration-pending"
+printf '%s 2026-09-27T11:00:00Z merged #4\n' "$DEADPID" > "$SD/integration-pending/a"
+printf '%s 2026-09-27T09:00:00Z merged #5\n' "$DEADPID" > "$SD/integration-pending/b"
+run run-complete "$SD" completed
+if grep -qF "integration: hint merged #4: not collected" "$OUT" && ! grep -qF "merged #5" "$OUT" && [ -z "$(ls -A "$SD/integration-pending")" ]; then
+  ok "drain: a dead wrapper of this invocation is reported not collected; an earlier invocation's marker is dropped"
+else err "drain markers: $(cat "$OUT"); left: $(ls "$SD/integration-pending")"; fi
+
 # A launched hint still running when Step 5 starts is drained, not abandoned.
 set_contract "hint: sleep 2; exit 0\n"
 new_state; run discover main "$SD" >/dev/null
@@ -354,6 +379,14 @@ run flush "$RR" main
 check_env "row 71: flush during a live run carries its run id" flush ISSUE_RUNNER_RUN=repo-key@2026-09-27T10:00:00Z ISSUE_RUNNER_RUN_STATE=active
 [ ! -e "$RR/state/integration-hints" ] && [ ! -e "$RR/state/integration-discovery" ] && ok "flush writes no run state" \
   || err "flush wrote run state"
+sh -c 'exit 0' & DEADPID=$!; wait "$DEADPID"
+printf '%s\n' "$DEADPID" > "$RR/lock"
+run flush "$RR" main
+check_env "flush: a dead PID with a fresh heartbeat is still a live run (the Codex lock owner)" flush \
+  ISSUE_RUNNER_RUN=repo-key@2026-09-27T10:00:00Z ISSUE_RUNNER_RUN_STATE=active
+touch -t "$(date -d '-3 hours' +%Y%m%d%H%M 2>/dev/null || date -v-3H +%Y%m%d%H%M)" "$RR/lock"
+run flush "$RR" main
+check_env "flush: a dead PID with a stale heartbeat is no live run" flush ISSUE_RUNNER_RUN=none ISSUE_RUNNER_RUN_STATE=complete
 rm -f "$RR/lock"
 DUMP_EXIT=4 run flush "$RR" main
 expect "row 71: flush reports the adapter's exit, never silently" 1 "flush: adapter exited 4"

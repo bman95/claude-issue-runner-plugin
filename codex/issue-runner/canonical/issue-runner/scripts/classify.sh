@@ -57,8 +57,9 @@
 #     `git worktree list --porcelain` entry whose `locked` line names the agent
 #     id in <issue-dir>/agent (`agent-<id>` or bare, matched space-delimited,
 #     so an id never matches as a prefix of a longer one); else the first
-#     entry on a `/issue-N-` branch. It writes the path to <issue-dir>/worktree
-#     and prints it, or prints nothing when none is found. Run it from the
+#     entry on a `/issue-N-` branch. It prints the path and records it in
+#     <issue-dir>/worktree (a failed write is a stderr warning, never a lost
+#     path), or prints nothing when none is found. Run it from the
 #     target repository.
 #
 # Output — `result` prints exactly one line, `<status> <pr>` (<pr> is the bare
@@ -323,8 +324,8 @@ classify_worktree() {
       END{print (a!=""?a:b)}')
   fi
   [ -n "$wt" ] || return 0
-  printf '%s\n' "$wt" > "$DIR/worktree" || die "cannot write $DIR/worktree"
-  printf '%s\n' "$wt"
+  printf '%s\n' "$wt"   # printed first: a failed record never hides the worktree
+  printf '%s\n' "$wt" > "$DIR/worktree" 2>/dev/null || echo "classify.sh: warning: cannot write $DIR/worktree" >&2
 }
 
 case $MODE in

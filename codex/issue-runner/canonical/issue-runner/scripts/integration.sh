@@ -200,25 +200,33 @@ clear_env() {
 # run_bounded CMD: run CMD under the bound. Sets RB_RC to its exit status and
 # RB_TIMED_OUT to 1 when the watchdog killed it.
 run_bounded() {
-  local flag pid w
-  flag="${TMPDIR:-/tmp}/integration-timeout.$$.$RANDOM"
-  rm -f "$flag"
+  local flagdir flag pid w
+  # The watchdog's flag lives in a private directory: a guessable name in a
+  # shared /tmp could be planted as a symlink for the `: >` below to truncate.
+  flagdir=$(mktemp -d "${TMPDIR:-/tmp}/integration-timeout.XXXXXX") || flagdir=""
+  if [ -z "$flagdir" ]; then RB_RC=1; RB_TIMED_OUT=0; return; fi
+  flag="$flagdir/timed-out"
   set -m   # job control: the background job below gets its own process group
   ( cd "$TOP" && exec bash -c "$1" ) </dev/null >/dev/null 2>&1 &
   pid=$!
   set +m
+  # Killed or interrupted mid-wait (a host tool timeout, Ctrl-C): take the
+  # command's own process group down too, so it never outlives this call.
+  trap 'kill -TERM -- -"$pid" 2>/dev/null; sleep 1; kill -KILL -- -"$pid" 2>/dev/null; rm -rf "$flagdir"; exit 143' TERM INT HUP
   ( trap 'kill "$S" 2>/dev/null; exit 0' TERM
     sleep "$BOUND" & S=$!
     wait "$S" && { : > "$flag"; kill -TERM -- -"$pid" 2>/dev/null; sleep 2; kill -KILL -- -"$pid" 2>/dev/null; } ) >/dev/null 2>&1 &
   w=$!
-  wait "$pid"; RB_RC=$?
+  { wait "$pid"; RB_RC=$?; } 2>/dev/null   # no job notice ("Killed") on stderr
   kill "$w" 2>/dev/null; wait "$w" 2>/dev/null
   # The sweep: whatever the command left in its group (a detached `worker &`).
   if kill -0 -- -"$pid" 2>/dev/null; then
     kill -TERM -- -"$pid" 2>/dev/null; sleep 1; kill -KILL -- -"$pid" 2>/dev/null
   fi
+  trap - TERM INT HUP
   RB_TIMED_OUT=0
-  [ -e "$flag" ] && { RB_TIMED_OUT=1; rm -f "$flag"; }
+  [ -e "$flag" ] && RB_TIMED_OUT=1
+  rm -rf "$flagdir"
 }
 
 result_text() {
@@ -283,12 +291,12 @@ launch() {
   local sd=$1 label=$2 marker
   if ! mkdir -p "$sd/integration-pending" 2>/dev/null; then
     log_result "$sd" "$INV" "hint $label: not sent (cannot write $sd/integration-pending)"
-    echo "integration: hint $label not sent (cannot write $sd/integration-pending)"; return
+    echo "integration: hint $label not sent (cannot write $sd/integration-pending)"; return 1
   fi
   marker="$sd/integration-pending/$(date +%s).$$.$RANDOM"
   if ! printf -- '- %s %s\n' "$INV" "$label" > "$marker" 2>/dev/null; then
     log_result "$sd" "$INV" "hint $label: not sent (cannot write its marker)"
-    echo "integration: hint $label not sent (cannot write its marker)"; return
+    echo "integration: hint $label not sent (cannot write its marker)"; return 1
   fi
   if [ "${INTEGRATION_HINT_FOREGROUND:-}" = 1 ]; then
     # A host that ends a shell call's descendants when the call returns (Codex)
@@ -303,6 +311,7 @@ launch() {
 cmd_deliver() {  # SD MARKER INV LABEL (the detached wrapper)
   local cmd=${INTEGRATION_DELIVER_CMD:-}
   unset INTEGRATION_DELIVER_CMD
+  [ -f "$2" ] || exit 0   # Step 5's drain already gave up on this hint: never run after it
   printf '%s %s %s\n' "$$" "$3" "$4" > "$2" 2>/dev/null
   run_bounded "$cmd"
   log_result "$1" "$3" "hint $4: $(result_text)"
@@ -313,7 +322,7 @@ cmd_deliver() {  # SD MARKER INV LABEL (the detached wrapper)
 # ended without removing its marker is reported as not collected, for this
 # invocation only. Markers left by an earlier invocation are dropped.
 drain() {
-  local sd=$1 deadline m pid inv label pending age mtime
+  local sd=$1 deadline m pid inv label pending
   [ -d "$sd/integration-pending" ] || return 0
   deadline=$(( $(date +%s) + BOUND + 10 ))
   while :; do
@@ -322,9 +331,8 @@ drain() {
       [ -f "$m" ] || continue
       read -r pid inv label < "$m" 2>/dev/null || continue
       if [ "$pid" = - ]; then
-        mtime=$(stat -c %Y "$m" 2>/dev/null || stat -f %m "$m" 2>/dev/null || echo 0)
-        age=$(( $(date +%s) - mtime ))
-        [ "$age" -lt 10 ] && { pending=1; continue; }
+        # Not started yet: pending until the deadline (a loaded host starts it late).
+        [ "$(date +%s)" -lt "$deadline" ] && { pending=1; continue; }
       elif kill -0 "$pid" 2>/dev/null; then
         pending=1; continue
       fi
@@ -410,7 +418,6 @@ EOF_REC
       ISSUE_RUNNER_INVOCATION="$INV" ISSUE_RUNNER_RUN_STATE=active ISSUE_RUNNER_BASE="$base" \
       ISSUE_RUNNER_REVISION="$oid" ISSUE_RUNNER_ISSUE="$n" ISSUE_RUNNER_PR="$pr" \
       ISSUE_RUNNER_REMAINING="$(remaining "$sd" "$untried")" ISSUE_RUNNER_NEAR_COMPLETE="$(near_complete "$sd")"
-    printf '%s %s %s\n' "$INV" "$oid" "$base" > "$sd/integration-last-merged" 2>/dev/null
   else
     label=run-start
     [ -n "$HCMD" ] || return 0
@@ -419,7 +426,10 @@ EOF_REC
       ISSUE_RUNNER_INVOCATION="$INV" ISSUE_RUNNER_RUN_STATE=active ISSUE_RUNNER_BASE="$DEFAULT" \
       ISSUE_RUNNER_REMAINING="$(remaining "$sd" "")"
   fi
-  launch "$sd" "$label"
+  launch "$sd" "$label" || return 0
+  # Only a hint that actually went out is "the last merged this invocation sent".
+  [ "$kind" = merged ] && printf '%s %s %s\n' "$INV" "$oid" "$base" > "$sd/integration-last-merged" 2>/dev/null
+  return 0
 }
 
 cmd_run_complete() {
