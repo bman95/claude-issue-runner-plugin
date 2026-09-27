@@ -65,7 +65,7 @@ die() { printf 'setup: %s\nsetup: remove what was created with: %s/teardown.sh %
 
 # Record the repository before creating anything: teardown.sh takes its owner
 # from here, never from whatever gh login is current by then.
-mkdir -p "$SMOKE_ROOT" && printf 'repo=%s\nclone=%s\n' "$REPO" "$CLONE" >"$META" \
+{ mkdir -p "$SMOKE_ROOT" && printf 'repo=%s\nclone=%s\n' "$REPO" "$CLONE" >"$META"; } \
   || die "cannot write $META"
 
 # The fixture, committed on main and pushed to a new private repository.
