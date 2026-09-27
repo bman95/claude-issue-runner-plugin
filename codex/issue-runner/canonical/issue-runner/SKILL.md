@@ -260,7 +260,7 @@ MERGE_READY_SCRIPT="$(dirname "$SCHEDULER_SCRIPT")/merge-ready.sh"     # the --m
 **`--merge-ready` pass (only when `--merge-ready` was passed; runs once, before the loop below starts).** For each `scope.txt` issue whose `status` is `ready`, in `dag.json`'s topological order (never recomputed), `P` from `issue-N/pr` (why: Why `--merge-ready` refreshes before it merges (issue #15)). "Leave it" below means: leave the issue `ready`, untouched, and note the reason in the Step 5 summary.
 
 - **Confirm the precondition, never assume it**: every `dag.txt` dependency reads `done`, else leave it `ready` silently (a later pass retries).
-- **Check the PR's own state first**, `bash "$MERGE_READY_SCRIPT" state "$P"`: **`merged`** → write `done`, no re-merge; **`closed`** → write `failed`, error `"PR #P was closed without merging (declined)"` (item 1 cascades); **`open`** → refresh; **exit 1** → leave it (query failed) — never read an unreadable state as open.
+- **Check the PR's own state first**, `bash "$MERGE_READY_SCRIPT" state "$P"`: **`merged`** → write `done` (then `hint … merged <N> --pr <P>`, State), no re-merge; **`closed`** → write `failed`, error `"PR #P was closed without merging (declined)"` (item 1 cascades); **`open`** → refresh; **exit 1** → leave it (query failed) — never read an unreadable state as open.
 - **Refresh against the base before checks** (issue #15): dispatch a `general-purpose` subagent, without `isolation: worktree`, to run one command and report its stdout line:
 
   ```bash
@@ -273,7 +273,7 @@ MERGE_READY_SCRIPT="$(dirname "$SCHEDULER_SCRIPT")/merge-ready.sh"     # the --m
   - **`worktree-missing <reason>`** → leave it as `worktree gone — cannot refresh against base; verify the PR by hand or recreate the worktree first`.
   - Anything else (subagent failure, exit 2) → *stuck* with that text, never a pass.
 - **Re-check checks on the current head**, `bash "$MERGE_READY_SCRIPT" checks "$P"` (`--refreshed` appended after `refreshed`): **`pass`**/**`none`** → merge; **`none-after-refresh`** → merge as `none`, noted `none after base refresh (CI may not have registered yet)`; **`fail`** → **never merge a `fail`**: leave it as skipped this pass (red or still pending, not "failed CI").
-- **`pass` or `none` → merge**, `bash "$MERGE_READY_SCRIPT" merge "$P" <the oid the refresh reported>`: **`merged <sha>`** (or `merged unknown`) → write `done`; **`skipped head moved after validation`** → leave it as `head moved after validation`; **`skipped merge did not land …`** → leave it, never silently retried.
+- **`pass` or `none` → merge**, `bash "$MERGE_READY_SCRIPT" merge "$P" <the oid the refresh reported>`: **`merged <sha>`** (or `merged unknown`) → write `done`, then the `--pr` hint; **`skipped head moved after validation`** → leave it as `head moved after validation`; **`skipped merge did not land …`** → leave it, never silently retried.
 
 A `done` here is item 5's ordinary `done`. After one try per eligible issue, fall into the loop below.
 

@@ -70,6 +70,7 @@
 #   failures, then one of:
 #     flush: sent (exit 0) | flush: adapter exited <code> | flush: timed out
 #     flush: not sent (no hint command)
+#     flush: not sent (cannot create the watchdog directory)
 #   <label> is `run-start`, `merged #N` or `run-complete`.
 #
 # Grammar (§5.1): the validation contract's. It allows `#` comment lines and
