@@ -83,6 +83,8 @@
 #       merge conflict with origin/<base>: <paths>
 #       base merge did not start: <git's first error line>
 #       contract changed after ready — a human must review and merge   (`changed` exit 5)
+#       integration contract changed after ready — a human must review and merge
+#                            (`changed` exit 5, when only .issue-runner/integration changed)
 #       <mode> validation failed (exit 1)
 #       validation contract invalid (exit 3)
 #       validation command not runnable (exit 4): <mode>
@@ -280,7 +282,10 @@ EOF_VIEW
       2) stuck "cannot resolve the base branch (validation exit 2)" ;;
       3) stuck "validation contract invalid (exit 3)" ;;
       4) stuck "validation command not runnable (exit 4): $mode" ;;
-      5) [ "$mode" = changed ] && stuck "contract changed after ready — a human must review and merge"
+      5) if [ "$mode" = changed ]; then
+           case $first in 'validation: integration contract changed'*) stuck "integration contract changed after ready — a human must review and merge" ;; esac
+           stuck "contract changed after ready — a human must review and merge"
+         fi
          stuck "validation script unavailable or miscalled — a human must fix the install" ;;
       *) stuck "validation script unavailable or miscalled — a human must fix the install" ;;
     esac

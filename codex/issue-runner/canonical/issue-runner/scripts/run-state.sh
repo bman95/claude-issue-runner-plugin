@@ -49,6 +49,9 @@
 #              carry the path literally, so a relative one would resolve against
 #              whatever cwd reads it).
 #   STATE_DIR  $RUN_ROOT/state
+#   In state/, `init` writes `run-id` (`<REPO_KEY>@<UTC start timestamp>`, once
+#   per run, never overwritten) and `invocation` (this init's UTC timestamp), the
+#   integration hints' ISSUE_RUNNER_RUN and ISSUE_RUNNER_INVOCATION.
 #   Beside state/: `lock` (the owner PID; its mtime is the heartbeat),
 #   `session` (the orchestrator's $CLAUDE_CODE_SESSION_ID, one line) and
 #   `paused` (written by Step 3a, cleared by `init`).
@@ -100,7 +103,7 @@
 #     fresh heartbeat would otherwise refuse the session that owns the lock. A
 #     live PID stays refused regardless (REFERENCE.md's confirm-and-delete
 #     recipe is the recovery for this process's own cut-off run).
-#   - Every write after the probe is fatal on failure. Once the lock is written,
+#   - Every write after the probe is fatal on failure (run-id and invocation included). Once the lock is written,
 #     a failure truncates it again — only while it still holds <owner-pid>: two
 #     starts that both passed the liveness check race on the write, and the
 #     loser must not blank the winner's live lock.
@@ -162,7 +165,7 @@ fail_locked() {
 }
 
 cmd_init() {
-  local lock_pid pid_alive heartbeat_fresh mtime age pid_word prev
+  local lock_pid pid_alive heartbeat_fresh mtime age pid_word prev NOW
   resolve_paths
 
   # Hard precondition, before the lock and the rotation: create the root and
@@ -213,6 +216,15 @@ cmd_init() {
     fi
   fi
   mkdir -p "$STATE_DIR" 2>/dev/null || fail_locked "cannot create state dir: $STATE_DIR"
+  # The integration hints' run id and invocation (docs/integration-rfc.md §5.5).
+  # run-id is written once per run: a fresh state dir has none, and a kept one
+  # left by a plugin version that predates it gets one now. It is never
+  # overwritten. invocation is rewritten by every init.
+  NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ ! -s "$STATE_DIR/run-id" ]; then
+    printf '%s@%s\n' "$REPO_KEY" "$NOW" > "$STATE_DIR/run-id" 2>/dev/null || fail_locked "cannot write run id: $STATE_DIR/run-id"
+  fi
+  printf '%s\n' "$NOW" > "$STATE_DIR/invocation" 2>/dev/null || fail_locked "cannot write invocation: $STATE_DIR/invocation"
   if ! { printf '%s\n' "${CLAUDE_CODE_SESSION_ID:-}" > "$RUN_ROOT/session.tmp.$OWNER" 2>/dev/null \
          && mv "$RUN_ROOT/session.tmp.$OWNER" "$RUN_ROOT/session" 2>/dev/null; }; then
     rm -f "$RUN_ROOT/session.tmp.$OWNER" 2>/dev/null

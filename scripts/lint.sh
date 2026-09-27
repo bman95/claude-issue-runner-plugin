@@ -65,7 +65,7 @@
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
-#      resume-check.sh, merge-ready.sh, run-state.sh, scheduler.sh or
+#      resume-check.sh, merge-ready.sh, run-state.sh, scheduler.sh, integration.sh or
 #      plan-file.sh;
 #      gh-issue's "## Validation contract" section, skills/gh-issue/REFERENCE.md
 #      and skills/issue-runner/{SKILL,REFERENCE}.md are byte-identical across
@@ -95,6 +95,10 @@
 #      the plan-file contract strings (the `## Plan file` heading and the
 #      ```issue-runner-plan fence) appear in the script and in both editions'
 #      issue-plan
+#  26. scripts/test-integration-contract.sh passes — the fixtures for
+#      skills/issue-runner/scripts/integration.sh: the integration contract's
+#      grammar and trust rule, the hint environment table, the 60-second
+#      bound, and `--flush` (docs/integration-rfc.md slice 1)
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -376,7 +380,7 @@ done
 # 8. shellcheck over this script and the bundled scripts (advisory) --------------
 if [ "$have_shellcheck" -eq 1 ]; then
   for f in "$ROOT/scripts/lint.sh" "$ROOT"/skills/*/scripts/*.sh \
-           "$ROOT/scripts/test-validation-contract.sh"; do
+           "$ROOT/scripts/test-validation-contract.sh" "$ROOT/scripts/test-integration-contract.sh"; do
     rel="${f#"$ROOT"/}"
     if shellcheck "$f" >"$TMP/lint.sc" 2>&1; then
       ok "shellcheck clean: $rel"
@@ -648,7 +652,7 @@ done
 for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/classify.sh \
                 issue-runner/scripts/resume-check.sh issue-runner/scripts/merge-ready.sh \
                 issue-runner/scripts/run-state.sh issue-runner/scripts/scheduler.sh \
-                issue-runner/scripts/plan-file.sh; do
+                issue-runner/scripts/plan-file.sh issue-runner/scripts/integration.sh; do
   [ -f "$ROOT/codex/issue-runner/canonical/$required" ] \
     || { err "codex/issue-runner/canonical/$required missing (the Codex canonical procedure runs it)"; bundled_ok=0; }
 done
@@ -807,6 +811,19 @@ for f in "$PLAN_FILE_SH" "$SKILL_PLAN" "$CANON_PLAN"; do
   done
 done
 [ "$pf_ok" -eq 1 ] && ok "plan-file contract strings present in plan-file.sh and both editions' issue-plan"
+
+# 26. Integration contract fixtures -------------------------------------------------
+TEST_INTEGRATION="$ROOT/scripts/test-integration-contract.sh"
+if [ -f "$TEST_INTEGRATION" ]; then
+  if bash "$TEST_INTEGRATION" >"$TMP/test-integration-contract.out" 2>&1; then
+    ok "integration-contract fixtures pass (scripts/test-integration-contract.sh)"
+  else
+    err "integration-contract fixtures failed:"
+    cat "$TMP/test-integration-contract.out" >&2
+  fi
+else
+  err "$TEST_INTEGRATION not found"
+fi
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2

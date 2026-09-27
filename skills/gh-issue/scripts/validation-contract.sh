@@ -7,7 +7,8 @@
 # Usage: bash validation-contract.sh <mode> [<base-branch>]
 #   run from anywhere inside the worktree (it cds to the worktree root itself)
 #   <mode>         check     discovery and grammar only, nothing runs
-#                  changed   did this PR (HEAD vs its merge-base with the base) edit the file?
+#                  changed   did this PR (HEAD vs its merge-base with the base) edit the file,
+#                            or the integration contract `.issue-runner/integration`?
 #                  preflight run the contract's `preflight:` command
 #                  full      run the contract's `full:` command (if declared)
 #   <base-branch>  optional; skips the `gh` lookup. Default: the open PR's base
@@ -32,7 +33,7 @@
 # extraction and gh-issue branches on them, so they are kept as they were:
 #   0  check:     `validation: contract ok (preflight declared; full declared|not declared)`
 #                 or `validation: fallback (no contract at .issue-runner/validation on <base>)`
-#      changed:   `validation: contract unchanged in this PR`
+#      changed:   `validation: contract unchanged in this PR` (neither file changed)
 #      preflight/full: `validation: <mode> passed`, `validation: <mode> not declared`
 #                 (full only) or the fallback line above
 #   1  `validation: <mode> failed (exit N): <command>` — the command exited with
@@ -44,7 +45,8 @@
 #      failure, never a verdict on the change and never a fallback
 #   3  `validation: invalid contract (.issue-runner/validation on <base>): ...`
 #   4  `validation: <mode> command not runnable (exit 126|127): <command>`
-#   5  `validation: contract changed in this PR (...)`, followed by the diff (changed only)
+#   5  `validation: contract changed in this PR (...)` and/or `validation: integration
+#      contract changed in this PR (...)`, each followed by its diff (changed only)
 #   6  `validation: unknown MODE '<mode>'`
 #
 # Dependencies: bash 3.2, coreutils, grep, sed, git; gh unless <base-branch> is given.
@@ -55,6 +57,7 @@ set +e +o pipefail   # the script reads every exit status itself; an inherited -
 TOP=$(git rev-parse --show-toplevel 2>/dev/null) && [ -n "$TOP" ] && cd "$TOP" || { echo "validation: cannot resolve the worktree root" >&2; exit 2; }   # a pathspec (the `changed` diff) is cwd-relative: from a subdirectory it would match nothing and read as "unchanged"; chained on rev-parse's own status, never on its output: `cd ""` is a no-op that exits 0 in bash
 case $MODE in check|changed|preflight|full) ;; *) echo "validation: unknown MODE '$MODE'" >&2; exit 6 ;; esac
 CONTRACT_PATH=.issue-runner/validation
+INTEGRATION_PATH=.issue-runner/integration   # `changed` mode only: issue-runner reads and checks this one
 if [ $# -ge 2 ] && [ -z "$2" ]; then   # an explicit but empty base (an unset variable in the caller) must never fall back to the gh lookup on whatever branch this checkout is on
   echo "validation: cannot resolve the base branch: empty base argument" >&2; exit 2
 fi
@@ -71,12 +74,18 @@ CONTRACT_REF=$(git rev-parse -q --verify "refs/remotes/origin/$BASE_BRANCH^{comm
 if [ "$MODE" = changed ]; then
   MB=$(git merge-base HEAD "$CONTRACT_REF" 2>/dev/null) && [ -n "$MB" ] \
     || { echo "validation: cannot resolve the merge-base with origin/$BASE_BRANCH" >&2; exit 2; }
-  git diff --quiet "$MB" HEAD -- "$CONTRACT_PATH"; RC=$?   # 0 = same, 1 = differs, anything else = git failed — never read as "unchanged"
-  case $RC in
-    0) echo "validation: contract unchanged in this PR"; exit 0 ;;
-    1) echo "validation: contract changed in this PR ($CONTRACT_PATH differs from the merge-base $MB):"; git --no-pager diff "$MB" HEAD -- "$CONTRACT_PATH"; exit 5 ;;
-    *) echo "validation: cannot diff $CONTRACT_PATH against $MB (git exit $RC)" >&2; exit 2 ;;
-  esac
+  CHANGED=0
+  for P in "$CONTRACT_PATH" "$INTEGRATION_PATH"; do   # the integration contract gets the same gate (docs/integration-rfc.md §5.3)
+    K=contract; [ "$P" = "$CONTRACT_PATH" ] || K="integration contract"
+    git diff --quiet "$MB" HEAD -- "$P"; RC=$?   # 0 = same, 1 = differs, anything else = git failed — never read as "unchanged"
+    case $RC in
+      0) ;;
+      1) CHANGED=1; echo "validation: $K changed in this PR ($P differs from the merge-base $MB):"; git --no-pager diff "$MB" HEAD -- "$P" ;;
+      *) echo "validation: cannot diff $P against $MB (git exit $RC)" >&2; exit 2 ;;
+    esac
+  done
+  [ "$CHANGED" -eq 1 ] && exit 5
+  echo "validation: contract unchanged in this PR"; exit 0
 fi
 ENTRY=$(git ls-tree --full-tree "$CONTRACT_REF" -- "$CONTRACT_PATH" 2>/dev/null) || { echo "validation: cannot resolve the base branch: cannot read the tree of origin/$BASE_BRANCH" >&2; exit 2; }   # ls-tree lists the path without reading its blob: `cat-file -e` fails the same way for an absent path and for a missing or corrupt object, and the second must never read as "no contract"
 if [ -z "$ENTRY" ]; then

@@ -96,6 +96,8 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 #       arg=<name>           pass <name> as the script's explicit <base-branch> argument (no gh lookup)
 #       noarg=1              call the script with no mode argument at all
 #       emptyarg=1           pass an explicit but empty <base-branch> argument
+#       integmain=<contract> the base branch carries this .issue-runner/integration at the fork point
+#       integ=<contract>     the feature branch writes this .issue-runner/integration ("-" deletes it)
 #
 # Builds a bare origin with `main`, a clone on a feature branch one commit
 # ahead, and runs the script there — exactly the shape gh-issue Steps 3/5/8/9
@@ -103,7 +105,7 @@ gitc() { git config user.email t@example.com; git config user.name t; git config
 fixture() {
   local name="$1" mode="$2" main_contract="$3" branch_contract="$4" expected_exit="$5" expected_text="$6"
   shift 6
-  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 lock=0 nul=0 arg="" noarg=0 emptyarg=0 opt
+  local base=main ghfail="" advance="" advance_set=0 worktree="" worktree_set=0 cwd="" delete=0 nofetch=0 strict=0 outside=0 corrupt=0 lock=0 nul=0 arg="" noarg=0 emptyarg=0 integmain="" integ="" integ_set=0 opt
   for opt in "$@"; do
     case $opt in
       base=*)     base="${opt#base=}" ;;
@@ -122,6 +124,8 @@ fixture() {
       arg=*)      arg="${opt#arg=}" ;;
       noarg=1)    noarg=1 ;;
       emptyarg=1) emptyarg=1 ;;
+      integmain=*) integmain="${opt#integmain=}" ;;
+      integ=*)    integ="${opt#integ=}"; integ_set=1 ;;
     esac
   done
   local run="$TMP/$(printf '%s' "$name" | tr -c 'A-Za-z0-9' '_')"
@@ -139,8 +143,17 @@ fixture() {
       git add .issue-runner/validation; git commit -q -m contract
     fi
     git remote add origin "$run/origin.git"; git push -q origin main
+    if [ -n "$integmain" ]; then
+      mkdir -p .issue-runner; printf '%s\n' "$integmain" > .issue-runner/integration
+      git add .issue-runner/integration; git commit -q -m integration; git push -q origin main
+    fi
     git checkout -q -b feature
     printf 'y\n' > change; git add change
+    if [ "$integ_set" -eq 1 ]; then
+      if [ "$integ" = "-" ]; then git rm -q .issue-runner/integration; else
+        mkdir -p .issue-runner; printf '%s\n' "$integ" > .issue-runner/integration; git add .issue-runner/integration
+      fi
+    fi
     if [ "$branch_contract" != "-" ]; then
       mkdir -p .issue-runner; printf '%s\n' "$branch_contract" > .issue-runner/validation
       git add .issue-runner/validation
@@ -340,6 +353,20 @@ fixture "row 44: changed mode, a sibling's change on the base tip is not this PR
   'preflight: true' - 0 "validation: contract unchanged in this PR" 'advance=preflight: exit 9'
 fixture "row 44: changed mode, base missing → exit 2, never unchanged" changed \
   'preflight: true' 'preflight: exit 9' 2 "validation: cannot resolve the base branch" base=nope
+
+# --- Row 72: the integration contract gets the same changed-mode gate ------------
+fixture "row 72: changed mode, branch adds .issue-runner/integration → changed (exit 5)" changed \
+  'preflight: true' - 5 "validation: integration contract changed in this PR" 'integ=hint: ./ci/hint.sh'
+fixture "row 72: changed mode, branch edits the integration contract → its diff is printed" changed \
+  'preflight: true' - 5 "+hint: ./ci/other.sh" 'integmain=hint: ./ci/hint.sh' 'integ=hint: ./ci/other.sh'
+fixture "row 72: changed mode, branch deletes the integration contract → changed (exit 5)" changed \
+  'preflight: true' - 5 "validation: integration contract changed in this PR" 'integmain=hint: true' integ=-
+fixture "row 72: changed mode, both contracts edited → the validation one reported too" changed \
+  'preflight: true' 'preflight: exit 9' 5 "validation: contract changed in this PR" 'integ=hint: true'
+fixture "row 72: changed mode, integration contract untouched on the base → unchanged (exit 0)" changed \
+  'preflight: true' - 0 "validation: contract unchanged in this PR" 'integmain=hint: true'
+fixture "row 72: changed mode, no validation contract at all — an integration edit is still gated" changed \
+  - - 5 "validation: integration contract changed in this PR" 'integ=status: true'
 
 if [ "$fail" -ne 0 ]; then
   printf '\ntest-validation-contract: FAILED\n' >&2

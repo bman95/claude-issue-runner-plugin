@@ -115,7 +115,7 @@ Rejected: writing a guessed file at Step 0 or by an implementer. A guessed polic
 
 ## 7. Integration awareness without becoming the CI/CD engine
 
-**Status:** proposed — full RFC in `docs/integration-rfc.md` (issue #43)
+**Status:** proposed (partial: implemented) — full RFC in `docs/integration-rfc.md` (issue #43)
 
 **Context.** `done` means "merged with proof" and nothing more: the runner does not know whether the revision a merge produced was later built, deployed to a shared environment, or validated as a system. Putting build/deploy/E2E execution into the plugin would couple it to a project's CI/CD technology and make it a second CI engine; leaving it blind means a run's closing summary can read all-`done` over a revision E2E just rejected, and CI cannot tell one merge from the first of five it will see in the next three minutes.
 
@@ -125,6 +125,8 @@ Rejected: writing a guessed file at Step 0 or by an implementer. A guessed polic
 3. A merge-and-deploy queue inside the runner: each merge waits for the previous revision to go green. Rejected — this is note 2's serialization plus a deployment in the merge path, the CI engine the constraint forbids, and it ties throughput to deploy time.
 
 **Recommendation.** Option 2, in the three slices the RFC's §14 lists (discovery and hints; observation; docs), each reconciled through `/issue-plan` once it lands. The separate file — rather than two more keys in `.issue-runner/validation` — is deliberate: an unknown key makes the validation contract invalid on every existing plugin version, and that invalidity blocks every PR by design, whereas a file older versions never look for degrades to today's behavior. Deferred with the RFC's open questions: an opt-in dispatch pause on a `failed` revision, and an opt-in bounded wait at Step 5.
+
+**Implemented — slice 1, discovery and hints (issue #60).** `skills/issue-runner/scripts/integration.sh` discovers `.issue-runner/integration` on the base tip at Step 0. Its lines are `not configured`, the declared keys, or `contract invalid` / `unresolvable`, and the last two disable integration for the run without stopping it. After `init`, the script records the contract. It sends `run-start`, `merged` (from the `merge-oid` that `classify.sh` records on merge proof, or that the `--merge-ready` pass records) and `run-complete` through a bounded wrapper, and `/issue-runner --flush` sends `flush`. A failing hint is a Step 5 report line, never a blocker. The validation script's `changed` mode also gates `.issue-runner/integration`: gh-issue Step 9 blocks such a PR, and the `--merge-ready` refresh leaves it *stuck*. `run-state.sh init` writes `run-id` and `invocation`. The RFC's §15 records where the build differs from its text. Observation (`status`, slice 2) and the README and REFERENCE sections (slice 3) are not built.
 
 ---
 

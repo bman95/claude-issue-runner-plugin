@@ -77,6 +77,8 @@ expect "fresh init: lock holds the owner pid" test "$(cat "$RUN_ROOT/lock")" = "
 expect "fresh init: session pointer written" test "$(cat "$RUN_ROOT/session")" = sess-A
 expect "fresh init: state dir created, no temp pointer left" \
   eval '[ -d "$STATE_DIR" ] && [ -z "$(ls "$RUN_ROOT" | grep session.tmp)" ]'
+expect "fresh init: run-id is the repo key plus a UTC timestamp, invocation a UTC timestamp" \
+  eval 'grep -qE "^$KEY@[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\$" "$STATE_DIR/run-id" && grep -qE "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\$" "$STATE_DIR/invocation"'
 
 # --- live lock refusal ----------------------------------------------------------
 fresh live-pid
@@ -134,6 +136,18 @@ expect "same session, dead PID, fresh heartbeat: re-entry keeps state" \
 expect "re-entry: no backup made, lock taken" \
   eval '[ -z "$(ls "$RUN_ROOT" | grep state.prev)" ] && [ "$(cat "$RUN_ROOT/lock")" = "$LIVE" ]'
 
+fresh run-id
+export CLAUDE_CODE_SESSION_ID=sess-A
+rs init "$DEAD" 120
+printf 'kept-id\n' > "$STATE_DIR/run-id"; printf 'old-invocation\n' > "$STATE_DIR/invocation"
+rs init "$LIVE" 120
+expect "re-entry keeps the run id and rewrites the invocation" \
+  eval '[ "$RC" -eq 0 ] && [ "$(cat "$STATE_DIR/run-id")" = kept-id ] && ! grep -qx old-invocation "$STATE_DIR/invocation" && [ -s "$STATE_DIR/invocation" ]'
+rm -f "$STATE_DIR/run-id"; rm -f "$RUN_ROOT/lock"
+rs init "$LIVE" 120
+expect "a kept state with no run id (an older plugin's) gets one minted" \
+  eval '[ "$RC" -eq 0 ] && has "state kept: same session re-entering its unfinished run" && grep -q "^$KEY@" "$STATE_DIR/run-id"'
+
 fresh merge-ready
 export CLAUDE_CODE_SESSION_ID=sess-A
 rs init "$DEAD" 120; mkdir -p "$STATE_DIR/issue-7"; age_lock
@@ -151,8 +165,10 @@ rs init "$LIVE" 120
 PREV=$(sed -n 's/^state rotated: //p' "$OUT")
 expect "other session: previous state rotated to state.prev.*" \
   eval '[ "$RC" -eq 0 ] && case "$PREV" in "$RUN_ROOT"/state.prev.*) true;; *) false;; esac && [ -d "$PREV/issue-3" ]'
-expect "rotation: backup carries the pointer it was filed under; new state empty" \
-  eval '[ "$(cat "$PREV/session")" = sess-A ] && [ -d "$STATE_DIR" ] && [ -z "$(ls -A "$STATE_DIR")" ] && [ "$(cat "$RUN_ROOT/session")" = sess-B ]'
+expect "rotation: backup carries the pointer it was filed under; new state holds only run-id and invocation" \
+  eval '[ "$(cat "$PREV/session")" = sess-A ] && [ -d "$STATE_DIR" ] && [ "$(ls -A "$STATE_DIR" | tr '"'"'\n'"'"' '"'"' '"'"')" = "invocation run-id " ] && [ "$(cat "$RUN_ROOT/session")" = sess-B ]'
+expect "rotation: the new state gets its own run id, the rotated one keeps its own" \
+  eval '[ -s "$PREV/run-id" ] && [ -s "$STATE_DIR/run-id" ]'
 
 fresh released
 export CLAUDE_CODE_SESSION_ID=sess-A
