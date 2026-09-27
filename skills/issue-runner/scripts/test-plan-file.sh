@@ -263,9 +263,13 @@ tracking 10 "$(block "$(printf '%s' '{"version":1,"issues":[{"n":11,"blocked_by"
 expect "an escaped NUL in a plan path is a schema error, never dropped" \
   "plan file: ignored (#10's plan file is not valid: issues[0].files[0] is not a string without control characters)"
 
+tracking 10 "$(block "$(printf '%s' '{"version":1,"issues":[],"a.@u001b[2J@u009b@rX@nplan file: fake":1}' | sed 's/@/\\/g')")"
+expect "a key quoted in a reason is printed as one line with no control characters" \
+  "plan file: ignored (#10's plan file is not valid: unexpected key a.?[2J??X)"
+
 fixture path-named-like-a-marker
-issue 11 "$(slice 10 'None - can start immediately' 'noline, nosection')"
-tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["noline","nosection"]}]}')"
+issue 11 "$(slice 10 'None - can start immediately' 'noline')"
+tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["noline"]}]}')"
 expect "a path that spells an internal marker is still a path" \
   'plan file: #10 matches the in-scope issue bodies (1 issues)'
 
@@ -274,6 +278,10 @@ issue 11 "$(printf 'Part of #10\n\n## Blocked by\n\n- #9\n\n## Interfaces\n\n- #
 tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[9],"files":["src/a.ts"]}]}')"
 expect "a heading after ## Blocked by ends the section" \
   'plan file: #10 matches the in-scope issue bodies (1 issues)'
+issue 12 "$(printf 'Part of #10\n\n  ## Blocked by\n\n- #9\n\n   ## Interfaces\n\n- #99 provides x\n\nFiles likely touched: src/b.ts\n')"
+tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[9],"files":["src/a.ts"]},{"n":12,"blocked_by":[9],"files":["src/b.ts"]}]}')"
+expect "headings indented up to three spaces start and end the section" \
+  'plan file: #10 matches the in-scope issue bodies (2 issues)'
 
 # --- usage ------------------------------------------------------------------------
 bash "$SCRIPT" >/dev/null 2>&1; rc=$?

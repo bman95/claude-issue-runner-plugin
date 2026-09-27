@@ -91,7 +91,7 @@
 #      recorded in codex/issue-runner/parity-allowlist.txt; a stale allowlist
 #      entry fails too
 #  25. skills/issue-runner/scripts/test-plan-file.sh passes — the fixtures for
-#      scripts/plan-file.sh, the extracted Step 2 plan-file drift check — and
+#      scripts/plan-file.sh, Step 2's plan-file drift check — and
 #      the plan-file contract strings (the `## Plan file` heading and the
 #      ```issue-runner-plan fence) appear in the script and in both editions'
 #      issue-plan

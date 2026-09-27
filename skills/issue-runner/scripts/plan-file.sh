@@ -95,7 +95,11 @@ CTRL_RE=$(printf '[\001-\037\177]|\302[\200-\237]')
 NOLINE=$(printf '\001')   # body_files' "no Files likely touched: line" marker
 
 usage() { echo "plan-file.sh: $1" >&2; exit 2; }
-say()   { printf 'plan file: %s\n' "$1"; }
+# Every line printed is one line, with no control character in it: a reason can
+# quote text from the tracking issue (a key name), which anyone who can edit
+# issues controls. Newlines and CRs become `?`, and so does every CTRL_RE match.
+say()   { printf 'plan file: %s\n' "$(printf '%s' "$1" | tr '\n\r' '??' \
+            | awk -v CTRL="$CTRL_RE" '{ gsub(CTRL, "?"); printf "%s", $0 }')"; }
 skip()  { say "not checked ($1)"; exit 0; }
 
 [ $# -eq 1 ] || usage "usage: plan-file.sh <STATE_DIR>"
@@ -285,9 +289,10 @@ norm_paths() {
 }
 # body_deps < body: one dependency per line, or `nosection`
 body_deps() {
-  awk '{ sub(/\r$/, ""); t = $0; sub(/[ \t]+$/, "", t) }
+  # A Markdown heading may be indented by up to three spaces (four is a code block).
+  awk '{ sub(/\r$/, ""); t = $0; sub(/[ \t]+$/, "", t); sub(/^(   |  | )/, "", t) }
        !seen && t == "## Blocked by" { inb = 1; seen = 1; next }
-       inb && ($0 ~ /^#+([ \t]|$)/ || $0 ~ /^Files likely touched:/) { inb = 0 }
+       inb && (t ~ /^#+([ \t]|$)/ || $0 ~ /^Files likely touched:/) { inb = 0 }
        inb && $0 ~ /^[ \t]*[-*+][ \t]/ {
          s = $0
          while (match(s, /#[0-9]+/)) { print substr(s, RSTART + 1, RLENGTH - 1) + 0; s = substr(s, RSTART + RLENGTH) }
