@@ -4,7 +4,8 @@
 # "Release smoke test"), with its local clone, its .env and the run's state.
 #
 # Usage: scripts/smoke/teardown.sh <repo>   (<name> or <owner>/<name>; the owner
-#                                           defaults to the authenticated gh user)
+#                                           is the one setup.sh recorded in
+#                                           <name>.env, else the authenticated gh user)
 #
 # Refuses any name that does not start with `issue-runner-smoke-`, and asks you
 # to type the name back before deleting anything. Deleting a repository needs
@@ -32,14 +33,19 @@ case $NAME in "$PREFIX"?*) ;; *) die "refusing: '$1' is not $PREFIX<suffix>" ;; 
 printf '%s\n' "$1" | grep -Eqx "([A-Za-z0-9-]+/)?${PREFIX}[A-Za-z0-9_-]+" \
   || die "refusing: '$1' is not a plain <owner>/<name> repository name"
 command -v gh >/dev/null 2>&1 || die "gh not found"
-case $1 in
-  */*) REPO=$1 ;;
-  *) OWNER=$(gh api user -q .login) && [ -n "$OWNER" ] || die "cannot resolve the authenticated gh user"
-     REPO="$OWNER/$NAME" ;;
-esac
-
 CLONE="$SMOKE_ROOT/$NAME"
 META="$SMOKE_ROOT/$NAME.env"
+# The repository setup.sh recorded wins: the authenticated user may have
+# changed since, and a repository it cannot see also answers 404.
+REPO=$(sed -n 's/^repo=//p' "$META" 2>/dev/null | head -1)
+case $1 in
+  */*) [ -z "$REPO" ] || [ "$REPO" = "$1" ] || die "refusing: '$1' does not match $META's repo=$REPO"
+       REPO=$1 ;;
+  *) if [ -z "$REPO" ]; then
+       OWNER=$(gh api user -q .login) && [ -n "$OWNER" ] || die "cannot resolve the authenticated gh user"
+       REPO="$OWNER/$NAME"
+     fi ;;
+esac
 RUN_ROOT=""
 if [ -d "$CLONE" ]; then
   RUN_ROOT=$( (cd "$CLONE" && bash "$RUN_STATE" resolve 2>/dev/null) | sed -n 's/^run-root //p')

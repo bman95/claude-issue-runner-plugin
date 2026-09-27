@@ -16,9 +16,9 @@
 #   - the conflicting pair was serialized: recorded in conflicts.json, and the
 #     conflicting issue paused behind the independent one the same way (a
 #     conflict is a `depends` edge, runner Step 2);
-#   - every PR body carries `## Review notes` (issue #61 asks for it; gh-issue
-#     writes it for iteration history) and a `## Test plan` naming the
-#     contract's preflight (gh-issue Step 7);
+#   - every open PR's body carries `## Review notes` (issue #61 asks for it;
+#     gh-issue writes it for iteration history) and a `## Test plan` naming the
+#     contract's validation, `preflight` or its command (gh-issue Step 7);
 #   - every dispatched issue's result.json exists and is one result object
 #     (an outcome of merged/blocker/failed/ready, a non-empty worktree).
 #
@@ -74,7 +74,7 @@ fail() { printf 'FAIL: %s\n' "$1"; nfail=$((nfail + 1)); }
 
 status_of() {  # absent or empty = pending, as the scheduler reads it
   local s
-  s=$(tr -d "[:space:]" <"$STATE_DIR/issue-$1/status" 2>/dev/null)   # as scheduler.sh reads it (CRLF on WSL)
+  s=$( { tr -d "[:space:]" <"$STATE_DIR/issue-$1/status"; } 2>/dev/null)   # CR/space-tolerant (CRLF on WSL)
   printf '%s\n' "${s:-pending}"
 }
 # PR numbers on issue N's branch contract (/issue-N-), any state.
@@ -130,7 +130,8 @@ for n in "$A" "$B" "$C"; do
 done
 # dag.txt: one `N: dep dep …` line per issue (runner Step 2).
 for n in "$B" "$C"; do
-  if tr -d '\r' <"$STATE_DIR/dag.txt" 2>/dev/null | sed -n "s/^$n:[[:space:]]*//p" | tr ' ' '\n' | grep -qx "$A"; then
+  if { awk -F: -v n="$n" '{ gsub(/\r/, ""); k = $1; gsub(/[[:space:]]/, "", k); if (k == n) print $2 }' \
+         "$STATE_DIR/dag.txt"; } 2>/dev/null | tr -s ' \t' '\n' | grep -qx "$A"; then
     pass "dag.txt: #$n depends on #$A"
   else
     fail "dag.txt: #$n depends on #$A"
@@ -170,7 +171,7 @@ fi
 check_waited "$C" "(conflict)"
 
 # 3. PR bodies of the open PRs (a closed one is an abandoned attempt).
-PRS=$(gh pr list --repo "$REPO" --state open --limit 100 --json number --jq '.[].number') || PRS=""
+PRS=$(gh pr list --repo "$REPO" --state open --limit 100 --json number --jq '.[].number') || die "cannot list open PRs of $REPO"
 [ -n "$PRS" ] || fail "the run left at least one open PR"
 for p in $PRS; do
   body=$(gh pr view "$p" --repo "$REPO" --json body --jq .body) || { fail "PR #$p body cannot be read"; continue; }
@@ -191,7 +192,7 @@ for n in "$A" "$B" "$C"; do
   if [ ! -f "$f" ]; then
     fail "#$n result.json exists (status: $s)"
   elif ! jq -se 'length == 1 and (.[0] | type == "object"
-                   and (.outcome | IN("merged", "blocker", "failed", "ready"))
+                   and (.outcome == "merged" or .outcome == "blocker" or .outcome == "failed" or .outcome == "ready")
                    and ((.worktree // "") != ""))' "$f" >/dev/null 2>&1; then
     fail "#$n result.json parses as one result object (outcome, worktree)"
   elif [ "$s" = ready ] && [ "$(jq -r .outcome "$f")" != ready ]; then
