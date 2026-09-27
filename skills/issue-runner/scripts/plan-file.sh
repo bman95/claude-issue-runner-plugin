@@ -75,7 +75,7 @@
 #                         `(no Files likely touched: line)` when it lacks one
 #   in plan but not in scope: #61, #62
 #                         plan entries this run does not cover (a partial run,
-#                         or an issue dropped from the plan by hand)
+#                         a slice already closed, or an issue dropped by hand)
 #   #P matches the in-scope issue bodies (K issues)
 #                         no per-issue drift
 #
@@ -84,7 +84,7 @@
 # bodies), so it is reported as `not checked` on exit 0 (the design-notes
 # carve-out). 2 — a usage error.
 #
-# Dependencies: bash 3.2, coreutils, awk, gh (its built-in --jq only projects
+# Dependencies: bash 3.2, coreutils, grep, awk, gh (its built-in --jq only projects
 # the body; every decision is made here).
 
 set -u
