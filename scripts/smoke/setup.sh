@@ -19,7 +19,8 @@
 # Usage: scripts/smoke/setup.sh
 #
 # The local clone goes to $ISSUE_RUNNER_SMOKE_ROOT/<name> (default
-# ~/issue-runner-smoke/<name>), with the issue numbers in <name>.env beside it
+# ~/issue-runner-smoke/<name>), with the repository (written first) and the
+# issue numbers (written last) in <name>.env beside it
 # (outside the clone, so the run sees a clean tree); check.sh reads both, and
 # teardown.sh deletes both. Refuses if the repository, the clone or the .env already exists.
 #
@@ -61,6 +62,11 @@ grep -q 'HTTP 404' "$TMP/probe.err" || { cat "$TMP/probe.err" >&2; die "cannot c
 # From here on a failure can leave the clone and, once created, the repository
 # (a failed push, say) behind: say how to remove them.
 die() { printf 'setup: %s\nsetup: remove what was created with: %s/teardown.sh %s\n' "$1" "$HERE" "$NAME" >&2; exit 1; }
+
+# Record the repository before creating anything: teardown.sh takes its owner
+# from here, never from whatever gh login is current by then.
+mkdir -p "$SMOKE_ROOT" && printf 'repo=%s\nclone=%s\n' "$REPO" "$CLONE" >"$META" \
+  || die "cannot write $META"
 
 # The fixture, committed on main and pushed to a new private repository.
 mkdir -p "$CLONE" || die "cannot create $CLONE"
@@ -172,8 +178,8 @@ Smoke test fixture created by issue-runner's \`scripts/smoke/setup.sh\`.
 EOF
 gh issue edit "$TRACKING" --repo "$REPO" --body-file "$BODY" >/dev/null || die "cannot update the tracking issue"
 
-printf 'repo=%s\nclone=%s\ntracking=%s\nindependent=%s\ndependent=%s\nconflict=%s\n' \
-  "$REPO" "$CLONE" "$TRACKING" "$INDEPENDENT" "$DEPENDENT" "$CONFLICT" >"$META" \
+printf 'tracking=%s\nindependent=%s\ndependent=%s\nconflict=%s\n' \
+  "$TRACKING" "$INDEPENDENT" "$DEPENDENT" "$CONFLICT" >>"$META" \
   || die "cannot write $META"
 
 cat <<EOF
