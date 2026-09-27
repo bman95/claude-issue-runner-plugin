@@ -20,6 +20,7 @@
 # Run directly, or from scripts/lint.sh (and so from CI). Dependency-free:
 # bash + git + coreutils. Exits non-zero on the first-or-any failure.
 
+# shellcheck disable=SC1010,SC2015,SC2100,SC2155 # `done` is a status word here, A && B || C is intended, `i-2`-like text is a label, and the exports read their own values
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -315,12 +316,58 @@ set_contract "hint: true\n"
 new_state; run discover main "$SD" >/dev/null
 sh -c 'exit 0' & DEADPID=$!; wait "$DEADPID"
 mkdir -p "$SD/integration-pending"
-printf '%s 2026-09-27T11:00:00Z merged #4\n' "$DEADPID" > "$SD/integration-pending/a"
-printf '%s 2026-09-27T09:00:00Z merged #5\n' "$DEADPID" > "$SD/integration-pending/b"
+printf '2026-09-27T11:00:00Z merged #4\n' > "$SD/integration-pending/a"; printf '%s\n' "$DEADPID" > "$SD/integration-pending/a.pid"
+printf '2026-09-27T09:00:00Z merged #5\n' > "$SD/integration-pending/b"   # an earlier invocation's, never started
+printf '2026-09-27T09:00:00Z\tmerged #9: sent (exit 0)\n' > "$SD/integration-hints"   # an earlier invocation's result
+START=$(date +%s)
 run run-complete "$SD" completed
-if grep -qF "integration: hint merged #4: not collected" "$OUT" && ! grep -qF "merged #5" "$OUT" && [ -z "$(ls -A "$SD/integration-pending")" ]; then
-  ok "drain: a dead wrapper of this invocation is reported not collected; an earlier invocation's marker is dropped"
+ELAPSED=$(( $(date +%s) - START ))
+if grep -qF "integration: hint merged #4: not collected (its wrapper ended without a result)" "$OUT" && ! grep -qF "merged #5" "$OUT" \
+   && ! grep -qF "merged #9" "$OUT" && [ -z "$(ls -A "$SD/integration-pending")" ]; then
+  ok "drain: a dead wrapper of this invocation is reported; an earlier invocation's marker and results are left out"
 else err "drain markers: $(cat "$OUT"); left: $(ls "$SD/integration-pending")"; fi
+[ "$ELAPSED" -lt 10 ] && ok "an earlier invocation's unstarted marker never stalls Step 5 ($ELAPSED s)" || err "stalled $ELAPSED s"
+
+# A stale marker whose PID was reused by a live process is dead by construction.
+new_state; run discover main "$SD" >/dev/null
+mkdir -p "$SD/integration-pending"
+printf '2026-09-27T11:00:00Z merged #6\n' > "$SD/integration-pending/c"; printf '%s\n' "$$" > "$SD/integration-pending/c.pid"
+touch -t "$(date -d '-1 hour' +%Y%m%d%H%M 2>/dev/null || date -v-1H +%Y%m%d%H%M)" "$SD/integration-pending/c"
+START=$(date +%s)
+run run-complete "$SD" completed
+ELAPSED=$(( $(date +%s) - START ))
+grep -qF "integration: hint merged #6: not collected" "$OUT" && [ "$ELAPSED" -lt 10 ] \
+  && ok "a stale marker with a live (reused) PID is dropped at once and reported ($ELAPSED s)" \
+  || err "stale reused-PID marker: $(cat "$OUT") after $ELAPSED s"
+
+# A wrapper still running at the drain's deadline is reported, and never logs later.
+export INTEGRATION_HINT_BOUND=2
+new_state; run discover main "$SD" >/dev/null
+mkdir -p "$SD/integration-pending"
+sleep 30 & LIVE=$!
+printf '2026-09-27T11:00:00Z merged #7\n' > "$SD/integration-pending/d"; printf '%s\n' "$LIVE" > "$SD/integration-pending/d.pid"
+run run-complete "$SD" completed
+kill "$LIVE" 2>/dev/null; wait "$LIVE" 2>/dev/null
+grep -qF "integration: hint merged #7: not collected (still running at Step 5)" "$OUT" && [ ! -e "$SD/integration-pending/d" ] \
+  && ok "a wrapper still running at the drain's deadline is reported and its marker removed" \
+  || err "still-running wrapper: $(cat "$OUT")"
+# A wrapper whose marker the drain already removed never runs its command.
+rm -f "$DUMPS"/*
+( cd "$REPO" && INTEGRATION_DELIVER_CMD="$DUMP_CMD" bash "$SCRIPT" _deliver "$SD" "$SD/integration-pending/gone" 2026-09-27T11:00:00Z "run-start" )
+[ ! -e "$DUMPS/none" ] && ok "a wrapper whose marker is gone runs nothing" || err "a wrapper ran after the drain gave up"
+
+# The watchdog directory cannot be created: reported as not sent, never blamed on the adapter.
+set_contract "hint: true\n"
+TMPDIR=/nonexistent-dir run flush "$TMP/runroot" main
+expect "no watchdog directory → not sent, never 'adapter exited'" 1 "flush: not sent (cannot create the watchdog directory)"
+[ -s "$TMP/stderr" ] && err "mktemp leaked to stderr: $(cat "$TMP/stderr")" || ok "no stderr noise from the failed mktemp"
+export INTEGRATION_HINT_BOUND=60
+
+# record_merge: a failed gh query removes a stale merge-oid.
+new_state; run discover main "$SD" >/dev/null
+printf '%s main 21\n' "$MERGE1" > "$SD/issue-3/merge-oid"
+run hint "$SD" merged 3 --pr 404
+[ ! -e "$SD/issue-3/merge-oid" ] && ok "merged --pr with a failing gh query removes the stale merge-oid" || err "stale merge-oid kept"
 
 # A launched hint still running when Step 5 starts is drained, not abandoned.
 set_contract "hint: sleep 2; exit 0\n"

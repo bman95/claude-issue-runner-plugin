@@ -9,7 +9,7 @@
 #
 # Hints are advisory. No outcome here stops a run or changes an issue's
 # status: a failing, hung or unsent hint is a report line. A project without
-# the file sees nothing, because every call prints nothing and sends nothing.
+# the file sees nothing, because every hint call prints nothing and sends nothing.
 #
 # Run from the target repository (the orchestrator's own cwd, never a
 # worktree). Commands run through `bash -c` from its root.
@@ -62,6 +62,8 @@
 #   this invocation sent, in the order they finished:
 #     integration: hint <label>: sent (exit 0) | adapter exited <code> | timed out
 #     integration: hint <label>: not collected (its wrapper ended without a result)
+#     integration: hint <label>: not collected (still running at Step 5)
+#     integration: hint <label>: not sent (cannot create the watchdog directory)
 #     integration: hint <label>: not sent (<reason>)
 #   flush: the discovery line, spelled `integration: disabled (contract invalid:
 #   <reason>)` or `integration: disabled (unresolvable: <reason>)` for the two
@@ -117,7 +119,8 @@
 #
 # State files in <state-dir>, besides those `discover` records:
 #   integration-hints        one line per hint result: <invocation><TAB><text>
-#   integration-pending/     one marker per wrapper not yet collected
+#   integration-pending/     one marker per wrapper not yet collected (`<inv> <label>`,
+#                            plus `<marker>.pid` once the wrapper starts)
 #   integration-last-merged  <invocation> <oid> <base>, rewritten by each `merged`
 #
 # Exit status: 0 with the lines above, since every hint outcome is a report
@@ -126,6 +129,7 @@
 #
 # Dependencies: bash 3.2, coreutils, grep, sed, awk, git; gh for `merged --pr`.
 
+# shellcheck disable=SC1010,SC2015,SC2100,SC2155 # `done` is a status word here, A && B || C is intended, `i-2`-like text is a label, and the exports read their own values
 set -u
 set +e +o pipefail   # every exit status below is read explicitly
 
@@ -200,11 +204,12 @@ clear_env() {
 # run_bounded CMD: run CMD under the bound. Sets RB_RC to its exit status and
 # RB_TIMED_OUT to 1 when the watchdog killed it.
 run_bounded() {
-  local flagdir flag pid w
+  local flagdir flag pid w=""
+  RB_ERR=""
   # The watchdog's flag lives in a private directory: a guessable name in a
   # shared /tmp could be planted as a symlink for the `: >` below to truncate.
-  flagdir=$(mktemp -d "${TMPDIR:-/tmp}/integration-timeout.XXXXXX") || flagdir=""
-  if [ -z "$flagdir" ]; then RB_RC=1; RB_TIMED_OUT=0; return; fi
+  flagdir=$(mktemp -d "${TMPDIR:-/tmp}/integration-timeout.XXXXXX" 2>/dev/null) || flagdir=""
+  if [ -z "$flagdir" ]; then RB_ERR="not sent (cannot create the watchdog directory)"; RB_RC=1; RB_TIMED_OUT=0; return; fi
   flag="$flagdir/timed-out"
   set -m   # job control: the background job below gets its own process group
   ( cd "$TOP" && exec bash -c "$1" ) </dev/null >/dev/null 2>&1 &
@@ -212,7 +217,9 @@ run_bounded() {
   set +m
   # Killed or interrupted mid-wait (a host tool timeout, Ctrl-C): take the
   # command's own process group down too, so it never outlives this call.
-  trap 'kill -TERM -- -"$pid" 2>/dev/null; sleep 1; kill -KILL -- -"$pid" 2>/dev/null; rm -rf "$flagdir"; exit 143' TERM INT HUP
+  # The watchdog goes too, so it never signals a process group id reused later.
+  # (A SIGKILL of this call cannot be trapped: the adapter then outlives it.)
+  trap 'kill -TERM -- -"$pid" 2>/dev/null; sleep 1; kill -KILL -- -"$pid" 2>/dev/null; [ -n "$w" ] && kill "$w" 2>/dev/null; rm -rf "$flagdir"; exit 143' TERM INT HUP
   ( trap 'kill "$S" 2>/dev/null; exit 0' TERM
     sleep "$BOUND" & S=$!
     wait "$S" && { : > "$flag"; kill -TERM -- -"$pid" 2>/dev/null; sleep 2; kill -KILL -- -"$pid" 2>/dev/null; } ) >/dev/null 2>&1 &
@@ -230,7 +237,8 @@ run_bounded() {
 }
 
 result_text() {
-  if [ "$RB_TIMED_OUT" -eq 1 ]; then echo "timed out"
+  if [ -n "${RB_ERR:-}" ]; then echo "$RB_ERR"
+  elif [ "$RB_TIMED_OUT" -eq 1 ]; then echo "timed out"
   elif [ "$RB_RC" -eq 0 ]; then echo "sent (exit 0)"
   else echo "adapter exited $RB_RC"; fi
 }
@@ -294,7 +302,9 @@ launch() {
     echo "integration: hint $label not sent (cannot write $sd/integration-pending)"; return 1
   fi
   marker="$sd/integration-pending/$(date +%s).$$.$RANDOM"
-  if ! printf -- '- %s %s\n' "$INV" "$label" > "$marker" 2>/dev/null; then
+  # Written whole, then moved into place: the drain never reads a half-written marker.
+  if ! { printf -- '%s %s\n' "$INV" "$label" > "$marker.tmp" 2>/dev/null && mv -f "$marker.tmp" "$marker" 2>/dev/null; }; then
+    rm -f "$marker.tmp"
     log_result "$sd" "$INV" "hint $label: not sent (cannot write its marker)"
     echo "integration: hint $label not sent (cannot write its marker)"; return 1
   fi
@@ -312,36 +322,48 @@ cmd_deliver() {  # SD MARKER INV LABEL (the detached wrapper)
   local cmd=${INTEGRATION_DELIVER_CMD:-}
   unset INTEGRATION_DELIVER_CMD
   [ -f "$2" ] || exit 0   # Step 5's drain already gave up on this hint: never run after it
-  printf '%s %s %s\n' "$$" "$3" "$4" > "$2" 2>/dev/null
+  printf '%s\n' "$$" > "$2.pid.tmp" 2>/dev/null && mv -f "$2.pid.tmp" "$2.pid" 2>/dev/null
   run_bounded "$cmd"
   log_result "$1" "$3" "hint $4: $(result_text)"
-  rm -f "$2"
+  rm -f "$2" "$2.pid" "$2.pid.tmp"
 }
 
-# drain SD: wait, bounded, for every wrapper still running. A wrapper that
-# ended without removing its marker is reported as not collected, for this
-# invocation only. Markers left by an earlier invocation are dropped.
+# drain SD: wait, bounded, for this invocation's wrappers. Each marker is
+# `<invocation> <label>`, and `<marker>.pid` names its wrapper once it starts.
+#   - an earlier invocation's marker is dropped at once, unreported;
+#   - a marker older than the bound plus 15 s is dead by construction, whatever
+#     `kill -0` says of a (possibly reused) PID;
+#   - a started wrapper that is gone without a result: `not collected`;
+#   - a wrapper not started yet, or still running, stays pending until the
+#     deadline; then it is reported `not collected (still running at Step 5)`
+#     and its marker removed, so it never runs a command afterwards.
 drain() {
-  local sd=$1 deadline m pid inv label pending
+  local sd=$1 deadline m inv label pid pending mtime now final=0
   [ -d "$sd/integration-pending" ] || return 0
   deadline=$(( $(date +%s) + BOUND + 10 ))
   while :; do
-    pending=0
+    pending=0 now=$(date +%s)
+    [ "$now" -ge "$deadline" ] && final=1
     for m in "$sd"/integration-pending/*; do
+      case $m in *.pid|*.tmp) continue ;; esac
       [ -f "$m" ] || continue
-      read -r pid inv label < "$m" 2>/dev/null || continue
-      if [ "$pid" = - ]; then
-        # Not started yet: pending until the deadline (a loaded host starts it late).
-        [ "$(date +%s)" -lt "$deadline" ] && { pending=1; continue; }
-      elif kill -0 "$pid" 2>/dev/null; then
-        pending=1; continue
+      inv="" label=""
+      read -r inv label < "$m" 2>/dev/null
+      if [ -n "$inv" ] && [ "$inv" != "$INV" ]; then rm -f "$m" "$m.pid"; continue; fi
+      mtime=$(stat -c %Y "$m" 2>/dev/null || stat -f %m "$m" 2>/dev/null || echo 0)
+      pid=""; [ -f "$m.pid" ] && pid=$(head -n 1 "$m.pid" 2>/dev/null)
+      if [ $(( now - mtime )) -le $(( BOUND + 15 )) ] && [ "$final" -eq 0 ]; then
+        if [ -z "$pid" ] || kill -0 "$pid" 2>/dev/null; then pending=1; continue; fi
       fi
       [ -f "$m" ] || continue   # finished between the read and here
-      [ "$inv" = "$INV" ] && log_result "$sd" "$INV" "hint $label: not collected (its wrapper ended without a result)"
-      rm -f "$m"
+      if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+        log_result "$sd" "$INV" "hint ${label:-?}: not collected (its wrapper ended without a result)"
+      else
+        log_result "$sd" "$INV" "hint ${label:-?}: not collected (still running at Step 5)"
+      fi
+      rm -f "$m" "$m.pid"
     done
     [ "$pending" -eq 0 ] && return 0
-    [ "$(date +%s)" -ge "$deadline" ] && return 0
     sleep 1
   done
 }

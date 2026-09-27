@@ -25,7 +25,7 @@ You are the orchestrator. Implementers are `general-purpose` subagents in isolat
   - whenever `$RUN_ROOT` exists, the session pointer (even with no state dir): `$RUN_ROOT/session` absent or blank → `no session id recorded`; else the id and `matches this session`, `recorded by another session`, or (variable unset) `current session id unavailable`;
   - `$RUN_ROOT/paused` verbatim if present (`paused: <reason>: <timestamp>`);
   - no state dir → say so, naming the resolved path; otherwise, for each issue in `scope.txt` (never the directory listing): number, `status`, `error`, title from `details.json`; `implementing` adds the `progress` line and its mtime age (`step=8.1 iter=2 pr=#123 (age 12m)`, Step 3 item 4's `stat` fallback) or `no progress recorded` if absent or empty; `blocked`/`done`/`failed`/`closed-externally`/`ready` add `outcome` and `pr` from `result.json` (for `ready`, `pr` is `$STATE_DIR/issue-N/pr`) or `no result recorded` if absent or unreadable.
-- `/issue-runner --flush` — ask the project's CI to validate the default branch's tip now: read-only like `--status` (its State block), then `bash "<INTEGRATION_SCRIPT>" flush "<RUN_ROOT>" "<default branch>" <LOCK_TTL_MINUTES>`; print its output, exit with its status.
+- `/issue-runner --flush` — ask the project's CI to validate the default branch's tip now: read-only like `--status` (its State block), then `bash "<INTEGRATION_SCRIPT>" flush "<RUN_ROOT>" "<default branch>" <LOCK_TTL_MINUTES>` (branch resolved as Step 5 does); print its output, exit with its status.
 - `/issue-runner --max-parallel N` — concurrency cap (default 3); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --hang-minutes N` — hung-implementer threshold (default 30): `progress` unchanged for more than N minutes → stopped and classified (Step 3 item 4)
 - `/issue-runner --lock-ttl-minutes N` — run-lock heartbeat threshold (default 120): `run-state.sh init` refuses a second run while the lock's PID is alive **or** its mtime is younger than N minutes
@@ -284,7 +284,7 @@ A `done` here is item 5's ordinary `done`. After one try per eligible issue, fal
 - **Either way, touch (or rewrite the line of) `issue-N/progress` at once** — before the next issue, never waiting for a reply. It grants a `--hang-minutes` grace window, not a confirmation; item 4's hang rule catches an agent that never resumes (why: Why the hang rule reads the file's mtime but not its content).
 - **Fall through when it cannot be resumed** (id unknown to `ListAgents` and `SendMessage`, `SendMessage` errors, or its transcript aged past `cleanupPeriodDays`). First try `AGENT_TRACE="$(dirname "<SCHEDULER_SCRIPT>")/agent-trace.sh"`, the absolute path substituted literally — never run an empty or relative value. Absent → report a broken install and skip the trace fallback. Present → `bash "$AGENT_TRACE" "$CLAUDE_CODE_SESSION_ID" "$N"` from the orchestrator's cwd, never the plugin root; success appends `## Recovered trace` to `guidance.md`, failure changes nothing. A fallback, never a substitute for resuming (why: Why the trace digest is strictly worse than resuming in place, never a substitute for it). Then mark it `pending`; Step 3a's resume check rediscovers its branch or PR.
 
-Mark every issue not handled above `pending`, then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`/`ready`; `ready` only under `--no-merge`, with no Step 4 escalation) or paused (`blocked`; a `pending` issue with a `blocked` **or `ready`** ancestor; every `pending` issue while `$RUN_ROOT/paused` exists):
+Mark every issue not handled above `pending` (then the `run-start` hint, State), then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`/`ready`; `ready` only under `--no-merge`, with no Step 4 escalation) or paused (`blocked`; a `pending` issue with a `blocked` **or `ready`** ancestor; every `pending` issue while `$RUN_ROOT/paused` exists):
 
 1. **Run the scheduler and act on its output.** `bash "$SCHEDULER_SCRIPT" "$STATE_DIR"` never writes state. Apply every stdout line:
    - `skip N <error>` → write `skipped` to `issue-N/status`, `<error>` to `issue-N/error`.
@@ -312,7 +312,7 @@ Mark every issue not handled above `pending`, then loop until all statuses are t
 
    It writes `issue-N/error` and prints `<status> <pr>` (`<pr>` a number or `-`). Write `<status>` to `issue-N/status`:
 
-   - **`done`** — the only status that authorizes Step 5's `git branch -D`.
+   - **`done`** — the only status that authorizes Step 5's `git branch -D`; send the `merged` hint (State).
    - **`closed-externally`** — not merge proof: **keep the worktree and branch**, flag it in the Step 5 summary; never `-D` its branch.
    - **`blocked`** with `PR #P merged but issue still open — confirm and close by hand` — **keep the worktree and branch**, never `done` while open; Step 4 asks, then marks `done` once a human closes the issue, or retries.
    - **`blocked`** otherwise — Step 4 when convenient; while `$RUN_ROOT/paused` exists, no retry for any issue.
@@ -470,7 +470,7 @@ Escalations, cheapest first:
 
 **Run paused on host credit/usage-limit (`$RUN_ROOT/paused` exists).** Open the closing message with: the pause, quoting the file's reason and timestamp; the issue(s) `blocked` on the dispatch failure; every other issue `pending` only for lack of a slot, listed as **paused**, never `skipped` or `failed` (one that reached `failed`/`skipped`/`closed-externally` through item 1's cascade keeps that status); and how to resume — after the reset, confirm no implementer is running, delete `$RUN_ROOT/lock`, re-invoke `/issue-runner` with the unfinished numbers, in this session (keeps guidance and retry history) or after `claude --resume` (Recovery) if it ended. Then finish this step for issues that reached a terminal or `blocked` status, but **skip the final lock/session release** (why: Why the run lock is released last in Step 5).
 
-**Integration first**: `bash "<INTEGRATION_SCRIPT>" run-complete "$STATE_DIR" <reason>` (tool timeout ≥ 150 s) (`paused` while `$RUN_ROOT/paused` exists, `stopped` after a Step 4 abort, else `completed`); print its lines atop the summary (a missing script: repeat Step 0's disabled line).
+**Integration first**: `bash "<INTEGRATION_SCRIPT>" run-complete "$STATE_DIR" <reason>` (tool timeout ≥ 150 s) (`paused` while `$RUN_ROOT/paused` exists, `stopped` after a Step 4 abort, else `completed`); print its lines atop the summary (a missing script: say integration was disabled).
 
 Resolve the default branch first; no deletion below may target it. Repair the local `origin/HEAD` symref from the remote before trusting it (why: Why the default-branch guard repairs `origin/HEAD`):
 
