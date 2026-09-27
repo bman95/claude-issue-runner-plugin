@@ -2,7 +2,9 @@
 #
 # classify.sh — issue-runner's two classifications of what an unfinished or
 # returned issue *is*: Step 3 item 5's merge proof (`result`) and Step 5's
-# unfinished-PR shape (`pr-shape`). SKILL.md runs this script and obeys its
+# unfinished-PR shape (`pr-shape`). Two helpers for Step 3 item 4 live here
+# too: the hang threshold (`hang`) and a stopped implementer's worktree
+# (`worktree`). SKILL.md runs this script and obeys its
 # output; the rules live here, and the rationale in REFERENCE.md ("Why `done`
 # needs merge proof", "Why the implementer opens a draft PR right after the
 # plan").
@@ -27,12 +29,38 @@
 #                 hang string, verbatim; absent or empty = none. Untrusted text:
 #                 the caller writes it as a file, never on a command line, where
 #                 backticks and $(...) would run. Never modified here.
-#     It writes one file, `error` (the final error text; removed when there is
-#     none), and nothing else.
+#     It writes `error` (the final error text; removed when there is none).
+#     On merge proof (`done P` and `blocked P` below) it also records
+#     `merge-oid`: `<merge-commit-oid> <base-branch> <P>`, one line, from the
+#     same query that found P. That is the integration hints'
+#     ISSUE_RUNNER_REVISION and ISSUE_RUNNER_BASE (docs/integration-rfc.md
+#     §8.1). The record is best-effort: a missing or abbreviated oid, or a
+#     failed write, removes it and prints a warning on stderr, never a failure.
+#     It writes nothing else.
 #
 #   classify.sh pr-shape <N> <default-branch>
 #     for an issue that is not `done` or `ready`: its open PR on the
 #     `/issue-N-` branch contract, and its orphan branches (Step 3a probe 3)
+#
+#   classify.sh hang <N> <issue-dir> <hang-minutes>
+#     Step 3 item 4's threshold rule, on <issue-dir>/progress alone: when the
+#     file is non-empty and its mtime is more than <hang-minutes> old (`find
+#     -mmin +M`), it prints `implementer hung (no completion): progress
+#     unchanged for <age>m (--hang-minutes <M>)`, with the age rounded up
+#     (GNU stat, else BSD/macOS stat). Otherwise it prints nothing, including
+#     when there is no progress file (the relative-silence rule is the
+#     orchestrator's). It never writes.
+#
+#   classify.sh worktree <N> <issue-dir>
+#     Step 3 item 4's worktree for a stopped implementer. The first match wins:
+#     <issue-dir>/worktree, only while that directory still exists; else the
+#     `git worktree list --porcelain` entry whose `locked` line names the agent
+#     id in <issue-dir>/agent (`agent-<id>` or bare, matched space-delimited,
+#     so an id never matches as a prefix of a longer one); else the first
+#     entry on a `/issue-N-` branch. It prints the path and records it in
+#     <issue-dir>/worktree (a failed write is a stderr warning, never a lost
+#     path), or prints nothing when none is found. Run it from the
+#     target repository.
 #
 # Output — `result` prints exactly one line, `<status> <pr>` (<pr> is the bare
 # PR number, or `-`), and leaves the final error in <issue-dir>/error
@@ -106,7 +134,7 @@ usage() { echo "classify.sh: $1" >&2; exit 2; }
 
 MODE=${1:-}
 N=${2:-}
-case $MODE in result|pr-shape) ;; *) usage "unknown mode '$MODE' (expected result or pr-shape)" ;; esac
+case $MODE in result|pr-shape|hang|worktree) ;; *) usage "unknown mode '$MODE' (expected result, pr-shape, hang or worktree)" ;; esac
 case $N in ''|*[!0-9]*|0*) usage "issue number must be a positive integer, got '${N}'" ;; esac
 
 # finish STATUS PR ERROR: rewrite the error file (through a temp file in the
@@ -130,9 +158,21 @@ read_state() {
   cat "$DIR/$1" || die "cannot read $DIR/$1"
 }
 
+# record_merge_oid P OID BASE: best-effort; never fails the classification.
+record_merge_oid() {
+  local tmp="$DIR/merge-oid.classify.$$"
+  if printf '%s' "$2" | grep -qE '^([0-9a-f]{40}|[0-9a-f]{64})$' && [ -n "$3" ] \
+     && printf '%s %s %s\n' "$2" "$3" "$1" > "$tmp" 2>/dev/null && mv -f "$tmp" "$DIR/merge-oid" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" "$DIR/merge-oid" 2>/dev/null
+  echo "classify.sh: warning: no merge-oid recorded for PR #$1 (merge commit '${2:-}', base '${3:-}')" >&2
+  return 0
+}
+
 classify_result() {
   local wt recorded outcome error
-  local state wt_branch="" wt_head="" proof_branch="" merged_pr="" list pr draft
+  local state wt_branch="" wt_head="" proof_branch="" merged_pr="" merged_oid="" merged_base="" list pr draft hit
   [ -d "$DIR" ] || usage "not a directory: $DIR"
   wt=$(read_state worktree) || exit 1
   recorded=$(read_state branch) || exit 1
@@ -154,12 +194,16 @@ classify_result() {
   case $wt_branch in */issue-"$N"-*) proof_branch=$wt_branch ;; esac
   [ -n "$wt_branch" ] && [ "$wt_branch" = "$(printf '%s' "$recorded" | tr -d '[:space:]')" ] && proof_branch=$wt_branch
   if [ -n "$proof_branch" ] && [ -n "$wt_head" ]; then
-    list=$(gh pr list --head "$proof_branch" --state merged --json number,headRefOid \
-      --jq '.[] | "\(.number) \(.headRefOid)"') || die "cannot list merged PRs on $proof_branch"
+    list=$(gh pr list --head "$proof_branch" --state merged --json number,headRefOid,mergeCommit,baseRefName \
+      --jq '.[] | "\(.number) \(.headRefOid) \(.mergeCommit.oid // "-") \(.baseRefName)"') || die "cannot list merged PRs on $proof_branch"
     # Anchored on this attempt's commit: a previous run's merged PR on a
     # recurring branch name is not this attempt's proof.
-    merged_pr=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$2 == h { print $1; exit }')
+    hit=$(printf '%s\n' "$list" | awk -v h="$wt_head" '$2 == h { print $1, $3, $4; exit }')
+    read -r merged_pr merged_oid merged_base <<EOF_HIT
+$hit
+EOF_HIT
   fi
+  [ -n "$merged_pr" ] && record_merge_oid "$merged_pr" "$merged_oid" "$merged_base"
 
   if [ "$state" = CLOSED ]; then
     if [ -n "$merged_pr" ]; then finish "done" "$merged_pr" ""
@@ -257,6 +301,33 @@ EOF_REFS
   if [ -n "$out" ]; then printf '%s' "$out"; else echo none; fi
 }
 
+# classify_hang MINUTES: Step 3 item 4's threshold rule on $DIR/progress.
+classify_hang() {
+  local p="$DIR/progress" mtime
+  [ -s "$p" ] && [ -n "$(find "$p" -mmin +"$1" 2>/dev/null)" ] || return 0
+  # GNU stat first, BSD/macOS stat as the fallback (the same fallback run-state.sh uses).
+  mtime=$(stat -c %Y "$p" 2>/dev/null || stat -f %m "$p")
+  # Round up: the find test is strictly "more than".
+  echo "implementer hung (no completion): progress unchanged for $(( ($(date +%s) - mtime + 59) / 60 ))m (--hang-minutes $1)"
+}
+
+# classify_worktree: Step 3 item 4's worktree resolution for a stopped implementer.
+classify_worktree() {
+  local wt ag
+  wt=$(cat "$DIR/worktree" 2>/dev/null); [ -d "$wt" ] || wt=""   # a recorded path counts only while it exists
+  if [ -z "$wt" ]; then
+    ag=$(cat "$DIR/agent" 2>/dev/null); ag=${ag#agent-}   # bare id, whichever form was recorded
+    wt=$(git worktree list --porcelain | awk -v pat="/issue-$N-" -v ag=" agent-$ag " -v have="$ag" '
+      /^worktree /{w=substr($0,10)}
+      have!=""&&/^locked /&&index($0,ag){a=w}   # space-delimited: exact id, not a prefix of a longer one
+      /^branch /&&index($0,pat)&&b==""{b=w}
+      END{print (a!=""?a:b)}')
+  fi
+  [ -n "$wt" ] || return 0
+  printf '%s\n' "$wt"   # printed first: a failed record never hides the worktree
+  printf '%s\n' "$wt" > "$DIR/worktree" 2>/dev/null || echo "classify.sh: warning: cannot write $DIR/worktree" >&2
+}
+
 case $MODE in
   result)
     [ $# -ge 3 ] && [ -n "$3" ] || usage "result needs <N> <issue-dir>"
@@ -265,4 +336,14 @@ case $MODE in
   pr-shape)
     [ $# -ge 3 ] || usage "pr-shape needs <N> <default-branch>"
     classify_pr_shape "$3" ;;
+  hang)
+    [ $# -ge 4 ] && [ -n "$3" ] || usage "hang needs <N> <issue-dir> <hang-minutes>"
+    case $4 in ''|*[!0-9]*|0*) usage "hang minutes must be a positive integer, got '$4'" ;; esac
+    DIR=${3%/}
+    classify_hang "$4" ;;
+  worktree)
+    [ $# -ge 3 ] && [ -n "$3" ] || usage "worktree needs <N> <issue-dir>"
+    DIR=${3%/}
+    [ -d "$DIR" ] || usage "not a directory: $DIR"
+    classify_worktree ;;
 esac

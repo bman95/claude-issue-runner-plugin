@@ -215,6 +215,29 @@ rcheck "row 21: hung after merge, issue still open -> blocked with the hang suff
 rcheck "row 16: open + merged PR, no error at all -> blocked, no suffix" 0 "blocked 11" "$MERGED_OPEN" \
   "$W_CONTRACT" "" none ""
 
+# --- result: the merge-oid record (integration RFC §8.1) ---------------------------
+# mcheck NAME WANT: after the last rcheck, issue-7/merge-oid holds WANT ("" = no file).
+mcheck() {
+  local got="<no file>"
+  [ -e "$ID/merge-oid" ] && got=$(cat "$ID/merge-oid")
+  [ "$got" = "${2:-<no file>}" ] && ok "$1" || err "$1: merge-oid is '$got', want '${2:-<no file>}'"
+}
+MC=cccccccccccccccccccccccccccccccccccccccc
+stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "11 $H_CONTRACT $MC main"
+rcheck "merge proof with its merge commit -> done" 0 "done 11" "" "$W_CONTRACT" "" merged ""
+mcheck "done records merge-oid: the merge commit, the base branch and the PR" "$MC main 11"
+grep -qF 'mergeCommit,baseRefName' "$GH_STUB/log" && ok "the merged-PR query asks for mergeCommit and baseRefName" \
+  || err "the merged-PR query lacks mergeCommit/baseRefName"
+stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT $MC release"
+rcheck "row 16 with its merge commit -> blocked" 0 "blocked 11" "$MERGED_OPEN" "$W_CONTRACT" "" merged ""
+mcheck "row 16 records merge-oid on the proof, before Step 4's answer" "$MC release 11"
+stub_reset; stub issue-state CLOSED; stub merged-feat_issue-7-slug "11 $H_CONTRACT abc123 main"
+rcheck "an abbreviated merge commit still classifies done" 0 "done 11" "" "$W_CONTRACT" "" merged ""
+mcheck "an abbreviated merge commit records no merge-oid" ""
+stub_reset; stub issue-state CLOSED
+rcheck "no merge proof -> closed-externally" 0 "closed-externally -" "$CLOSED_EXT" "$W_CONTRACT" "" merged ""
+mcheck "no merge proof records no merge-oid" ""
+
 # --- result: row 17, a branch outside the contract ---------------------------------
 stub_reset; stub issue-state CLOSED
 rcheck "row 17: scratch branch, CLOSED -> closed-externally" 0 "closed-externally -" "$CLOSED_EXT" \
@@ -276,8 +299,8 @@ no_head_query "row 35: scratch branch runs no --head query"
 # --- result: re-runs, detached HEAD, several open PRs ------------------------------
 stub_reset; stub issue-state OPEN; stub merged-feat_issue-7-slug "11 $H_CONTRACT"
 lay_out "$W_CONTRACT" "" blocker "base freshness conflict"
-first=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID"; cat "$ID/error")
-second=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID"; cat "$ID/error")
+first=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID" 2>/dev/null; cat "$ID/error")
+second=$(cd "$REPO" && bash "$SCRIPT" result 7 "$ID" 2>/dev/null; cat "$ID/error")
 if [ "$first" = "$second" ] && [ "$(cat "$ID/blocker")" = "base freshness conflict" ]; then
   ok "re-running result classifies the same inputs again (no double suffix)"
 else
@@ -345,6 +368,36 @@ check "missing issue-dir argument -> exit 2" 2 "" -- result 7
 check "issue dir that does not exist -> exit 2" 2 "" -- result 7 "$TMP/no-such-dir"
 check "unknown mode -> exit 2" 2 "" -- classify 7
 check "unknown mode is reported before the issue number" 2 "" -- classify
+
+# --- hang: Step 3 item 4's threshold rule (row 21) --------------------------------------
+HD="$TMP/state/issue-8"; rm -rf "$HD"; mkdir -p "$HD"
+check "row 21: no progress file -> nothing (the relative-silence rule is the orchestrator's)" 0 "" -- hang 8 "$HD" 30
+printf 'step=8.1 iter=2 pr=#12\n' > "$HD/progress"
+check "a fresh progress file -> not hung" 0 "" -- hang 8 "$HD" 30
+touch -t "$(date -d '-3 hours' +%Y%m%d%H%M 2>/dev/null || date -v-3H +%Y%m%d%H%M)" "$HD/progress"
+out=$(cd "$REPO" && bash "$SCRIPT" hang 8 "$HD" 30 2>&1)
+case $out in "implementer hung (no completion): progress unchanged for 18"[0-9]"m (--hang-minutes 30)") ok "row 21: progress older than the threshold -> the hung line, age rounded up" ;;
+  *) err "row 21: hung line: '$out'" ;; esac
+: > "$HD/progress"; touch -t "$(date -d '-3 hours' +%Y%m%d%H%M 2>/dev/null || date -v-3H +%Y%m%d%H%M)" "$HD/progress"
+check "an empty progress file is no progress file -> nothing" 0 "" -- hang 8 "$HD" 30
+check "hang minutes must be a positive integer -> exit 2" 2 "" -- hang 8 "$HD" 0
+
+# --- worktree: Step 3 item 4's worktree for a stopped implementer ----------------------
+WD="$TMP/state/issue-7"; rm -rf "$WD"; mkdir -p "$WD"
+printf '%s\n' "$W_OTHER" > "$WD/worktree"
+check "a recorded worktree that still exists wins" 0 "$W_OTHER" -- worktree 7 "$WD"
+printf '%s\n' "$TMP/gone" > "$WD/worktree"
+check "a recorded worktree that is gone -> the /issue-N- branch's worktree" 0 "$W_CONTRACT" -- worktree 7 "$WD"
+[ "$(cat "$WD/worktree")" = "$W_CONTRACT" ] && ok "the resolved worktree is recorded" || err "worktree not recorded: $(cat "$WD/worktree")"
+rm -f "$WD/worktree"; printf 'agent-abc12\n' > "$WD/agent"
+git -C "$REPO" worktree lock --reason "claude agent agent-abc123 (pid 1)" "$W_SCRATCH"
+check "an agent id that is only a prefix of the locking one never matches" 0 "$W_CONTRACT" -- worktree 7 "$WD"
+rm -f "$WD/worktree"; printf 'abc123\n' > "$WD/agent"
+check "the worktree locked by the recorded agent id wins over the branch" 0 "$W_SCRATCH" -- worktree 7 "$WD"
+git -C "$REPO" worktree unlock "$W_SCRATCH"
+rm -f "$WD/worktree" "$WD/agent"
+check "no match at all -> nothing, nothing recorded" 0 "" -- worktree 71 "$WD"
+[ ! -e "$WD/worktree" ] && ok "nothing recorded when nothing matched" || err "a worktree was recorded with no match"
 
 # --- pr-shape ---------------------------------------------------------------------------
 # A second origin whose `main` advances after the clone: a branch forked from
@@ -432,7 +485,7 @@ unset CWD
 # and the crash are Step 3a's and the implementer's). Every other row is outside these two
 # classifications: see test-scheduler.sh for the state machine's rows.
 IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35"
-EXPECTED_ROW_COUNT=66
+EXPECTED_ROW_COUNT=72
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then

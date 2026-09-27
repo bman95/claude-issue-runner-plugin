@@ -367,6 +367,10 @@ layout; vc changed 5 "validation: contract changed in this PR (…)"
 run refresh "$TMP/wt" 12 "$VC"
 expect "row 37: changed exit 5 -> stuck, contract changed after ready" 0 "stuck contract changed after ready — a human must review and merge"
 holds "changed exit 5: nothing after it ran" [ "$(cat "$VC_STUB/log")" = "$(printf 'check main\nchanged main')" ]
+layout; vc changed 5 "validation: integration contract changed in this PR (…)"
+run refresh "$TMP/wt" 12 "$VC"
+expect "row 72: changed exit 5 on the integration contract -> its own stuck reason" 0 \
+  "stuck integration contract changed after ready — a human must review and merge"
 layout; vc preflight 3 "validation: invalid contract (…)"
 run refresh "$TMP/wt" 12 "$VC"; expect "row 37: exit 3 -> stuck, contract invalid" 0 "stuck validation contract invalid (exit 3)"
 layout; vc preflight 4 "validation: preflight command not runnable (exit 127): ./x"
@@ -424,6 +428,13 @@ git -C "$TMP/wt" add .issue-runner && git -C "$TMP/wt" commit -q -m "edit the co
 stub head "$BR $(git -C "$TMP/wt" rev-parse HEAD) main"
 run refresh "$TMP/wt" 12 "$REAL_VC"
 expect "real script: the PR edits the contract -> stuck, changed after ready" 0 "stuck contract changed after ready — a human must review and merge"
+git -C "$TMP/wt" reset -q --hard HEAD~1 && git -C "$TMP/wt" push -q -f origin "$BR"
+printf 'hint: true\n' > "$TMP/wt/.issue-runner/integration"
+git -C "$TMP/wt" add .issue-runner && git -C "$TMP/wt" commit -q -m "add an integration contract" && git -C "$TMP/wt" push -q origin "$BR"
+stub head "$BR $(git -C "$TMP/wt" rev-parse HEAD) main"
+run refresh "$TMP/wt" 12 "$REAL_VC"
+expect "row 72, real script: the PR adds .issue-runner/integration -> stuck, integration contract changed" 0 \
+  "stuck integration contract changed after ready — a human must review and merge"
 layout
 git -C "$TMP/other" checkout -q main
 mkdir -p "$TMP/other/.issue-runner"
@@ -533,8 +544,8 @@ expect "merged, but the merge commit oid unreadable -> merged unknown" 0 "merged
 # Row 37's mechanics: the PR state, every refresh outcome, the checks re-check
 # and the head-pinned merge. The dependency precondition, the status writes
 # and the Step 5 summary lines are the prose's.
-IN_SCOPE_ROWS="37"
-EXPECTED_ROW_COUNT=66
+IN_SCOPE_ROWS="37 72"
+EXPECTED_ROW_COUNT=72
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then
