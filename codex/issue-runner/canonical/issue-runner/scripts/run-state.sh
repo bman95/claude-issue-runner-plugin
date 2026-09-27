@@ -50,7 +50,7 @@
 #              whatever cwd reads it).
 #   STATE_DIR  $RUN_ROOT/state
 #   In state/, `init` writes `run-id` (`<REPO_KEY>@<UTC start timestamp>`, once
-#   per run, never overwritten) and `invocation` (this init's UTC timestamp), the
+#   per run; a non-empty one is never overwritten) and `invocation` (this init's UTC timestamp), the
 #   integration hints' ISSUE_RUNNER_RUN and ISSUE_RUNNER_INVOCATION.
 #   Beside state/: `lock` (the owner PID; its mtime is the heartbeat),
 #   `session` (the orchestrator's $CLAUDE_CODE_SESSION_ID, one line) and
