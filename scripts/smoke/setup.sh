@@ -64,11 +64,12 @@ git -C "$CLONE" init -q || die "git init failed in $CLONE"
 git -C "$CLONE" symbolic-ref HEAD refs/heads/main
 { git -C "$CLONE" add -A && git -C "$CLONE" commit -q -m "Smoke fixture"; } \
   || die "cannot commit the fixture (is git user.name/user.email set?)"
+# From here on a failure can leave the repository (created before a failed
+# push, say) and the clone behind: say how to remove them.
+die() { printf 'setup: %s\nsetup: remove what was created with: %s/teardown.sh %s\n' "$1" "$HERE" "$NAME" >&2; exit 1; }
 gh repo create "$REPO" --private --source "$CLONE" --remote origin --push >/dev/null \
   || die "gh repo create $REPO failed"
 git -C "$CLONE" remote set-head origin -a >/dev/null 2>&1 || true   # origin/HEAD, the runner's default-branch lookup
-# From here on a failure leaves the repository behind: say how to remove it.
-die() { printf 'setup: %s\nsetup: remove the partial repository with: %s/teardown.sh %s\n' "$1" "$HERE" "$NAME" >&2; exit 1; }
 
 # Create an issue from a body file; print its number.
 new_issue() {  # <title> <body-file>
@@ -177,12 +178,14 @@ cat <<EOF
 Smoke repository ready: https://github.com/$REPO (private)
   tracking #$TRACKING; independent #$INDEPENDENT; dependent #$DEPENDENT (blocked by #$INDEPENDENT); conflict #$CONFLICT (shares files with #$INDEPENDENT)
 
-1. Run, in a Claude Code session started in the clone (the plugin installed):
+1. Run, in a Claude Code session started in the clone, with the plugin installed
+   from this checkout ($(cd "$HERE/../.." && pwd); README "Local development"),
+   not a marketplace release:
      cd $CLONE && claude
      /issue-runner:issue-runner --no-merge $INDEPENDENT $DEPENDENT $CONFLICT
    (/issue-runner --no-merge ... with the unnamespaced skills of docs/portable-context.md)
 
-2. When the run has finished, check the outcome:
+2. When the run has finished, and before merging anything, check the outcome:
      $HERE/check.sh $NAME
 
 3. Delete the repository and the local clone:

@@ -7,17 +7,19 @@
 # PASS or FAIL per assertion:
 #
 #   - the independent issue reached `ready` with an open, non-draft, mergeable PR;
-#     so did every other issue that reached `ready`, and none reached another
-#     terminal or blocked status;
-#   - the dependent issue is paused as `--no-merge` defines it (still `pending`
-#     behind a `ready` dependency: no result.json, no PR on its /issue-N-
-#     branch), or was dispatched only after its dependency's PR merged;
+#   - the dependent issue is paused as `--no-merge` defines it: still `pending`
+#     behind its `ready` dependency (no result.json, no PR on its /issue-N-
+#     branch), never dispatched while that dependency is unmerged;
 #   - the conflicting pair was serialized: recorded in conflicts.json, and the
-#     conflicting issue is paused, or dispatched only after the independent
-#     one's PR merged (a conflict is a `depends` edge, runner Step 2);
+#     conflicting issue paused behind the independent one the same way (a
+#     conflict is a `depends` edge, runner Step 2);
 #   - every PR body carries `## Review notes` and a validation line naming
 #     the contract's preflight (gh-issue Step 7);
 #   - every dispatched issue's result.json exists and parses.
+#
+# Run it right after the --no-merge run, before anything merges: once the
+# independent PR is merged (by hand or by --merge-ready) the outcome above no
+# longer holds, and the script exits 2 instead of judging it.
 #
 # Usage: scripts/smoke/check.sh <repo>   (<name> or <owner>/<name>, as setup.sh printed)
 #
@@ -56,9 +58,7 @@ npass=0 nfail=0
 pass() { printf 'PASS: %s\n' "$1"; npass=$((npass + 1)); }
 fail() { printf 'FAIL: %s\n' "$1"; nfail=$((nfail + 1)); }
 
-echo "repo $REPO; state $STATE_DIR"
-echo "independent #$A, dependent #$B, conflict #$C"
-[ -d "$STATE_DIR" ] || fail "state dir $STATE_DIR exists (was the run started from $CLONE?)"
+[ -d "$STATE_DIR" ] || die "no run state at $STATE_DIR (was the run started from $CLONE?)"
 
 status_of() {  # absent or empty = pending, as the scheduler reads it
   local s
@@ -89,7 +89,18 @@ check_pr_ready() {  # <issue> <pr>
   fi
 }
 
-# 1. Ready issues and their PRs.
+# This judges the --no-merge outcome only: refuse once the independent PR merged.
+A_PRS=$(prs_of "$A") || die "cannot list #$A's PRs"
+for p in $A_PRS; do
+  [ "$(gh pr view "$p" --repo "$REPO" --json state --jq .state)" = MERGED ] \
+    && die "#$A's PR #$p is already merged: check.sh judges the --no-merge run before anything merges"
+done
+[ "$(status_of "$A")" = "done" ] && die "#$A is already done: check.sh judges the --no-merge run before anything merges"
+
+echo "repo $REPO; state $STATE_DIR"
+echo "independent #$A, dependent #$B, conflict #$C"
+
+# 1. The independent issue is ready, its PR open, non-draft and mergeable.
 SA=$(status_of "$A")
 if [ "$SA" = ready ]; then
   PA=$(cat "$STATE_DIR/issue-$A/pr" 2>/dev/null)
@@ -97,47 +108,24 @@ if [ "$SA" = ready ]; then
 else
   fail "#$A (independent) reached ready (status: $SA)"
 fi
-for n in "$B" "$C"; do
-  s=$(status_of "$n")
-  case $s in
-    ready)
-      p=$(cat "$STATE_DIR/issue-$n/pr" 2>/dev/null)
-      if [ -n "$p" ]; then check_pr_ready "$n" "$p"; else fail "#$n is ready but issue-$n/pr is missing"; fi ;;
-    pending) ;;   # judged by the ordering assertions below
-    *) fail "#$n reached ready or stayed paused (status: $s)" ;;
-  esac
-done
 
-# 2. Ordering: a dependent of the independent issue (Blocked by, or the
-# serialized conflict) is paused while it is `ready`, or was dispatched only
-# after its PR merged.
-A_MERGED=""
-[ -n "${PA:-}" ] && A_MERGED=$(gh pr view "$PA" --repo "$REPO" --json mergedAt --jq '.mergedAt // "" | if . == "" then "" else fromdateiso8601 end')
+# 2. Ordering: under --no-merge a dependent of a `ready` issue (Blocked by, or
+# the serialized conflict) stays pending, never dispatched (runner Step 3).
 check_waited() {  # <issue> <label>
-  local n=$1 s prs first created
+  local n=$1 s prs
   s=$(status_of "$n")
   prs=$(prs_of "$n") || { fail "#$n: cannot list PRs"; return; }
   if [ "$s" = pending ] && [ -z "$prs" ] && [ ! -e "$STATE_DIR/issue-$n/result.json" ]; then
-    pass "#$n $2: paused behind #$A (pending, never dispatched)"
-    return
-  fi
-  if [ -z "$prs" ]; then
-    fail "#$n $2: status $s with no PR - neither paused nor dispatched after #$A merged"
-    return
-  fi
-  first=$(printf '%s\n' "$prs" | sort -n | head -1)
-  created=$(gh pr view "$first" --repo "$REPO" --json createdAt --jq '.createdAt | fromdateiso8601') \
-    || { fail "#$n: cannot read PR #$first"; return; }
-  if [ -n "$A_MERGED" ] && [ "$created" -ge "$A_MERGED" ]; then
-    pass "#$n $2: dispatched only after #$A's PR merged"
+    pass "#$n $2: paused behind ready #$A (pending, never dispatched)"
   else
-    fail "#$n $2: PR #$first opened while #$A was unmerged (dispatched too early)"
+    fail "#$n $2: dispatched while #$A was unmerged (status: $s; PRs: ${prs:-none})"
   fi
 }
 check_waited "$B" "(dependent)"
 if [ -f "$STATE_DIR/conflicts.json" ] \
-   && jq -e --argjson a "$A" --argjson c "$C" \
-        'any(.[]; (.a == $a and .b == $c) or (.a == $c and .b == $a))' "$STATE_DIR/conflicts.json" >/dev/null 2>&1; then
+   && jq -e --arg a "$A" --arg c "$C" \
+        'any(.[]; ((.a|tostring) == $a and (.b|tostring) == $c) or ((.a|tostring) == $c and (.b|tostring) == $a))' \
+        "$STATE_DIR/conflicts.json" >/dev/null 2>&1; then
   pass "conflicts.json records #$A/#$C"
 else
   fail "conflicts.json records #$A/#$C (the Files likely touched: overlap)"
@@ -151,8 +139,10 @@ for p in $PRS; do
   body=$(gh pr view "$p" --repo "$REPO" --json body --jq .body) || { fail "PR #$p body cannot be read"; continue; }
   if grep -qx '## Review notes' <<<"$body"; then pass "PR #$p carries ## Review notes"
   else fail "PR #$p carries ## Review notes"; fi
-  if grep -qi 'preflight' <<<"$body"; then pass "PR #$p carries a validation line (names the contract's preflight)"
-  else fail "PR #$p carries a validation line (names the contract's preflight)"; fi
+  # gh-issue Step 7: the Test plan names the validation that ran.
+  if awk '/^## /{f = ($0 == "## Test plan")} f' <<<"$body" | grep -qi 'preflight'; then
+    pass "PR #$p carries a validation line (its Test plan names the contract's preflight)"
+  else fail "PR #$p carries a validation line (its Test plan names the contract's preflight)"; fi
 done
 
 # 4. result.json of every dispatched issue.

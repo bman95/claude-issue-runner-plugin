@@ -51,8 +51,19 @@ if [ -d "$CLONE" ]; then
   case ${RUN_ROOT##*/} in "$NAME"-*) ;; *) RUN_ROOT="" ;; esac   # only this clone's own run root
 fi
 
+# An absent repository (setup failed before creating it, or an earlier
+# teardown deleted it) leaves only the local files; any other lookup failure stops.
+REPO_EXISTS=1
+PROBE_ERR=$(mktemp) || die "mktemp failed"
+trap 'rm -f "$PROBE_ERR"' EXIT
+if ! gh api "repos/$REPO" --silent 2>"$PROBE_ERR"; then
+  grep -q 'HTTP 404' "$PROBE_ERR" || { cat "$PROBE_ERR" >&2; die "cannot check whether $REPO exists"; }
+  REPO_EXISTS=0
+fi
+
 echo "This deletes:"
-echo "  https://github.com/$REPO (the GitHub repository, permanently)"
+if [ "$REPO_EXISTS" -eq 1 ]; then echo "  https://github.com/$REPO (the GitHub repository, permanently)"
+else echo "  (https://github.com/$REPO does not exist - local files only)"; fi
 [ -e "$CLONE" ] && echo "  $CLONE (local clone)"
 [ -e "$META" ] && echo "  $META"
 [ -n "$RUN_ROOT" ] && [ -e "$RUN_ROOT" ] && echo "  $RUN_ROOT (the run's state)"
@@ -60,8 +71,10 @@ printf 'Type %s to confirm: ' "$NAME"
 read -r reply || reply=""
 [ "$reply" = "$NAME" ] || die "not confirmed - nothing deleted"
 
-gh repo delete "$REPO" --yes \
-  || die "gh repo delete $REPO failed - local files kept. If the token lacks the delete_repo scope, $SCOPE_HINT"
+if [ "$REPO_EXISTS" -eq 1 ]; then
+  gh repo delete "$REPO" --yes \
+    || die "gh repo delete $REPO failed - local files kept. If the token lacks the delete_repo scope, $SCOPE_HINT"
+fi
 rm -rf "$CLONE" "$META"
 [ -n "$RUN_ROOT" ] && rm -rf "$RUN_ROOT"
-echo "deleted $REPO"
+echo "deleted $NAME"
