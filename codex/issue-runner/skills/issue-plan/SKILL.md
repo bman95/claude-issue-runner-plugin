@@ -1,6 +1,6 @@
 ---
 name: issue-plan
-version: 0.4.0
+version: 0.5.0
 description: Use when the user asks to turn an idea, plan, or specification into dependency-aware GitHub issues that autonomous implementers can execute.
 disable-model-invocation: false
 ---
