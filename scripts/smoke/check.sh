@@ -6,6 +6,9 @@
 # checks the outcome from GitHub and from the run's state directory, printing
 # PASS or FAIL per assertion:
 #
+#   - the run was a --no-merge run (integration-mode) that merged nothing, over
+#     all three issues (scope.txt), with both edges on the independent issue
+#     in dag.txt (the Blocked by and the serialized conflict);
 #   - the independent issue reached `ready` with an open, non-draft, mergeable PR;
 #   - the dependent issue is paused as `--no-merge` defines it: still `pending`
 #     behind its `ready` dependency (no result.json, no PR on its /issue-N-
@@ -13,13 +16,20 @@
 #   - the conflicting pair was serialized: recorded in conflicts.json, and the
 #     conflicting issue paused behind the independent one the same way (a
 #     conflict is a `depends` edge, runner Step 2);
-#   - every PR body carries `## Review notes` and a validation line naming
-#     the contract's preflight (gh-issue Step 7);
+#   - every PR body carries `## Review notes` (issue #61 asks for it; gh-issue
+#     writes it for iteration history) and a `## Test plan` naming the
+#     contract's preflight (gh-issue Step 7);
 #   - every dispatched issue's result.json exists and parses.
 #
+# A NOTE line (not an assertion) says when the independent issue's draft
+# checkpoint was refused (`checkpoint` in result.json): GitHub offers draft PRs
+# in private repositories only on some plans, and the run then took the
+# degraded no-draft path.
+#
 # Run it right after the --no-merge run, before anything merges: once the
-# independent PR is merged (by hand or by --merge-ready) the outcome above no
-# longer holds, and the script exits 2 instead of judging it.
+# independent PR is merged after the run (by hand or by --merge-ready) the
+# outcome above no longer holds, and the script exits 2 instead of judging it.
+# A merge by the run itself is a FAIL.
 #
 # Usage: scripts/smoke/check.sh <repo>   (<name> or <owner>/<name>, as setup.sh printed)
 #
@@ -35,6 +45,7 @@ set -u
 PREFIX=issue-runner-smoke-
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SMOKE_ROOT=${ISSUE_RUNNER_SMOKE_ROOT:-$HOME/issue-runner-smoke}
+case $SMOKE_ROOT in /*) ;; *) SMOKE_ROOT="$PWD/$SMOKE_ROOT" ;; esac   # absolute: the .env records paths
 RUN_STATE="$HERE/../../skills/issue-runner/scripts/run-state.sh"
 
 die() { printf 'check: %s\n' "$1" >&2; exit 2; }
@@ -89,16 +100,41 @@ check_pr_ready() {  # <issue> <pr>
   fi
 }
 
-# This judges the --no-merge outcome only: refuse once the independent PR merged.
+# This judges the --no-merge outcome only. A merge after the run (by hand, or
+# --merge-ready, which never rewrites result.json) leaves #A's result.json at
+# `ready`: too late to judge, so refuse. A merge by the run itself (outcome
+# `merged`) is a --no-merge failure and is judged below.
 A_PRS=$(prs_of "$A") || die "cannot list #$A's PRs"
+A_MERGED=""
 for p in $A_PRS; do
-  [ "$(gh pr view "$p" --repo "$REPO" --json state --jq .state)" = MERGED ] \
-    && die "#$A's PR #$p is already merged: check.sh judges the --no-merge run before anything merges"
+  [ "$(gh pr view "$p" --repo "$REPO" --json state --jq .state)" = MERGED ] && A_MERGED=$p
 done
-[ "$(status_of "$A")" = "done" ] && die "#$A is already done: check.sh judges the --no-merge run before anything merges"
+A_OUTCOME=$(jq -r '.outcome // ""' "$STATE_DIR/issue-$A/result.json" 2>/dev/null)
+if { [ -n "$A_MERGED" ] || [ "$(status_of "$A")" = "done" ]; } && [ "$A_OUTCOME" = ready ]; then
+  die "#$A was merged after the run: check.sh judges the --no-merge run before anything merges"
+fi
 
 echo "repo $REPO; state $STATE_DIR"
 echo "independent #$A, dependent #$B, conflict #$C"
+
+# 0. The run was a --no-merge run over the three issues, with the expected edges.
+MODE=$(head -1 "$STATE_DIR/integration-mode" 2>/dev/null)
+if [ "$MODE" = no-merge ]; then pass "the run was a --no-merge run (integration-mode)"
+else fail "the run was a --no-merge run (integration-mode: ${MODE:-missing})"; fi
+[ -z "$A_MERGED" ] || fail "#$A's PR #$A_MERGED was merged by the run (result.json outcome: ${A_OUTCOME:-missing})"
+SCOPE=$(tr -s ' \t\r,' '\n' <"$STATE_DIR/scope.txt" 2>/dev/null)   # as integration.sh reads it
+for n in "$A" "$B" "$C"; do
+  if grep -qx "$n" <<<"$SCOPE"; then pass "#$n is in the run's scope.txt"
+  else fail "#$n is in the run's scope.txt"; fi
+done
+# dag.txt: one `N: dep dep …` line per issue (runner Step 2).
+for n in "$B" "$C"; do
+  if sed -n "s/^$n:[[:space:]]*//p" "$STATE_DIR/dag.txt" 2>/dev/null | tr ' ' '\n' | grep -qx "$A"; then
+    pass "dag.txt: #$n depends on #$A"
+  else
+    fail "dag.txt: #$n depends on #$A"
+  fi
+done
 
 # 1. The independent issue is ready, its PR open, non-draft and mergeable.
 SA=$(status_of "$A")
@@ -136,7 +172,7 @@ check_waited "$C" "(conflict)"
 PRS=$(gh pr list --repo "$REPO" --state all --limit 100 --json number --jq '.[].number') || PRS=""
 [ -n "$PRS" ] || fail "the run opened at least one PR"
 for p in $PRS; do
-  body=$(gh pr view "$p" --repo "$REPO" --json body --jq .body) || { fail "PR #$p body cannot be read"; continue; }
+  body=$(gh pr view "$p" --repo "$REPO" --json body --jq .body | tr -d '\r') || { fail "PR #$p body cannot be read"; continue; }
   if grep -qx '## Review notes' <<<"$body"; then pass "PR #$p carries ## Review notes"
   else fail "PR #$p carries ## Review notes"; fi
   # gh-issue Step 7: the Test plan names the validation that ran.
@@ -160,6 +196,10 @@ for n in "$A" "$B" "$C"; do
     pass "#$n result.json exists and parses"
   fi
 done
+
+CKPT=$(jq -r '.checkpoint // ""' "$STATE_DIR/issue-$A/result.json" 2>/dev/null)
+[ -z "$CKPT" ] || [ "$CKPT" = created ] \
+  || printf 'NOTE: #%s checkpoint: %s - draft PRs were unavailable, so the run took the no-draft path\n' "$A" "$CKPT"
 
 printf '\n%d passed, %d failed\n' "$npass" "$nfail"
 [ "$nfail" -eq 0 ]

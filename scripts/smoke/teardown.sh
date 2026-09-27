@@ -19,6 +19,7 @@ set -u
 PREFIX=issue-runner-smoke-
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SMOKE_ROOT=${ISSUE_RUNNER_SMOKE_ROOT:-$HOME/issue-runner-smoke}
+case $SMOKE_ROOT in /*) ;; *) SMOKE_ROOT="$PWD/$SMOKE_ROOT" ;; esac   # absolute: the .env records paths
 RUN_STATE="$HERE/../../skills/issue-runner/scripts/run-state.sh"
 SCOPE_HINT="grant it with: gh auth refresh -h github.com -s delete_repo"
 
@@ -27,7 +28,7 @@ die() { printf 'teardown: %s\n' "$1" >&2; exit 1; }
 [ $# -eq 1 ] || die "usage: teardown.sh <repo>"
 NAME=${1##*/}
 case $NAME in "$PREFIX"?*) ;; *) die "refusing: '$1' does not start with $PREFIX" ;; esac
-printf '%s\n' "$1" | grep -Eqx "([A-Za-z0-9_.-]+/)?${PREFIX}[A-Za-z0-9_-]+" \
+printf '%s\n' "$1" | grep -Eqx "([A-Za-z0-9-]+/)?${PREFIX}[A-Za-z0-9_-]+" \
   || die "refusing: '$1' is not a plain <owner>/<name> repository name"
 command -v gh >/dev/null 2>&1 || die "gh not found"
 case $1 in
@@ -35,13 +36,6 @@ case $1 in
   *) OWNER=$(gh api user -q .login) && [ -n "$OWNER" ] || die "cannot resolve the authenticated gh user"
      REPO="$OWNER/$NAME" ;;
 esac
-
-# A classic token lists its scopes in X-OAuth-Scopes; a fine-grained token
-# sends no such header, and the delete below reports its own refusal.
-SCOPES=$(gh api -i user 2>/dev/null | tr -d '\r' | sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p')
-if [ -n "$SCOPES" ] && ! printf '%s\n' "$SCOPES" | tr ',' '\n' | sed 's/^ *//' | grep -qx delete_repo; then
-  die "the gh token lacks the delete_repo scope; $SCOPE_HINT"
-fi
 
 CLONE="$SMOKE_ROOT/$NAME"
 META="$SMOKE_ROOT/$NAME.env"
@@ -59,6 +53,16 @@ trap 'rm -f "$PROBE_ERR"' EXIT
 if ! gh api "repos/$REPO" --silent 2>"$PROBE_ERR"; then
   grep -q 'HTTP 404' "$PROBE_ERR" || { cat "$PROBE_ERR" >&2; die "cannot check whether $REPO exists"; }
   REPO_EXISTS=0
+fi
+
+# Deleting the repository needs delete_repo. A classic token lists its scopes
+# in X-OAuth-Scopes; a fine-grained token sends no such header, and the delete
+# below reports its own refusal.
+if [ "$REPO_EXISTS" -eq 1 ]; then
+  SCOPES=$(gh api -i user 2>/dev/null | tr -d '\r' | sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p')
+  if [ -n "$SCOPES" ] && ! printf '%s\n' "$SCOPES" | tr ',' '\n' | sed 's/^ *//' | grep -qx delete_repo; then
+    die "the gh token lacks the delete_repo scope; $SCOPE_HINT"
+  fi
 fi
 
 echo "This deletes:"

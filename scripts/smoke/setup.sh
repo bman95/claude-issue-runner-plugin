@@ -30,6 +30,7 @@ set -u
 PREFIX=issue-runner-smoke-
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SMOKE_ROOT=${ISSUE_RUNNER_SMOKE_ROOT:-$HOME/issue-runner-smoke}
+case $SMOKE_ROOT in /*) ;; *) SMOKE_ROOT="$PWD/$SMOKE_ROOT" ;; esac   # absolute: the .env records paths
 
 die() { printf 'setup: %s\n' "$1" >&2; exit 1; }
 
@@ -57,6 +58,10 @@ grep -q 'HTTP 404' "$TMP/probe.err" || { cat "$TMP/probe.err" >&2; die "cannot c
 [ -e "$CLONE" ] && die "$CLONE already exists - refusing"
 [ -e "$META" ] && die "$META already exists - refusing"
 
+# From here on a failure can leave the clone and, once created, the repository
+# (a failed push, say) behind: say how to remove them.
+die() { printf 'setup: %s\nsetup: remove what was created with: %s/teardown.sh %s\n' "$1" "$HERE" "$NAME" >&2; exit 1; }
+
 # The fixture, committed on main and pushed to a new private repository.
 mkdir -p "$CLONE" || die "cannot create $CLONE"
 cp -R "$HERE/fixture/." "$CLONE/" || die "cannot copy the fixture into $CLONE"
@@ -64,9 +69,6 @@ git -C "$CLONE" init -q || die "git init failed in $CLONE"
 git -C "$CLONE" symbolic-ref HEAD refs/heads/main
 { git -C "$CLONE" add -A && git -C "$CLONE" commit -q -m "Smoke fixture"; } \
   || die "cannot commit the fixture (is git user.name/user.email set?)"
-# From here on a failure can leave the repository (created before a failed
-# push, say) and the clone behind: say how to remove them.
-die() { printf 'setup: %s\nsetup: remove what was created with: %s/teardown.sh %s\n' "$1" "$HERE" "$NAME" >&2; exit 1; }
 gh repo create "$REPO" --private --source "$CLONE" --remote origin --push >/dev/null \
   || die "gh repo create $REPO failed"
 git -C "$CLONE" remote set-head origin -a >/dev/null 2>&1 || true   # origin/HEAD, the runner's default-branch lookup
