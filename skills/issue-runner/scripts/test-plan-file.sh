@@ -144,7 +144,8 @@ for bad in '{"version":1,"issues":[{"n":"11","blocked_by":[],"files":[]}]}|issue
            '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":[]},{"n":11,"blocked_by":[],"files":[]}]}|#11 listed twice' \
            '{"version":1,"issues":[{"n":11,"files":[]}]}|issues[0].blocked_by is not an array' \
            '{"version":1,"issues":[{"n":11,"blocked_by":[0],"files":[]}]}|issues[0].blocked_by[0] is not a positive integer' \
-           '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":[3]}]}|issues[0].files[0] is not a one-line string' \
+           '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":[3]}]}|issues[0].files[0] is not a string without control characters' \
+           '{"version":1,"issues":[{"n":11,"blocked_by":[],"files":["a\u001b[2J"]}]}|issues[0].files[0] is not a string without control characters' \
            '{"version":"1","issues":[]}|version is not an integer' \
            '[1]|the top level is not an object'; do
   fixture schema
@@ -232,9 +233,13 @@ expect "an unreadable details.json is reported, never fatal" \
 # --- details.json decoding --------------------------------------------------------
 fixture escapes
 mkdir -p "$SD/issue-11"; printf '11\n' > "$SD/scope.txt"
-printf '%s\n' '{"body":"Part of #10\r\n\r\n## Blocked by\r\n\r\n- #9 — done\r\n\r\nFiles likely touched: `src/é.ts`","number":11}' > "$SD/issue-11/details.json"
-tracking 10 "$(block '{"version":1,"issues":[{"n":11,"blocked_by":[9],"files":["src/é.ts"]}]}')"
-expect "JSON escapes (\\r\\n, \\u0060, non-ASCII) decode on both sides" \
+# `@` stands for a backslash, so the JSON escapes reach the files literally:
+# CRLF line ends, then backslash-u escapes for a backtick, e-acute and the surrogate pair of U+1F600.
+printf '%s\n' '{"body":"Part of #10@r@n@r@n## Blocked by@r@n@r@n- #9 @u2014 done@r@n@r@nFiles likely touched: @u0060src/@u00e9@ud83d@ude00.ts@u0060","number":11}' \
+  | sed 's/@/\\/g' > "$SD/issue-11/details.json"
+tracking 10 "$(block "$(printf '%s' '{"version":1,"issues":[{"n":11,"blocked_by":[9],"files":["src/é😀.ts"]}]}')")"
+grep -q 'u00e9' "$SD/issue-11/details.json" || err "escapes fixture lost its \\u escapes"
+expect "JSON escapes (\\r\\n, \\u0060, \\u00e9, a surrogate pair) decode to the raw characters" \
   'plan file: #10 matches the in-scope issue bodies (1 issues)'
 
 # --- usage ------------------------------------------------------------------------

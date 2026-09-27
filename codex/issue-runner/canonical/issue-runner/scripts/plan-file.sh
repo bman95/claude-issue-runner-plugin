@@ -37,7 +37,9 @@
 # The JSON is parsed here (bash + awk, no jq). Schema version 1: an object with
 # `version` (the integer 1) and `issues`, an array of objects, each with `n` (a
 # positive integer, unique), `blocked_by` (an array of positive integers) and
-# `files` (an array of strings). Other keys are ignored. Any other version is
+# `files` (an array of strings without control characters). Other keys are
+# ignored, except that a key containing `.`, `[` or `]` makes the block invalid
+# (it could collide with the paths the parser records). Any other version is
 # unknown, and the file is ignored.
 #
 # The issue side is parsed with Step 2's rules:
@@ -107,6 +109,7 @@ trap 'rm -rf "$TMP"' EXIT
 #         `malformed <reason>` line
 json_awk() {
   awk -v mode="$1" -v want="${2:-}" '
+  BEGIN { CTRL = "[" sprintf("%c", 1) "-" sprintf("%c", 31) sprintf("%c", 127) "]" }
   function fail(m) { if (ERR == "") ERR = m " at byte " P; return 0 }
   function ws() { while (P <= N && (C[P] == " " || C[P] == "\t" || C[P] == "\n" || C[P] == "\r")) P++ }
   function rec(path, t, v) {
@@ -237,7 +240,7 @@ json_awk() {
       }
       if (TYPE[p ".files"] != "a") return "malformed issues[" i "].files is not an array"
       for (j = 0; (p ".files[" j "]") in TYPE; j++) {
-        if (TYPE[p ".files[" j "]"] != "s" || VAL[p ".files[" j "]"] ~ /[\n\r]/) return "malformed issues[" i "].files[" j "] is not a one-line string"
+        if (TYPE[p ".files[" j "]"] != "s" || VAL[p ".files[" j "]"] ~ CTRL) return "malformed issues[" i "].files[" j "] is not a string without control characters"
         out = out "\nfile " n " " VAL[p ".files[" j "]"]
       }
     }
