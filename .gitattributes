@@ -1,1 +1,2 @@
 .issue-runner/validation text eol=lf
+scripts/smoke/fixture/** text eol=lf

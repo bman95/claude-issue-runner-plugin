@@ -26,8 +26,8 @@
 #   7. every ```bash block embedded in skills/*/SKILL.md parses (bash -n,
 #      after neutralizing <placeholder> tokens)
 #   8. shellcheck (if installed) over this script, the bundled
-#      skills/*/scripts/*.sh and the extracted blocks — findings are WARNINGS
-#      only, never failures
+#      skills/*/scripts/*.sh, the scripts/smoke/ scripts and the extracted
+#      blocks — findings are WARNINGS only, never failures
 #   9. the default-branch resolution one-liner is byte-identical at every site
 #  10. the branch-contract match pattern is stated once, in
 #      skills/issue-runner/scripts/resume-check.sh: classify.sh uses the same
@@ -99,6 +99,9 @@
 #      skills/issue-runner/scripts/integration.sh: the integration contract's
 #      grammar and trust rule, the hint environment table, the 60-second
 #      bound, and `--flush` (docs/integration-rfc.md slice 1)
+#  27. the manual release smoke test's scripts under scripts/smoke/ (and its
+#      fixture's) parse (bash -n) — lint and CI never execute them: they
+#      create and delete a real GitHub repository (README, "Release smoke test")
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -380,7 +383,8 @@ done
 # 8. shellcheck over this script and the bundled scripts (advisory) --------------
 if [ "$have_shellcheck" -eq 1 ]; then
   for f in "$ROOT/scripts/lint.sh" "$ROOT"/skills/*/scripts/*.sh \
-           "$ROOT/scripts/test-validation-contract.sh" "$ROOT/scripts/test-integration-contract.sh"; do
+           "$ROOT/scripts/test-validation-contract.sh" "$ROOT/scripts/test-integration-contract.sh" \
+           "$ROOT"/scripts/smoke/*.sh "$ROOT"/scripts/smoke/fixture/*.sh "$ROOT"/scripts/smoke/fixture/tests/*.sh; do
     rel="${f#"$ROOT"/}"
     if shellcheck "$f" >"$TMP/lint.sc" 2>&1; then
       ok "shellcheck clean: $rel"
@@ -824,6 +828,19 @@ if [ -f "$TEST_INTEGRATION" ]; then
 else
   err "$TEST_INTEGRATION not found"
 fi
+
+# 27. Release smoke-test scripts parse (never executed here) ----------------------
+smoke_ok=1; n_smoke=0
+for f in "$ROOT"/scripts/smoke/*.sh "$ROOT"/scripts/smoke/fixture/*.sh "$ROOT"/scripts/smoke/fixture/tests/*.sh; do
+  [ -f "$f" ] || continue
+  n_smoke=$((n_smoke + 1))
+  bash -n "$f" 2>"$TMP/smoke.err" \
+    || { err "bash syntax error in ${f#"$ROOT"/}: $(head -1 "$TMP/smoke.err")"; smoke_ok=0; }
+done
+for f in setup.sh check.sh teardown.sh; do
+  [ -f "$ROOT/scripts/smoke/$f" ] || { err "scripts/smoke/$f missing"; smoke_ok=0; }
+done
+[ "$smoke_ok" -eq 1 ] && ok "smoke-test scripts parse ($n_smoke; scripts/smoke/, never executed by lint)"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2

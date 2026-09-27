@@ -1,0 +1,2 @@
+# Agent worktrees the run creates (and keeps for a `ready` issue) inside the clone.
+.claude/worktrees/
