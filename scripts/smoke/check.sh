@@ -19,17 +19,18 @@
 #   - every PR body carries `## Review notes` (issue #61 asks for it; gh-issue
 #     writes it for iteration history) and a `## Test plan` naming the
 #     contract's preflight (gh-issue Step 7);
-#   - every dispatched issue's result.json exists and parses.
+#   - every dispatched issue's result.json exists and is one result object
+#     (an outcome of merged/blocker/failed/ready, a non-empty worktree).
 #
-# A NOTE line (not an assertion) says when the independent issue's draft
-# checkpoint was refused (`checkpoint` in result.json): GitHub offers draft PRs
-# in private repositories only on some plans, and the run then took the
-# degraded no-draft path.
+# A NOTE line (not an assertion) says when the independent issue's
+# `checkpoint` is `refused`: the draft PR or its push was refused (GitHub
+# offers draft PRs in private repositories only on some plans), so the run
+# took the no-draft path; its Step 10 report gives the reason.
 #
 # Run it right after the --no-merge run, before anything merges: once the
 # independent PR is merged after the run (by hand or by --merge-ready) the
 # outcome above no longer holds, and the script exits 2 instead of judging it.
-# A merge by the run itself is a FAIL.
+# A merge by the run itself that result.json records (outcome `merged`) is a FAIL.
 #
 # Usage: scripts/smoke/check.sh <repo>   (<name> or <owner>/<name>, as setup.sh printed)
 #
@@ -73,7 +74,7 @@ fail() { printf 'FAIL: %s\n' "$1"; nfail=$((nfail + 1)); }
 
 status_of() {  # absent or empty = pending, as the scheduler reads it
   local s
-  s=$(cat "$STATE_DIR/issue-$1/status" 2>/dev/null)
+  s=$(tr -d "[:space:]" <"$STATE_DIR/issue-$1/status" 2>/dev/null)   # as scheduler.sh reads it (CRLF on WSL)
   printf '%s\n' "${s:-pending}"
 }
 # PR numbers on issue N's branch contract (/issue-N-), any state.
@@ -129,7 +130,7 @@ for n in "$A" "$B" "$C"; do
 done
 # dag.txt: one `N: dep dep …` line per issue (runner Step 2).
 for n in "$B" "$C"; do
-  if sed -n "s/^$n:[[:space:]]*//p" "$STATE_DIR/dag.txt" 2>/dev/null | tr ' ' '\n' | grep -qx "$A"; then
+  if tr -d '\r' <"$STATE_DIR/dag.txt" 2>/dev/null | sed -n "s/^$n:[[:space:]]*//p" | tr ' ' '\n' | grep -qx "$A"; then
     pass "dag.txt: #$n depends on #$A"
   else
     fail "dag.txt: #$n depends on #$A"
@@ -168,15 +169,16 @@ else
 fi
 check_waited "$C" "(conflict)"
 
-# 3. PR bodies.
-PRS=$(gh pr list --repo "$REPO" --state all --limit 100 --json number --jq '.[].number') || PRS=""
-[ -n "$PRS" ] || fail "the run opened at least one PR"
+# 3. PR bodies of the open PRs (a closed one is an abandoned attempt).
+PRS=$(gh pr list --repo "$REPO" --state open --limit 100 --json number --jq '.[].number') || PRS=""
+[ -n "$PRS" ] || fail "the run left at least one open PR"
 for p in $PRS; do
-  body=$(gh pr view "$p" --repo "$REPO" --json body --jq .body | tr -d '\r') || { fail "PR #$p body cannot be read"; continue; }
+  body=$(gh pr view "$p" --repo "$REPO" --json body --jq .body) || { fail "PR #$p body cannot be read"; continue; }
+  body=$(tr -d '\r' <<<"$body")
   if grep -qx '## Review notes' <<<"$body"; then pass "PR #$p carries ## Review notes"
   else fail "PR #$p carries ## Review notes"; fi
   # gh-issue Step 7: the Test plan names the validation that ran.
-  if awk '/^## /{f = ($0 == "## Test plan")} f' <<<"$body" | grep -qi 'preflight'; then
+  if awk '/^## /{f = ($0 == "## Test plan")} f' <<<"$body" | grep -Eqi 'preflight|bash test\.sh'; then
     pass "PR #$p carries a validation line (its Test plan names the contract's preflight)"
   else fail "PR #$p carries a validation line (its Test plan names the contract's preflight)"; fi
 done
@@ -188,8 +190,10 @@ for n in "$A" "$B" "$C"; do
   if [ "$s" = pending ] && [ ! -e "$f" ]; then continue; fi   # never dispatched
   if [ ! -f "$f" ]; then
     fail "#$n result.json exists (status: $s)"
-  elif ! jq -e 'type == "object" and has("outcome")' "$f" >/dev/null 2>&1; then
-    fail "#$n result.json parses as a result object"
+  elif ! jq -se 'length == 1 and (.[0] | type == "object"
+                   and (.outcome | IN("merged", "blocker", "failed", "ready"))
+                   and ((.worktree // "") != ""))' "$f" >/dev/null 2>&1; then
+    fail "#$n result.json parses as one result object (outcome, worktree)"
   elif [ "$s" = ready ] && [ "$(jq -r .outcome "$f")" != ready ]; then
     fail "#$n result.json outcome is ready (got $(jq -r .outcome "$f"))"
   else
@@ -198,8 +202,8 @@ for n in "$A" "$B" "$C"; do
 done
 
 CKPT=$(jq -r '.checkpoint // ""' "$STATE_DIR/issue-$A/result.json" 2>/dev/null)
-[ -z "$CKPT" ] || [ "$CKPT" = created ] \
-  || printf 'NOTE: #%s checkpoint: %s - draft PRs were unavailable, so the run took the no-draft path\n' "$A" "$CKPT"
+[ "$CKPT" != refused ] \
+  || printf 'NOTE: #%s checkpoint: refused - the draft PR or its push was refused (see the run report), so the run took the no-draft path\n' "$A"
 
 printf '\n%d passed, %d failed\n' "$npass" "$nfail"
 [ "$nfail" -eq 0 ]

@@ -10,7 +10,8 @@
 # to type the name back before deleting anything. Deleting a repository needs
 # the gh token's `delete_repo` scope; when the token lacks it, the script says
 # how to grant it (`gh auth refresh -h github.com -s delete_repo`) and deletes
-# nothing. Local files are removed only after the repository is deleted.
+# nothing. Local files are removed only after the repository is deleted, or
+# when it does not exist (setup failed before creating it, or it was deleted).
 #
 # Needs: bash, git, gh (authenticated).
 
@@ -27,7 +28,7 @@ die() { printf 'teardown: %s\n' "$1" >&2; exit 1; }
 
 [ $# -eq 1 ] || die "usage: teardown.sh <repo>"
 NAME=${1##*/}
-case $NAME in "$PREFIX"?*) ;; *) die "refusing: '$1' does not start with $PREFIX" ;; esac
+case $NAME in "$PREFIX"?*) ;; *) die "refusing: '$1' is not $PREFIX<suffix>" ;; esac
 printf '%s\n' "$1" | grep -Eqx "([A-Za-z0-9-]+/)?${PREFIX}[A-Za-z0-9_-]+" \
   || die "refusing: '$1' is not a plain <owner>/<name> repository name"
 command -v gh >/dev/null 2>&1 || die "gh not found"

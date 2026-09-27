@@ -20,8 +20,8 @@
 #
 # The local clone goes to $ISSUE_RUNNER_SMOKE_ROOT/<name> (default
 # ~/issue-runner-smoke/<name>), with the issue numbers in <name>.env beside it
-# (outside the clone, so the run sees a clean tree); check.sh and teardown.sh
-# read both. Refuses if the repository, the clone or the .env already exists.
+# (outside the clone, so the run sees a clean tree); check.sh reads both, and
+# teardown.sh deletes both. Refuses if the repository, the clone or the .env already exists.
 #
 # Needs: bash, git, gh (authenticated, allowed to create repositories).
 
@@ -66,7 +66,7 @@ die() { printf 'setup: %s\nsetup: remove what was created with: %s/teardown.sh %
 mkdir -p "$CLONE" || die "cannot create $CLONE"
 cp -R "$HERE/fixture/." "$CLONE/" || die "cannot copy the fixture into $CLONE"
 git -C "$CLONE" init -q || die "git init failed in $CLONE"
-git -C "$CLONE" symbolic-ref HEAD refs/heads/main
+git -C "$CLONE" symbolic-ref HEAD refs/heads/main || die "cannot name the branch main in $CLONE"
 { git -C "$CLONE" add -A && git -C "$CLONE" commit -q -m "Smoke fixture"; } \
   || die "cannot commit the fixture (is git user.name/user.email set?)"
 gh repo create "$REPO" --private --source "$CLONE" --remote origin --push >/dev/null \
@@ -183,7 +183,7 @@ Smoke repository ready: https://github.com/$REPO (private)
 1. Run, in a Claude Code session started in the clone, with the plugin installed
    from this checkout ($(cd "$HERE/../.." && pwd); README "Local development"),
    not a marketplace release:
-     cd $CLONE && claude
+     cd "$CLONE" && claude
      /issue-runner:issue-runner --no-merge $INDEPENDENT $DEPENDENT $CONFLICT
    (/issue-runner --no-merge ... with the unnamespaced skills of docs/portable-context.md)
 
