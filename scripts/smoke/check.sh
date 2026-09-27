@@ -7,7 +7,7 @@
 # PASS or FAIL per assertion:
 #
 #   - the run was a --no-merge run (integration-mode) that merged nothing, over
-#     all three issues (scope.txt), with both edges on the independent issue
+#     exactly the three issues (scope.txt, no tracking issue), with both edges on the independent issue
 #     in dag.txt (the Blocked by and the serialized conflict);
 #   - the independent issue reached `ready` with an open, non-draft, mergeable PR;
 #   - the dependent issue is paused as `--no-merge` defines it: still `pending`
@@ -16,11 +16,11 @@
 #   - the conflicting pair was serialized: recorded in conflicts.json, and the
 #     conflicting issue paused behind the independent one the same way (a
 #     conflict is a `depends` edge, runner Step 2);
-#   - every open PR's body carries the review notes (issue #61): `## Review
-#     notes`, required when its result.json shows a state gh-issue records
-#     there (inline Phase 1, a degraded, waived or capped gate, a revoked
-#     profile) and otherwise optional, since gh-issue writes the heading only
-#     for iteration history; and a `## Test plan` naming the contract's
+#   - every open PR's body carries the review notes (issue #61): under
+#     `## Review notes`, gh-issue's fixed line for each state its result.json
+#     shows (inline Phase 1, a degraded, waived or capped gate, a revoked
+#     profile); with none, the heading is optional, since gh-issue writes it
+#     only for iteration history; and a `## Test plan` naming the contract's
 #     validation, `preflight` or its command (gh-issue Step 7);
 #   - every dispatched issue's result.json exists and is one result object
 #     (an outcome of merged/blocker/failed/ready, a non-empty worktree).
@@ -131,6 +131,9 @@ for n in "$A" "$B" "$C"; do
   if grep -qx "$n" <<<"$SCOPE"; then pass "#$n is in the run's scope.txt"
   else fail "#$n is in the run's scope.txt"; fi
 done
+EXTRA=$(grep -vxE "$A|$B|$C" <<<"$SCOPE" | grep . | tr '\n' ' ')
+if [ -z "$EXTRA" ]; then pass "scope.txt holds only the three slices (no tracking issue)"
+else fail "scope.txt holds only the three slices (also: $EXTRA)"; fi
 # dag.txt: one `N: dep dep …` line per issue (runner Step 2).
 for n in "$B" "$C"; do
   if { awk -F: -v n="$n" '{ gsub(/\r/, ""); k = $1; gsub(/[[:space:]]/, "", k); if (k == n) print $2 }' \
@@ -180,17 +183,23 @@ for p in $PRS; do
   pj=$(gh pr view "$p" --repo "$REPO" --json body,headRefName) || { fail "PR #$p body cannot be read"; continue; }
   body=$(jq -r .body <<<"$pj" | tr -d '\r')
   # gh-issue reserves ## Review notes for iteration history and requires a line
-  # there only for these result.json states; with none of them a clean PR may
-  # have no such heading.
+  # there only for these result.json states (one line per state, its fixed
+  # wording); with none of them a clean PR may have no such heading.
   n=$(jq -r .headRefName <<<"$pj" | sed -n 's|.*/issue-\([0-9][0-9]*\)-.*|\1|p')
-  why=$(jq -r '[if .phase1_inline == true then "inline Phase 1" else empty end,
-               if (.gate_state == "degraded" or .gate_state == "waived" or .gate_state == "cap-stop") then "gate \(.gate_state)" else empty end,
-               if .review_profile == "revoked" then "profile revoked" else empty end] | join(", ")' \
-          "$STATE_DIR/issue-$n/result.json" 2>/dev/null) || why="no readable issue-$n/result.json"
-  if grep -qx '## Review notes' <<<"$body"; then pass "PR #$p carries ## Review notes"
-  elif [ -z "$why" ]; then
-    pass "PR #$p carries the review notes its run requires (none: its result.json records no state gh-issue notes there)"
-  else fail "PR #$p carries ## Review notes${why:+ (required: $why)}"; fi
+  need=$(jq -r 'if .phase1_inline == true then "run inline" else empty end,
+                if .gate_state == "degraded" then "Codex gate unavailable (credit/quota)" else empty end,
+                if .gate_state == "waived" then "Codex gate waived" else empty end,
+                if .gate_state == "cap-stop" then "Codex gate cap-stop" else empty end,
+                if .review_profile == "revoked" then "Review profile prose revoked" else empty end' \
+          "$STATE_DIR/issue-$n/result.json" 2>/dev/null) || need="(no readable issue-$n/result.json)"
+  notes=$(awk '/^## /{f = ($0 == "## Review notes")} f' <<<"$body")
+  missing=""
+  while IFS= read -r line; do
+    [ -n "$line" ] && ! grep -qF -- "$line" <<<"$notes" && missing="${missing:+$missing; }$line"
+  done <<<"$need"
+  if [ -n "$missing" ]; then fail "PR #$p's ## Review notes carry what its result.json requires (missing: $missing)"
+  elif [ -n "$notes" ]; then pass "PR #$p carries ## Review notes"
+  else pass "PR #$p carries the review notes its run requires (none: its result.json records no state gh-issue notes there)"; fi
   # gh-issue Step 7: the Test plan names the validation that ran.
   if awk '/^## /{f = ($0 == "## Test plan")} f' <<<"$body" | grep -Eqi 'preflight|bash test\.sh'; then
     pass "PR #$p carries a validation line (its Test plan names the contract's preflight)"

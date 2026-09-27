@@ -32,6 +32,10 @@ PREFIX=issue-runner-smoke-
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SMOKE_ROOT=${ISSUE_RUNNER_SMOKE_ROOT:-$HOME/issue-runner-smoke}
 case $SMOKE_ROOT in /*) ;; *) SMOKE_ROOT="$PWD/$SMOKE_ROOT" ;; esac   # absolute: the .env records paths
+# The printed commands carry an overridden root, resolved: a relative one would
+# otherwise resolve against wherever they are run.
+ROOT_ENV=""
+[ -n "${ISSUE_RUNNER_SMOKE_ROOT:-}" ] && ROOT_ENV="ISSUE_RUNNER_SMOKE_ROOT=\"$SMOKE_ROOT\" "
 
 die() { printf 'setup: %s\n' "$1" >&2; exit 1; }
 
@@ -61,7 +65,7 @@ grep -q 'HTTP 404' "$TMP/probe.err" || { cat "$TMP/probe.err" >&2; die "cannot c
 
 # From here on a failure can leave the clone and, once created, the repository
 # (a failed push, say) behind: say how to remove them.
-die() { printf 'setup: %s\nsetup: remove what was created with: %s/teardown.sh %s\n' "$1" "$HERE" "$NAME" >&2; exit 1; }
+die() { printf 'setup: %s\nsetup: remove what was created with: %s"%s/teardown.sh" %s\n' "$1" "$ROOT_ENV" "$HERE" "$NAME" >&2; exit 1; }
 
 # Record the repository before creating anything: teardown.sh takes its owner
 # from here, never from whatever gh login is current by then.
@@ -194,8 +198,8 @@ Smoke repository ready: https://github.com/$REPO (private)
    (/issue-runner --no-merge ... with the unnamespaced skills of docs/portable-context.md)
 
 2. When the run has finished, and before merging anything, check the outcome:
-     "$HERE/check.sh" $NAME
+     $ROOT_ENV"$HERE/check.sh" $NAME
 
 3. Delete the repository and the local clone:
-     "$HERE/teardown.sh" $NAME
+     $ROOT_ENV"$HERE/teardown.sh" $NAME
 EOF

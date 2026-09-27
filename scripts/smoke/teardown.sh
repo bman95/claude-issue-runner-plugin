@@ -102,6 +102,6 @@ if [ "$REPO_EXISTS" -eq 1 ]; then
   gh repo delete "$REPO" --yes \
     || die "gh repo delete $REPO failed - local files kept. If the token lacks the delete_repo scope, $SCOPE_HINT"
 fi
-rm -rf "$CLONE" "$META"
-[ -n "$RUN_ROOT" ] && rm -rf "$RUN_ROOT"
+rm -rf "$CLONE" "$META" || die "could not remove all of $CLONE and $META - remove what is left by hand"
+if [ -n "$RUN_ROOT" ]; then rm -rf "$RUN_ROOT" || die "could not remove all of $RUN_ROOT - remove what is left by hand"; fi
 echo "deleted $NAME"
