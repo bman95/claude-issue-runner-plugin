@@ -12,7 +12,8 @@
 # the gh token's `delete_repo` scope; when the token lacks it, the script says
 # how to grant it (`gh auth refresh -h github.com -s delete_repo`) and deletes
 # nothing. Local files are removed only after the repository is deleted, or
-# when it does not exist (setup failed before creating it, or it was deleted).
+# when it does not exist (setup failed before creating it, or it was deleted;
+# a 404 counts as absent only when the authenticated gh user owns the name).
 #
 # Needs: bash, git, gh (authenticated).
 
@@ -46,6 +47,9 @@ case $1 in
        REPO="$OWNER/$NAME"
      fi ;;
 esac
+# Whatever the .env says, only <owner>/<the smoke name typed> is ever deleted.
+printf '%s\n' "$REPO" | grep -Eqx "[A-Za-z0-9-]+/$NAME" \
+  || die "refusing: $META's repo=$REPO is not <owner>/$NAME"
 RUN_ROOT=""
 if [ -d "$CLONE" ]; then
   RUN_ROOT=$( (cd "$CLONE" && bash "$RUN_STATE" resolve 2>/dev/null) | sed -n 's/^run-root //p')
@@ -59,6 +63,11 @@ PROBE_ERR=$(mktemp) || die "mktemp failed"
 trap 'rm -f "$PROBE_ERR"' EXIT
 if ! gh api "repos/$REPO" --silent 2>"$PROBE_ERR"; then
   grep -q 'HTTP 404' "$PROBE_ERR" || { cat "$PROBE_ERR" >&2; die "cannot check whether $REPO exists"; }
+  # Another account's private repository also answers 404: "gone" only when
+  # the authenticated user is its owner.
+  LOGIN=$(gh api user -q .login) && [ -n "$LOGIN" ] || die "cannot resolve the authenticated gh user"
+  [ "$(printf '%s' "$LOGIN" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "${REPO%%/*}" | tr '[:upper:]' '[:lower:]')" ] \
+    || die "$REPO answers 404 to gh user $LOGIN, which cannot see another account's private repository: switch to ${REPO%%/*} (gh auth switch) and re-run - nothing deleted"
   REPO_EXISTS=0
 fi
 
