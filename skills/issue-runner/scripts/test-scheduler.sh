@@ -10,11 +10,17 @@
 #
 # Run directly, or from scripts/lint.sh (and so from CI). Dependency-free:
 # bash + coreutils only. Exits non-zero on the first-or-any failure.
+#
+# Usage: test-scheduler.sh [<path to scheduler.sh>]
+# The optional argument runs the same fixtures against another copy (lint
+# passes the Codex edition's); default: skills/issue-runner/scripts/scheduler.sh.
 
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-SCHEDULER="$ROOT/skills/issue-runner/scripts/scheduler.sh"
+SCHEDULER="${1:-$ROOT/skills/issue-runner/scripts/scheduler.sh}"
+[ -f "$SCHEDULER" ] || { printf 'FAIL: scheduler script not found: %s\n' "$SCHEDULER" >&2; exit 1; }
+SCHEDULER="$(cd "$(dirname "$SCHEDULER")" && pwd)/$(basename "$SCHEDULER")"   # absolute: a fixture below runs from another cwd
 SCENARIOS="$ROOT/docs/scenarios.md"
 
 fail=0

@@ -6,7 +6,8 @@
 # drift against each other in mechanically-checkable ways. This script guards the
 # drift classes that have actually bitten releases:
 #
-#   1. plugin.json version == marketplace.json version
+#   1. plugin.json version == marketplace.json version, and the Codex
+#      edition's codex/issue-runner/.codex-plugin/plugin.json carries it too
 #   2. every skills/*/SKILL.md frontmatter has name + description + version
 #   3. --max-parallel default agrees across README, SKILL arg line, and the
 #      Step 3 runtime `Set \`MAX_PARALLEL\` (default N)` line; likewise
@@ -40,7 +41,8 @@
 #      values included) byte-identical across the four files
 #  12. skills/issue-runner/scripts/test-scheduler.sh passes — the golden
 #      fixtures for scripts/scheduler.sh, the extracted Step 3 cascade-skip /
-#      ready-set / blocked-chain-vs-cycle state machine
+#      ready-set / blocked-chain-vs-cycle state machine — run against both
+#      editions' copies of the script
 #  13. this repository's own .issue-runner/validation parses under the grammar
 #      skills/gh-issue/scripts/validation-contract.sh applies (comment/blank
 #      lines, exactly one `preflight:` line, at most one `full:` line, LF
@@ -63,9 +65,10 @@
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
-#      resume-check.sh or merge-ready.sh;
-#      gh-issue's "## Validation contract" section and skills/gh-issue/REFERENCE.md
-#      are byte-identical across editions
+#      resume-check.sh, merge-ready.sh, run-state.sh or scheduler.sh;
+#      gh-issue's "## Validation contract" section, skills/gh-issue/REFERENCE.md
+#      and skills/issue-runner/{SKILL,REFERENCE}.md are byte-identical across
+#      editions
 #  19. skills/issue-runner/scripts/test-classify.sh passes — the golden
 #      fixtures for scripts/classify.sh, the extracted Step 3 item 5 merge
 #      proof and Step 5 unfinished-PR shape classifications
@@ -81,6 +84,11 @@
 #      skills/gh-issue/SKILL.md at most 9000 (`wc -w`), and no line in either
 #      over 1500 characters — each failure names the file, its count and the
 #      ceiling; rationale belongs in REFERENCE.md, not in the procedure
+#  24. the `## `/`### ` headings and `--flag` names of the Claude edition's
+#      issue-runner SKILL.md and the Codex edition's two (the canonical copy
+#      plus the wrapper skill that adapts it) agree, except for the differences
+#      recorded in codex/issue-runner/parity-allowlist.txt; a stale allowlist
+#      entry fails too
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -116,6 +124,7 @@ max_parallel_default() {
 
 PLUGIN_JSON="$ROOT/.claude-plugin/plugin.json"
 MARKET_JSON="$ROOT/.claude-plugin/marketplace.json"
+CODEX_PLUGIN_JSON="$ROOT/codex/issue-runner/.codex-plugin/plugin.json"
 README="$ROOT/README.md"
 CHANGELOG="$ROOT/CHANGELOG.md"
 SKILL_RUNNER="$ROOT/skills/issue-runner/SKILL.md"
@@ -137,6 +146,17 @@ elif [ "$plugin_version" != "$market_version" ]; then
   err "version mismatch: plugin.json=$plugin_version marketplace.json=$market_version"
 else
   ok "manifest versions agree ($plugin_version)"
+fi
+# The Codex edition ships the same skills, so its manifest carries the same version.
+codex_version="$(json_version "$CODEX_PLUGIN_JSON")"
+if [ -z "$codex_version" ]; then
+  err "could not read version from ${CODEX_PLUGIN_JSON#"$ROOT"/}"
+elif [ -z "$plugin_version" ]; then
+  :   # already reported above
+elif [ "$codex_version" != "$plugin_version" ]; then
+  err "version mismatch: .claude-plugin/plugin.json=$plugin_version codex/issue-runner/.codex-plugin/plugin.json=$codex_version"
+else
+  ok "Codex edition manifest version agrees ($codex_version)"
 fi
 
 # 2. SKILL frontmatter completeness --------------------------------------------
@@ -468,12 +488,15 @@ fi
 # 12. Scheduler golden fixtures --------------------------------------------------
 TEST_SCHEDULER="$ROOT/skills/issue-runner/scripts/test-scheduler.sh"
 if [ -f "$TEST_SCHEDULER" ]; then
-  if bash "$TEST_SCHEDULER" >"$TMP/test-scheduler.out" 2>&1; then
-    ok "scheduler golden fixtures pass (skills/issue-runner/scripts/test-scheduler.sh)"
-  else
-    err "scheduler golden fixtures failed:"
-    cat "$TMP/test-scheduler.out" >&2
-  fi
+  # The same fixtures run against both editions' copies of the script.
+  for sched in skills/issue-runner/scripts/scheduler.sh codex/issue-runner/canonical/issue-runner/scripts/scheduler.sh; do
+    if bash "$TEST_SCHEDULER" "$ROOT/$sched" >"$TMP/test-scheduler.out" 2>&1; then
+      ok "scheduler golden fixtures pass against $sched"
+    else
+      err "scheduler golden fixtures failed against $sched:"
+      cat "$TMP/test-scheduler.out" >&2
+    fi
+  done
 else
   err "$TEST_SCHEDULER not found"
 fi
@@ -617,7 +640,8 @@ for c in "$ROOT"/codex/issue-runner/canonical/*/scripts/*; do
     || { err "codex/issue-runner/canonical/$rel has no original at skills/$rel"; bundled_ok=0; }
 done
 for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/classify.sh \
-                issue-runner/scripts/resume-check.sh issue-runner/scripts/merge-ready.sh; do
+                issue-runner/scripts/resume-check.sh issue-runner/scripts/merge-ready.sh \
+                issue-runner/scripts/run-state.sh issue-runner/scripts/scheduler.sh; do
   [ -f "$ROOT/codex/issue-runner/canonical/$required" ] \
     || { err "codex/issue-runner/canonical/$required missing (the Codex canonical procedure runs it)"; bundled_ok=0; }
 done
@@ -631,7 +655,13 @@ fi
 # Codex edition ships the same file.
 cmp -s "$ROOT/skills/gh-issue/REFERENCE.md" "$ROOT/codex/issue-runner/canonical/gh-issue/REFERENCE.md" \
   || { err "skills/gh-issue/REFERENCE.md missing or differs from codex/issue-runner/canonical/gh-issue/REFERENCE.md"; bundled_ok=0; }
-[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section and gh-issue REFERENCE.md byte-identical in both editions"
+# The Codex issue-runner reads a canonical copy of the orchestrator procedure;
+# every Codex difference lives in its wrapper skill, so the copy stays exact.
+for f in SKILL.md REFERENCE.md; do
+  cmp -s "$ROOT/skills/issue-runner/$f" "$ROOT/codex/issue-runner/canonical/issue-runner/$f" \
+    || { err "skills/issue-runner/$f missing or differs from codex/issue-runner/canonical/issue-runner/$f (copy the Claude file over it; Codex differences go in codex/issue-runner/skills/issue-runner/SKILL.md)"; bundled_ok=0; }
+done
+[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section, gh-issue REFERENCE.md and issue-runner SKILL.md/REFERENCE.md byte-identical in both editions"
 
 # 19. Merge-proof and PR-shape classification fixtures ----------------------------
 TEST_CLASSIFY="$ROOT/skills/issue-runner/scripts/test-classify.sh"
@@ -706,6 +736,46 @@ $SKILL_RUNNER|11000
 $SKILL_GH|9000
 EOF_SIZE
 [ "$size_ok" -eq 1 ] && ok "spec size ceilings hold (issue-runner SKILL.md <= 11000 words, gh-issue SKILL.md <= 9000, lines <= $MAX_LINE_CHARS chars)"
+
+# 24. Issue-runner heading and flag parity between editions ------------------------
+# The `## `/`### ` heading lines and the `--flag` names of the Claude edition's
+# issue-runner SKILL.md and of the Codex edition's (its canonical copy, which
+# check 18 keeps byte-identical, plus the wrapper skill where every Codex
+# difference lives) must match, except for the intentional differences recorded in
+# codex/issue-runner/parity-allowlist.txt as `claude-only <item>` / `codex-only
+# <item>` lines, where <item> is `heading: <line>` or `flag: <--name>`. An
+# allowlist entry that no longer matches a difference fails too (stale).
+PARITY_ALLOW="$ROOT/codex/issue-runner/parity-allowlist.txt"
+CODEX_RUNNER_WRAPPER="$ROOT/codex/issue-runner/skills/issue-runner/SKILL.md"
+parity_items() {   # sorted, unique "heading: <line>" and "flag: <--name>" items of the files given
+  { grep -hE '^#{2,3} ' "$@" | sed 's/[[:space:]]*$//; s/^/heading: /'
+    grep -ohE -- '--[a-z][a-z0-9-]*' "$@" | sed 's/^/flag: /'
+  } | LC_ALL=C sort -u
+}
+if [ ! -f "$CODEX_RUNNER_WRAPPER" ]; then
+  err "${CODEX_RUNNER_WRAPPER#"$ROOT"/} not found (the Codex issue-runner wrapper skill)"
+elif [ ! -f "$PARITY_ALLOW" ]; then
+  err "${PARITY_ALLOW#"$ROOT"/} not found (the issue-runner parity allowlist)"
+else
+  parity_items "$SKILL_RUNNER" > "$TMP/parity.claude"
+  parity_items "$CANON_RUNNER" "$CODEX_RUNNER_WRAPPER" > "$TMP/parity.codex"
+  { LC_ALL=C comm -23 "$TMP/parity.claude" "$TMP/parity.codex" | sed 's/^/claude-only /'
+    LC_ALL=C comm -13 "$TMP/parity.claude" "$TMP/parity.codex" | sed 's/^/codex-only /'
+  } | LC_ALL=C sort -u > "$TMP/parity.diff"
+  grep -vE '^[[:space:]]*(#|$)' "$PARITY_ALLOW" | sed 's/[[:space:]]*$//' | LC_ALL=C sort -u > "$TMP/parity.allow"
+  undocumented="$(LC_ALL=C comm -23 "$TMP/parity.diff" "$TMP/parity.allow")"
+  stale="$(LC_ALL=C comm -13 "$TMP/parity.diff" "$TMP/parity.allow")"
+  parity_ok=1
+  if [ -n "$undocumented" ]; then
+    err "issue-runner heading/flag difference between editions not in ${PARITY_ALLOW#"$ROOT"/}:"
+    printf '%s\n' "$undocumented" | sed 's/^/  /' >&2; parity_ok=0
+  fi
+  if [ -n "$stale" ]; then
+    err "stale ${PARITY_ALLOW#"$ROOT"/} entries (no longer a difference):"
+    printf '%s\n' "$stale" | sed 's/^/  /' >&2; parity_ok=0
+  fi
+  [ "$parity_ok" -eq 1 ] && ok "issue-runner headings and --flag names agree between editions ($(grep -c . "$TMP/parity.allow") allowlisted differences)"
+fi
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
