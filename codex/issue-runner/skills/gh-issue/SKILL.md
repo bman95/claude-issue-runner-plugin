@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.10.0
+version: 0.11.0
 description: Use when the user explicitly asks to implement a GitHub issue end to end through code, tests, PR, layered review, CI, and merge.
 disable-model-invocation: false
 ---

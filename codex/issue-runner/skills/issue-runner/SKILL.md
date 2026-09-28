@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.12.0
+version: 0.13.0
 description: Use when the user explicitly asks to run or orchestrate a GitHub issue queue using dependency-aware, worktree-isolated implementers.
 disable-model-invocation: false
 ---

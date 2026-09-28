@@ -10,7 +10,7 @@
       "name": "issue-runner",
       "source": "./",
       "description": "Self-sufficient agentic GitHub issue pipeline: /issue-plan turns an idea into ready-to-run vertical-slice issues; /issue-runner builds a dependency DAG and dispatches each issue to an autonomous worktree-isolated implementer subagent that explores, implements, reviews (fresh-eyes subagents + Codex gate), and merges.",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "author": {
         "name": "Bryan Frias",
         "email": "bfrias@sicma21.com"

@@ -1,6 +1,6 @@
 {
   "name": "issue-runner",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Self-sufficient agentic GitHub issue pipeline: /issue-plan turns an idea into ready-to-run vertical-slice issues; /issue-runner builds a dependency DAG and dispatches each issue to an autonomous worktree-isolated implementer subagent that explores, implements, reviews (fresh-eyes subagents + Codex gate), and merges. Run-time doubts escalate implementer -> parent -> human. Bundles the gh-issue implementer skill so the plugin is self-contained.",
   "author": {
     "name": "Bryan Frias",

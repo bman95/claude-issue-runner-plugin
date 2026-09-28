@@ -2,14 +2,16 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
-## [Unreleased]
+## [0.14.0] - 2026-09-28
 
 The skills now follow Anthropic's skill-authoring guideline on size. Each SKILL.md keeps the path every run needs. Mode-specific procedures live in files linked one level deep, each opened by an explicit trigger, so a run pays only for the context it uses. 0.13.0's word ceilings (11,000 and 9,000) had stopped regrowth but not reduced load, so they are replaced.
 
+Versions: issue-runner 0.12.0 → 0.13.0, gh-issue 0.10.0 → 0.11.0, issue-plan 0.5.0 → 0.6.0, Claude plugin manifests and Codex edition manifest 0.13.0 → 0.14.0, each skill's version mirrored into its Codex copies.
+
 **All skills:**
-- **SKILL.md bodies within 500 lines and 5,000 words.** issue-runner went from 527 lines and 10,715 words to 345 and 4,941, gh-issue from 539 and 8,802 to 287 and 4,950, and issue-plan from 5,912 words to 3,206. Procedures moved verbatim, with no rule dropped: a reviewer primed to refute checked every MUST/never instruction, blocker string, exit code and ordering constraint against the previous text. The Codex canonical copies carry every new file byte-identically.
+- **SKILL.md bodies within 500 lines and 5,000 words.** issue-runner went from 527 lines and 10,715 words to 345 and 4,941, gh-issue from 539 and 8,802 to 287 and 4,976, and issue-plan from 5,912 words to 3,206. Procedures moved verbatim, with no rule dropped: a reviewer primed to refute checked every MUST/never instruction, blocker string, exit code and ordering constraint against the previous text. The Codex canonical copies carry every new file byte-identically.
 - **Lint enforces the guideline** (check 23): every `skills/*/SKILL.md` body is at most 500 lines and 5,000 words (`LC_ALL=C wc -w`, frontmatter excluded), with no line over 1,500 characters. The word ceiling stops long lines from absorbing the length.
-- **Rationale pointers are checked** (new check 28). Every `(why: …)` pointer, including cross-skill and multi-entry forms, must resolve to a REFERENCE.md entry, and every Markdown file a SKILL.md links must exist. Nothing previously stopped a moved or renamed entry from leaving a dangling pointer.
+- **Rationale pointers are checked** (new check 28). Every `(why: …)` pointer, including cross-skill and multi-entry forms, must resolve to a REFERENCE.md entry, and every Markdown file a SKILL.md links must exist. Nothing previously stopped a moved or renamed entry from leaving a dangling pointer. The extractor is plain awk, so the check keeps lint's bash-and-coreutils dependency contract, and a failed extraction fails lint.
 
 **gh-issue:**
 - **Prose profile text kept in the private gate directory** (fixes #73). The text was written to the predictable `/tmp/review-profile-<PR>.txt` without checking the write, so another local user could plant the file and steer review triage. It is now created fresh in the run's own `GATE_DIR`, a failed write stops the prose run with a blocker, and the gate reads only a file the run owns. `scripts/test-review-profile.sh` covers the pre-planted-file cases.

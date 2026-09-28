@@ -1,6 +1,6 @@
 {
   "name": "issue-runner",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Plan GitHub work as dependency-aware issues, then implement, review, and merge them with isolated Codex subagents.",
   "author": {
     "name": "Bryan Frias",
