@@ -1,0 +1,47 @@
+# Step 4 — blocker classes and escalations
+
+Read at Step 4 before resolving any `blocked` or `failed` issue (SKILL.md, Step 4): it names the blockers that are never self-resolved or never retried, and the escalations, cheapest first. SKILL.md Step 4's retry counter, cap and pause rules apply throughout. Rationale: [REFERENCE.md](REFERENCE.md).
+
+## Contents
+
+- Blocker classes
+- Escalations, cheapest first
+
+## Blocker classes
+
+`Fresh-eyes reviewer <A|B> silent twice and inline review not authorized` (gateless dispatches only; not the Agent-tool blocker) is an ordinary blocker: a retry dispatches fresh reviewers.
+
+Three blockers accept risk and are never self-resolved: `Agent tool unavailable and inline review not authorized` (the Step 0 probe misreported `yes`, or the host changed mid-run), `Codex gate unavailable (credit/quota) and Phase 1 ran inline: no independent review`, and `codex CLI not installed and gate not waived` (its catalog variant, `Codex CLI does not list gpt-6-sol: upgrade the Codex CLI to 0.155 or later, or check codex login and network`, is the same blocker: one question covers both).
+
+- Ask once per run *per blocker string* via `AskUserQuestion` (abort *recommended* / proceed); the answer covers every issue blocked with that string, now or later. State the consequence: self-review for the first; for the gate blockers, every later dispatch goes gateless — and, with inline review in force, merges with no independent review at all.
+- **Abort** → leave them `blocked` (worktrees kept), stop filling slots, mark every not-yet-dispatched `pending` issue `skipped` with error `aborted: <blocker string>` — **unless `$RUN_ROOT/paused` exists**: then leave them `pending` for the resuming invocation (why: Why a risk-blocker abort defers under a pause). Let in-flight implementers drain through Step 3 item 5 (a further risk blocker lands `blocked` without a new question), then Step 5.
+- **Proceed** → retry each as below with the matching Step 3a variant (Agent-less for the first, Gateless for the others; variants compose), carried in every later dispatch of the run.
+- The answer decides the variant only, never a re-dispatch past the cap: each proceed-retry counts toward `retries`, and an issue at the cap gets the at-cap escalation first — both owed at once → one `AskUserQuestion`.
+
+`classification failed: <stderr>` and `cannot record the implementer's error: <reason>` (Step 3 item 5) are never answered with a retry dispatch (why: Why classification failures are never retried). Once the cause is fixed, re-run item 5's script call on the `outcome` and `blocker` files as they stand — first re-writing, from the kept message under item 5's write rule, only a file whose own write failed (`cannot record …`, or item 5's exit-2 `outcome` write); message lost → ask the user rather than guess — and act on its output as item 5 does, or ask the user.
+
+A fourth blocker is never self-resolved: `PR #P merged but issue still open — confirm and close by hand` (Step 3 item 5). Ask promptly via `AskUserQuestion`, one question per issue: is PR #P this run's work (the issue failed to close) or a previous run's PR reached by resuming a stale branch with no new commits? This run's → the user closes the issue (or authorizes `gh issue close N`), then **Mark `done`**; a previous run's → `rm -f "$STATE_DIR/issue-N/merge-oid"`, then retry with guidance. At the cap, fold the at-cap escalation in; the answer never authorizes a re-dispatch past it. Never close the issue on your own initiative (why: Why the merged-but-open blocker is asked promptly).
+
+Never retry these four within the run, under the cap or at it (no at-cap question either): `validation contract invalid: <reason>`, `validation command not runnable (exit N): <command>`, `validation contract changed in this PR — a human must review and merge`, its `integration contract …` twin (why: Why validation-contract blockers are never retried). Leave the issue `blocked` (worktree kept); the Step 5 summary says what a human must do: fix `.issue-runner/validation` on the base branch and re-run, or review and merge the PR by hand.
+
+## Escalations, cheapest first
+
+- **Retry the implementer.** Append a `## Retry K` section to `$STATE_DIR/issue-N/guidance.md` (K = the counter's new value, 1 for the first retry) with `**Blocker:**` — the `error` file verbatim, or the agent's returned message when none was saved — then `**Guidance:**` — yours or the user's, plus any finding text. Increment the counter **before** re-dispatching, self-resolved or user-authorized:
+
+  ```bash
+  RETRIES=$(cat "$STATE_DIR/issue-$N/retries" 2>/dev/null || echo 0)
+  printf '%s\n' "$((RETRIES + 1))" > "$STATE_DIR/issue-$N/retries"
+  ```
+
+  **Roll the increment back if the dispatch itself never happened.** This retry's `Agent` call hits Step 3a's credit/usage-limit failure → restore `retries` (`printf '%s\n' "$RETRIES" > "$STATE_DIR/issue-$N/retries"`) and remove the `## Retry K` section just appended; the next real retry reuses `K` (why: Why a retry that never dispatched is rolled back).
+
+  Re-dispatch per Step 3a **without** `isolation: worktree`, adding the existing worktree path (`cd` there first; continue on its checked-out branch; skip the Step 4 checkpoint) and the existing PR number (push to the same PR). A `branch` file is kept: item 5's proof still needs a non-contract branch.
+  - Blocker before gh-issue Step 7 and no PR → omit the PR number: the implementer keeps the branch checked out, creates its feature branch per gh-issue Step 4 only if that is still the `worktree-agent-*` scratch branch, runs the checkpoint unless the branch is already on the remote (`git ls-remote`), and opens the PR (draft checkpoint, or plain at Step 7 where drafts are refused).
+  - Known worktree → decide whether a PR exists from its branch, not the resume check: `WT_BRANCH=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null)`, then `gh pr list --head "$WT_BRANCH" --state open` only when `WT_BRANCH` is non-empty and not `HEAD` (why: Why `done` needs merge proof, not just `CLOSED`). No known or readable worktree → run the Step 3a resume check.
+  - Hung issue → re-check once that the stopped agent has left the host's agent list; two agents must never share a worktree (why: Why a retry into a known worktree reads its own branch).
+  - The parent never enters the worktree (why: Why the orchestrator never enters a worktree).
+- **Hand off to `/codex:rescue`** with the worktree path and the latest review log. A dispatch — deferred while `$RUN_ROOT/paused` exists.
+- **Mark `failed`** and let the cascade skip dependents.
+- **Mark `done`** — only for `PR #P merged but issue still open — confirm and close by hand`, after the user confirmed PR #P is this run's and the issue is closed. Copy `issue-N/error` aside (the script rewrites it on every exit-0 call), then re-run Step 3 item 5's script call (an issue classified before `outcome` existed gets `outcome` `none`). On `done`, write `done` to `status` and act as item 5 does. On anything else, never write the printed status: restore the copied `error` verbatim (it stays `blocked`; Step 4 still asks, never retries) and tell the user what it printed. Nothing else moves `blocked` to `done`; a `done` here authorizes Step 5's teardown.
+- **Bump the Codex cap and re-run** — only for a Codex gate cap-stop whose findings cascade (new each pass, not re-flags; left unfixed under `## Review notes`): `/issue-runner <N> --max-codex-iterations M`. The resume check picks up the PR and branch; passes count from 1 again and pass 1 re-reviews the unfixed head, so it buys M − 1 fix rounds. An issue with a `profile` file → the command also carries `--prose-gate <N>`; the user's re-invocation is the authorization.
+- **Retry under the prose profile** — offered only for a Codex gate cap-stop in a gated run (never a gateless one) whose findings churn at design level, on a PR whose diff is Markdown-only (every path from `gh pr diff <P> --name-only` ends in `.md`), and only to an issue with no `profile` file. Always a question to the user; their explicit yes is the authorization, and an unattended decision never invents it. On a yes, write `prose escalation` to `$STATE_DIR/issue-N/profile` and retry per the first escalation (counts against `--max-retries`; Step 3a adds the profile line; gate passes count from 1 again). The diff check is only a hint; the implementer's guard decides.

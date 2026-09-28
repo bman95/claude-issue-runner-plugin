@@ -7,7 +7,7 @@ disable-model-invocation: false
 
 # Issue Plan for Codex
 
-Read [the bundled canonical planner procedure](../../canonical/issue-plan/SKILL.md) completely and follow it, with the Codex adaptations below taking precedence wherever the procedure names Claude Code primitives.
+Read [the bundled canonical planner procedure](../../canonical/issue-plan/SKILL.md) completely and follow it — reading each file it links (`templates.md`, `reconcile.md`, `continuation.md`, `handoff.md`, beside it in `../../canonical/issue-plan/`) when its trigger says — with the Codex adaptations below taking precedence wherever the procedure names Claude Code primitives.
 
 ## Codex adaptations
 

@@ -1,6 +1,6 @@
 # Golden scheduler scenarios
 
-These fixtures are the behavioral contract of the orchestrator's scheduling loop (`skills/issue-runner/SKILL.md`, Step 3 and its satellites). Each row was verified by dry-reading the spec against the scenario; a spec edit that changes any **Expected behavior** cell is a **breaking change** and requires a version bump plus a CHANGELOG entry. After any edit to Step 3, Step 3a, or Step 5, re-dry-read every row below. Anchors cite step/item numbers, never line numbers — the file is edited too often for lines to hold.
+These fixtures are the behavioral contract of the orchestrator's scheduling loop (`skills/issue-runner/SKILL.md`, Step 3 and its satellites). Each row was verified by dry-reading the spec against the scenario; a spec edit that changes any **Expected behavior** cell is a **breaking change** and requires a version bump plus a CHANGELOG entry. After any edit to Step 3, Step 3a, or Step 5, re-dry-read every row below. Anchors cite step/item numbers, never line numbers — the file is edited too often for lines to hold. A step anchor names the step whether its text sits in SKILL.md or in a file SKILL.md links from that step (`recovery.md`, `merge-ready.md`, `escalations.md` and the rest).
 
 Notation: `A -> B` means B depends on A (edge B→A in `dag.json`). Statuses are the spec's own vocabulary: `pending` / `implementing` / `blocked` / `done` / `failed` / `skipped` / `closed-externally` / `ready`.
 
