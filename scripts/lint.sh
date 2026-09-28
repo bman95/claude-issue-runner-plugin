@@ -896,12 +896,31 @@ done
 
 # 28. Rationale pointers and one-level references resolve ---------------------------
 # Forms: (why: <entry>), (why: <entry>; <entry>), (why: <skill> REFERENCE.md, <entry>).
-# Entries may themselves contain one level of parentheses. perl ships with git.
+# Entries may themselves contain parentheses; the awk scanner tracks the depth.
+# The extraction is written to a file and its exit status checked, so a failing
+# extractor fails lint instead of reading as "no pointers".
+extract_why() {
+  LC_ALL=C awk '{
+    line = $0
+    while ((i = index(line, "(why: ")) > 0) {
+      rest = substr(line, i + 6); depth = 1; out = ""
+      for (j = 1; j <= length(rest); j++) {
+        c = substr(rest, j, 1)
+        if (c == "(") depth++
+        else if (c == ")") { depth--; if (depth == 0) break }
+        out = out c
+      }
+      if (depth == 0) print out
+      line = substr(rest, j + 1)
+    }
+  }' "$1"
+}
 ptr_ok=1; n_ptr=0
 for d in "$ROOT"/skills/*/; do
   d=${d%/}
   for f in "$d"/*.md "$d"/*/*.md; do
     [ -f "$f" ] || continue
+    extract_why "$f" >"$TMP/why.txt" || { err "cannot extract (why: …) pointers from ${f#"$ROOT"/}"; ptr_ok=0; continue; }
     while IFS= read -r ptr; do
       [ -n "$ptr" ] || continue
       ref="$d/REFERENCE.md"
@@ -917,7 +936,7 @@ for d in "$ROOT"/skills/*/; do
           err "${f#"$ROOT"/}: (why: $entry) has no '- **$entry.**' entry in ${ref#"$ROOT"/}"; ptr_ok=0
         fi
       done
-    done < <(perl -ne 'while (/\(why: ((?:[^()]|\([^()]*\))*)\)/g) { print "$1\n" }' "$f")
+    done <"$TMP/why.txt"
   done
   # Relative Markdown links from SKILL.md must point at files that exist.
   while IFS= read -r link; do
