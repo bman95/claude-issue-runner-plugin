@@ -2,6 +2,23 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [Unreleased]
+
+The skills now follow Anthropic's skill-authoring guideline on size. Each SKILL.md keeps the path every run needs. Mode-specific procedures live in files linked one level deep, each opened by an explicit trigger, so a run pays only for the context it uses. 0.13.0's word ceilings (11,000 and 9,000) had stopped regrowth but not reduced load, so they are replaced.
+
+**All skills:**
+- **SKILL.md bodies within 500 lines and 5,000 words.** issue-runner went from 527 lines and 10,715 words to 345 and 4,941, gh-issue from 539 and 8,802 to 287 and 4,950, and issue-plan from 5,912 words to 3,206. Procedures moved verbatim, with no rule dropped: a reviewer primed to refute checked every MUST/never instruction, blocker string, exit code and ordering constraint against the previous text. The Codex canonical copies carry every new file byte-identically.
+- **Lint enforces the guideline** (check 23): every `skills/*/SKILL.md` body is at most 500 lines and 5,000 words (`LC_ALL=C wc -w`, frontmatter excluded), with no line over 1,500 characters. The word ceiling stops long lines from absorbing the length.
+- **Rationale pointers are checked** (new check 28). Every `(why: …)` pointer, including cross-skill and multi-entry forms, must resolve to a REFERENCE.md entry, and every Markdown file a SKILL.md links must exist. Nothing previously stopped a moved or renamed entry from leaving a dangling pointer.
+
+**gh-issue:**
+- **Prose profile text kept in the private gate directory** (fixes #73). The text was written to the predictable `/tmp/review-profile-<PR>.txt` without checking the write, so another local user could plant the file and steer review triage. It is now created fresh in the run's own `GATE_DIR`, a failed write stops the prose run with a blocker, and the gate reads only a file the run owns. `scripts/test-review-profile.sh` covers the pre-planted-file cases.
+- **A failed Codex pass 1 under the prose profile always blocks.** Only a credit/quota failure blocked; any other failure (auth, network, or the prose block's own exit 97 when it cannot build its prompt) fell through to the interactive offer to merge without the gate. That merge would rest on a Phase 1 verdict reached under the narrowed prose bar with nothing behind it. It now Blocks with `Codex gate failed under the prose profile (exit E)`, pinned by lint check 16.
+- **Phase 1 verifies the capped iteration's fixes.** In the 0.13.0 run most retries came from Phase 1 hitting its 4-iteration cap with the last round's fixes unreviewed, which cost a whole new implementer. When iteration 4 applies fixes, one verification iteration now runs on the fixed head. It applies nothing: clean means converged, and any Apply-class finding is a cap-stop as before. Step 2's agent estimate now uses 1–5 iterations (`<N*4>`–`<N*12>`).
+
+**issue-runner:**
+- REFERENCE.md opens with a table of contents, as the guideline asks of reference files over 100 lines.
+
 ## [0.13.0] - 2026-09-27
 
 Plan #48, slices #49–#61: a lighter spec, a Codex gate that can converge on prose and cannot stall silently, a Codex edition at parity, and the first integration hints. Deterministic recipes moved out of the specs into bundled, fixture-tested scripts, and rationale into REFERENCE.md, so the gh-issue and issue-runner SKILL.md files carry the procedure only. This is a minor bump because Expected behavior changed (`docs/scenarios.md`'s rule): the gate cap's meaning and default (row 50), the prose review profile (rows 51–59), reviewer and gate liveness (rows 60–62), plan-file drift (rows 63–66), integration hints (rows 67–72), the `--merge-ready` pass (row 37) and a missing validation script (row 43).

@@ -29,8 +29,12 @@ flow is two halves:
    travels, so the scripts the skills run are bundled with them: every
    `skills/<skill>/scripts/*.sh` (issue-runner's `run-state.sh`,
    `scheduler.sh`, `classify.sh` and the recovery fallback `agent-trace.sh`;
-   gh-issue's `validation-contract.sh`). Nothing outside `skills/` is packed —
-   which is why a script a skill runs must live under `skills/`.
+   gh-issue's `validation-contract.sh`), and so are the Markdown files a
+   `SKILL.md` links one level deep (issue-plan's `templates.md`,
+   `reconcile.md`, `continuation.md` and `handoff.md`; issue-runner's
+   `merge-ready.md`, `recovery.md`, `escalations.md` and the rest). Nothing outside
+   `skills/` is packed — which is why a script a skill runs must live under
+   `skills/`.
 2. **bootstrap** — `bootstrap-context.sh` reads `$ISSUE_RUNNER_CONTEXT` (or a
    file it points to), decodes it, and writes the skill folders into
    `~/.claude/skills/`. Claude Code discovers `~/.claude/skills/<name>/SKILL.md`

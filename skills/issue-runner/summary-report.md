@@ -1,0 +1,25 @@
+# Step 5 — summary, telemetry and the tracking-issue post
+
+Read at Step 5 of every orchestrated run, after cleanup and the clean check (SKILL.md, Step 5), and follow it to build the closing summary. Then return to Step 5's final release. Rationale: [REFERENCE.md](REFERENCE.md).
+
+## Summary table
+
+**Summary table**: number, status, title, error, plus:
+- **Every `failed` issue** (hung included): its last `progress` line (`last progress: step=8.1 iter=2 pr=#123`), or `no progress recorded` if absent or empty; a hung one's error verbatim. List a hung implementer that item 5 classified `done`, `blocked` or `closed-externally` explicitly: `stopped as hung after merge: progress unchanged for 47m; classified done` (why: Why the hang rule reads the file's mtime but not its content).
+- **Every `blocked`/`failed`/`skipped`/`closed-externally` issue**: add the output of `bash "$CLASSIFY_SCRIPT" pr-shape "$N" "$DEFAULT_BRANCH"`, run from the repository root. On `no open PR (only merged or closed PRs: …)`, say the branch may hold unmerged work; list `shape unknown (branch not on origin)` as a fork's PR, never the runner's. No unfinished orchestrated PR is ready to merge. A `non-draft (…)` line is `checkpoint: refused`, a failed revert to draft, or a death in gh-issue's ready→merge window: tell which from `result.json` and `error`; say the last two are unfinished PRs a human could merge by hand (why: Why the implementer opens a draft PR right after the plan). A non-zero exit is listed as `PR shape unknown: <its stderr>`.
+- **Telemetry**, per issue and totals, from each `$STATE_DIR/issue-N/result.json`, never the Step 10 report text (why: Why `result.json` is advisory for status decisions and authoritative for telemetry): `phase1_iterations`; every `phase1_state` of `cap-stop`/`bouncing`; `gate_passes` (0–`MAX_CODEX_ITERATIONS`); every `gate_state` of `degraded`/`waived`/`cap-stop`/`errored`/`bouncing`/`unavailable`; every `phase1_inline` of `true`; the `checks` outcome (`pass`/`none`/`fail`/`none-after-ready`/`all-skipped`/`unchanged-after-ready`); every `checkpoint` of `refused` (repeated refusals are a run-level note); for every issue with a `profile` file, requested → effective profile with its source (`review profile: prose (flag) → prose`, `→ revoked`, `→ standard`, or `→ no result recorded`, from `review_profile`); and Step 4 `retries` (absent = 0). A missing or unreadable file is `no result recorded`, never zeros.
+- **Actual vs. estimate.** Recompute Step 2's estimate (`N` = `dag.json`'s issue count; this run's `MAX_CODEX_ITERATIONS` and gatelessness) and print `Actual agents: <A> (estimate: <N*4>–<N*12>); actual Codex gate passes: <P> (estimate: <G>)`. Over every issue dispatched at least once, using its final `result.json`: `<A>` = `1 + retries` implementers + `1 + retries` Explore helpers (0 if `phase1_inline: true`) + `2 × phase1_iterations` reviewers (0 if `phase1_inline: true` or no result recorded); `<P>` = sum of `gate_passes`. Print beside it a caveat: best-effort, can under- or overcount (why: Why the actual-spend line is best-effort).
+- **Grouping.** Call out every `blocked` with `PR #P merged but issue still open — confirm and close by hand`: a human confirms the PR is this run's, closes the issue, resolves it to `done`. List `blocked`, `ready` and `closed-externally` apart from `failed`. Any `failed` or `closed-externally` is a non-zero outcome in the closing message.
+
+## Ready PRs
+
+**Ready PRs (`--no-merge` mode).** If any: list each `ready` issue in `dag.json`'s topological order with its PR URL (`gh pr view "$(cat "$STATE_DIR/issue-N/pr")" --json url -q .url`) and title, then print the re-run commands: `/issue-runner --merge-ready` (merge every eligible one and continue), or `/issue-runner <unfinished issue numbers>` (keep them `ready` for a human to merge first).
+
+## Posting to the tracking issue
+
+**Post the summary to the tracking issue** when all hold:
+- every issue in `scope.txt` has exactly one `details.json` body line that, trimmed, matches `^Part of #[0-9]+$` (any position; two or more count as none);
+- `P` is the same for all;
+- `#P`'s current body (`gh issue view "$P" --json body -q .body`) passes Step 1's tracking-issue test.
+
+Then write the table and telemetry to `$STATE_DIR/summary.md` under one line naming the scope (`issue-runner run — scope: #41 #42 #43`) and post it, one comment per run (a partial re-run posts its own): `gh issue comment "$P" --body-file "$STATE_DIR/summary.md"`. Sanitize each `title`, `error` and `last progress` cell first: collapse newlines, backticks → `'`, backslashes → `/`, `|` → `\|`, then wrap a non-empty cell in a code span (empty stays empty). A failed comment is reported, never fatal. Otherwise only print, plus one line saying why no comment was posted (why: Why the Step 5 summary posts to the tracking issue).

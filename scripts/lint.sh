@@ -21,10 +21,10 @@
 #      starts with `Part of #`, its tracking-issue template has `## Slices` and no
 #      `## What to build`, and the `Part of` pattern and Step 1 exclusion message
 #      are present at every site — checked for the Claude skills and for the
-#      Codex edition's canonical copies
+#      Codex edition's canonical copies (issue-plan's templates.md holds them)
 #   6. no skill references retired command names (e.g. /to-issues)
-#   7. every ```bash block embedded in skills/*/SKILL.md parses (bash -n,
-#      after neutralizing <placeholder> tokens)
+#   7. every ```bash block embedded in skills/*/SKILL.md, or in a Markdown file
+#      beside it, parses (bash -n, after neutralizing <placeholder> tokens)
 #   8. shellcheck (if installed) over this script, the bundled
 #      skills/*/scripts/*.sh, the scripts/smoke/ scripts and the extracted
 #      blocks — findings are WARNINGS only, never failures
@@ -50,25 +50,28 @@
 #  14. scripts/test-validation-contract.sh passes — the fixtures for that
 #      script, run directly
 #  15. skills/issue-plan/SKILL.md and the Codex edition's canonical copy are
-#      byte-identical — the planner is ported in full, and its wrapper reads
+#      byte-identical, and so is every other skills/issue-plan/*.md — the
+#      planner is ported in full, and its wrapper reads
 #      the canonical copy, so any drift is a divergence between editions
 #  16. the prose review profile is one contract in both editions: gh-issue's
-#      Step 8 "Review profile" section and its Phase 2 prose invocation are
-#      byte-identical across editions, both carry the --review-profile flag
+#      review-profile.md "Review profile" section and its prose gate block are
+#      byte-identical across editions, scripts/test-review-profile.sh passes
+#      (the profile text only from this run's GATE_DIR, a failed write fails
+#      closed; issue #73), both carry the --review-profile flag
 #      line, the unknown-profile refusal and the dispatch-line contract, and
 #      both runners' Step 3a write that same dispatch line and carry the
 #      Step 4 prose-retry offer
-#  17. reviewer and gate liveness: gh-issue's Step 8 "Liveness" section and
-#      the Phase 2 launch block are byte-identical across editions, and no
-#      fixed /tmp gate-output path comes back
+#  17. reviewer and gate liveness: gh-issue's review-loop.md "Liveness" section
+#      and the Phase 2 launch block are byte-identical across editions, and no
+#      fixed /tmp gate-output or review-profile path comes back
 #  18. every bundled script under skills/*/scripts/ parses (bash -n), and every
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
 #      resume-check.sh, merge-ready.sh, run-state.sh, scheduler.sh, integration.sh or
 #      plan-file.sh;
-#      gh-issue's "## Validation contract" section, skills/gh-issue/REFERENCE.md
-#      and skills/issue-runner/{SKILL,REFERENCE}.md are byte-identical across
+#      gh-issue's "## Validation contract" section, every skills/gh-issue/*.md
+#      and every skills/issue-runner/*.md are byte-identical across
 #      editions
 #  19. skills/issue-runner/scripts/test-classify.sh passes — the golden
 #      fixtures for scripts/classify.sh, the extracted Step 3 item 5 merge
@@ -81,10 +84,11 @@
 #  22. skills/issue-runner/scripts/test-merge-ready.sh passes — the fixtures
 #      for scripts/merge-ready.sh, the extracted --merge-ready state, refresh,
 #      checks re-check and head-pinned merge
-#  23. spec size ceilings: skills/issue-runner/SKILL.md at most 11000 words and
-#      skills/gh-issue/SKILL.md at most 9000 (`wc -w`), and no line in either
-#      over 1500 characters — each failure names the file, its count and the
-#      ceiling; rationale belongs in REFERENCE.md, not in the procedure
+#  23. spec size ceilings (Anthropic's skill-authoring guideline): the body of
+#      each skills/*/SKILL.md (frontmatter excluded) is at most 500 lines and
+#      5000 words (`wc -w`, LC_ALL=C), and no line is over 1500 characters —
+#      each failure names the file, its count and the ceiling; rationale and
+#      mode-specific procedures belong in files one level deep from SKILL.md
 #  24. the `## `/`### ` headings and `--flag` names of the Claude edition's
 #      issue-runner SKILL.md and the Codex edition's two (the canonical copy
 #      plus the wrapper skill that adapts it) agree, except for the differences
@@ -94,7 +98,7 @@
 #      scripts/plan-file.sh, Step 2's plan-file drift check — and
 #      the plan-file contract strings (the `## Plan file` heading and the
 #      ```issue-runner-plan fence) appear in the script and in both editions'
-#      issue-plan
+#      issue-plan templates.md
 #  26. scripts/test-integration-contract.sh passes — the fixtures for
 #      skills/issue-runner/scripts/integration.sh: the integration contract's
 #      grammar and trust rule, the hint environment table, the 60-second
@@ -102,6 +106,9 @@
 #  27. the manual release smoke test's scripts under scripts/smoke/ (and its
 #      fixture's) parse (bash -n) — lint and CI never execute them: they
 #      create and delete a real GitHub repository (README, "Release smoke test")
+#  28. every `(why: <entry>)` pointer in a skill's Markdown files resolves: the
+#      same skill's REFERENCE.md has a bullet opening `- **<entry>.**`, and
+#      every Markdown file a SKILL.md links by relative path exists
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -265,8 +272,11 @@ fi
 SKILL_PLAN="$ROOT/skills/issue-plan/SKILL.md"
 # The Codex edition's wrapper reads this canonical copy, not skills/.
 CANON_PLAN="$ROOT/codex/issue-runner/canonical/issue-plan/SKILL.md"
+# The planner's issue-body templates live one level deep, linked from SKILL.md.
+TMPL_PLAN="$ROOT/skills/issue-plan/templates.md"
+CANON_TMPL_PLAN="$ROOT/codex/issue-runner/canonical/issue-plan/templates.md"
 for s in '## Blocked by' 'None - can start immediately' 'Files likely touched:' 'Part of #' '## Slices'; do
-  for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
+  for f in "$TMPL_PLAN" "$SKILL_RUNNER" "$CANON_TMPL_PLAN" "$CANON_RUNNER"; do
     if ! grep -qF "$s" "$f"; then
       err "contract string '$s' missing from ${f#"$ROOT"/}"
     fi
@@ -276,7 +286,7 @@ ok "issue-body contract strings present in planner and runner (both editions)"
 # The runner parses the LAST body line beginning with `Files likely touched:`
 # (issue-runner Step 2), so the planner's body template — the ```markdown block
 # containing `## What to build` — must end with it.
-for f in "$SKILL_PLAN" "$CANON_PLAN"; do
+for f in "$TMPL_PLAN" "$CANON_TMPL_PLAN"; do
   tmpl_last="$(awk '
     /^```markdown[[:space:]]*$/ { inb=1; hit=0; l=""; next }
     inb && /^```[[:space:]]*$/  { inb=0; if (hit) { print l; exit }; next }
@@ -294,7 +304,7 @@ done
 # templates: the tracking template (the ```markdown block containing `## Slices`)
 # must not contain `## What to build`; the slice template's first non-blank line
 # must begin with `Part of #`.
-for f in "$SKILL_PLAN" "$CANON_PLAN"; do
+for f in "$TMPL_PLAN" "$CANON_TMPL_PLAN"; do
   track="$(awk '
     /^```markdown[[:space:]]*$/ { inb=1; slices=0; wtb=0; next }
     inb && /^```[[:space:]]*$/  { inb=0; if (slices) { print (wtb ? "bad" : "ok"); exit }; next }
@@ -322,7 +332,7 @@ done
 # exclusion message (the scenarios cite it by prefix), pinned across both runner
 # editions. The exact literal must appear at every site.
 literals_ok=1
-for f in "$SKILL_PLAN" "$SKILL_RUNNER" "$CANON_PLAN" "$CANON_RUNNER"; do
+for f in "$TMPL_PLAN" "${SKILL_RUNNER%/SKILL.md}/summary-report.md" "$CANON_TMPL_PLAN" "${CANON_RUNNER%/SKILL.md}/summary-report.md"; do
   if ! grep -qF '^Part of #[0-9]+$' "$f"; then
     err "Part of pattern '^Part of #[0-9]+\$' missing from ${f#"$ROOT"/}"; literals_ok=0
   fi
@@ -347,7 +357,7 @@ fi
 have_shellcheck=0
 command -v shellcheck >/dev/null 2>&1 && have_shellcheck=1
 
-for skill in "$ROOT"/skills/*/SKILL.md; do
+for skill in "$ROOT"/skills/*/*.md; do
   [ -f "$skill" ] || continue
   rel="${skill#"$ROOT"/}"
   prefix="$TMP/$(printf '%s' "$rel" | tr '/' '_')"
@@ -400,14 +410,15 @@ fi
 # 9. Default-branch resolution one-liner: byte-identical everywhere --------------
 DB_PAT='DEFAULT_BRANCH=$(git symbolic-ref'
 occ_runner="$(grep -cF "$DB_PAT" "$SKILL_RUNNER")"
-occ_gh="$(grep -cF "$DB_PAT" "$SKILL_GH")"
+GH_INTERACTIVE="$ROOT/skills/gh-issue/interactive.md"   # gh-issue's worktree and teardown recipes
+occ_gh="$(cat "$SKILL_GH" "$GH_INTERACTIVE" | grep -cF "$DB_PAT")"
 if [ "$occ_runner" -eq 0 ] || [ "$occ_gh" -eq 0 ]; then
   err "default-branch resolution one-liner missing (issue-runner=$occ_runner gh-issue=$occ_gh occurrences)"
 else
-  variants="$(grep -hF "$DB_PAT" "$SKILL_RUNNER" "$SKILL_GH" | sort -u | grep -c .)"
+  variants="$(grep -hF "$DB_PAT" "$SKILL_RUNNER" "$SKILL_GH" "$GH_INTERACTIVE" | sort -u | grep -c .)"
   if [ "$variants" -ne 1 ]; then
     err "default-branch resolution one-liner drifted: $variants variants across $((occ_runner + occ_gh)) sites (must be byte-identical)"
-    grep -hF "$DB_PAT" "$SKILL_RUNNER" "$SKILL_GH" | sort -u | sed 's/^/  variant: /' >&2
+    grep -hF "$DB_PAT" "$SKILL_RUNNER" "$SKILL_GH" "$GH_INTERACTIVE" | sort -u | sed 's/^/  variant: /' >&2
   else
     ok "default-branch one-liner byte-identical across $((occ_runner + occ_gh)) sites"
   fi
@@ -556,22 +567,38 @@ if cmp -s "$SKILL_PLAN" "$CANON_PLAN"; then
 else
   err "issue-plan skill differs between ${SKILL_PLAN#"$ROOT"/} and ${CANON_PLAN#"$ROOT"/} (copy the Claude skill over the canonical file)"
 fi
+# The Markdown files SKILL.md links one level deep are ported the same way.
+plan_md_ok=1
+for f in "$ROOT"/skills/issue-plan/*.md "$ROOT"/codex/issue-runner/canonical/issue-plan/*.md; do
+  b=${f##*/}; [ "$b" = SKILL.md ] && continue
+  if ! cmp -s "$ROOT/skills/issue-plan/$b" "$ROOT/codex/issue-runner/canonical/issue-plan/$b"; then
+    err "issue-plan $b differs or is missing between skills/issue-plan/ and codex/issue-runner/canonical/issue-plan/"; plan_md_ok=0
+  fi
+done
+[ "$plan_md_ok" -eq 1 ] && ok "issue-plan linked Markdown files byte-identical in both editions"
 
 # 16. Prose review profile: one contract in both editions -------------------------
-# gh-issue's Step 8 "Review profile" section (authority, revoke-only guard, the
-# fixed profile text, prose triage) and the Phase 2 prose invocation must be
+# gh-issue's review-profile.md "Review profile" section (authority, revoke-only
+# guard, the fixed profile text, prose triage) and its prose gate block must be
 # byte-identical across editions; the dispatch line the runner writes must be
 # the one gh-issue honors, in both editions.
-profile_section() {   # the "#### Review profile" section, up to the next ####
-  awk '/^#### Review profile/ {f=1; print; next} f && /^#### / {exit} f {print}' "$1"
+GH_PROFILE="$ROOT/skills/gh-issue/review-profile.md"
+CANON_GH_PROFILE="$ROOT/codex/issue-runner/canonical/gh-issue/review-profile.md"
+profile_section() {   # the "## Review profile" section, up to the next ##
+  awk '/^## Review profile/ {f=1; print; next} f && /^## / {exit} f {print}' "$1"
 }
 prose_invocation() {  # the bash block that runs `codex review ... -` from the prompt file
   awk '/^```bash$/ {buf=""; f=1; next} f && /^```$/ {if (buf ~ /codex-prompt-/) {printf "%s", buf; exit} f=0; next} f {buf = buf $0 "\n"}' "$1"
 }
 prof_ok=1
-for f in "$SKILL_GH" "$CANON_GH"; do
+for f in "$GH_PROFILE" "$CANON_GH_PROFILE"; do
   [ -n "$(profile_section "$f")" ] || { err "gh-issue Review profile section missing from ${f#"$ROOT"/}"; prof_ok=0; }
   [ -n "$(prose_invocation "$f")" ] || { err "gh-issue prose Codex invocation missing from ${f#"$ROOT"/}"; prof_ok=0; }
+done
+for f in "$SKILL_GH" "$CANON_GH"; do
+  # Under prose a failed pass 1 never falls back to a merge without the gate.
+  grep -qF 'under prose, Block `Codex gate failed under the prose profile (exit E)`' "$f" \
+    || { err "gh-issue prose pass-1 failure blocker missing from ${f#"$ROOT"/}"; prof_ok=0; }
   grep -qF 'Review profile: prose (user-authorized for issue #<number>)' "$f" \
     || { err "gh-issue dispatch-line contract missing from ${f#"$ROOT"/}"; prof_ok=0; }
   grep -qF 'Optional flag: `--review-profile standard|prose`' "$f" \
@@ -579,50 +606,60 @@ for f in "$SKILL_GH" "$CANON_GH"; do
   grep -qF "unknown review profile '<name>' (expected standard or prose)" "$f" \
     || { err "gh-issue unknown-profile refusal missing from ${f#"$ROOT"/}"; prof_ok=0; }
 done
-if [ "$(profile_section "$SKILL_GH")" != "$(profile_section "$CANON_GH")" ]; then
+if [ "$(profile_section "$GH_PROFILE")" != "$(profile_section "$CANON_GH_PROFILE")" ]; then
   err "gh-issue Review profile section differs between editions"; prof_ok=0
 fi
-if [ "$(prose_invocation "$SKILL_GH")" != "$(prose_invocation "$CANON_GH")" ]; then
+if [ "$(prose_invocation "$GH_PROFILE")" != "$(prose_invocation "$CANON_GH_PROFILE")" ]; then
   err "gh-issue prose Codex invocation differs between editions"; prof_ok=0
+fi
+# Issue #73: the profile text comes only from this run's GATE_DIR, and a failed
+# write (a pre-planted file it cannot replace) stops the prose run.
+if ! bash "$ROOT/scripts/test-review-profile.sh" "$GH_PROFILE" "$CANON_GH_PROFILE" >"$TMP/test-review-profile.out" 2>&1; then
+  err "review-profile fixtures failed (scripts/test-review-profile.sh):"; cat "$TMP/test-review-profile.out" >&2; prof_ok=0
 fi
 for f in "$SKILL_RUNNER" "$CANON_RUNNER"; do
   grep -qF '`- Review profile: prose (user-authorized for issue #<N>)`' "$f" \
     || { err "issue-runner Step 3a prose dispatch line missing from ${f#"$ROOT"/}"; prof_ok=0; }
-  grep -qF '**Retry under the prose profile**' "$f" \
-    || { err "issue-runner Step 4 prose-retry offer missing from ${f#"$ROOT"/}"; prof_ok=0; }
+  grep -qF '**Retry under the prose profile**' "${f%/SKILL.md}/escalations.md" \
+    || { err "issue-runner Step 4 prose-retry offer missing from ${f#"$ROOT"/} (its escalations.md)"; prof_ok=0; }
 done
-[ "$prof_ok" -eq 1 ] && ok "prose review profile: gh-issue section and invocation byte-identical in both editions; dispatch line agrees (4 files)"
+[ "$prof_ok" -eq 1 ] && ok "prose review profile: gh-issue section and invocation byte-identical in both editions; profile-text fixtures pass; dispatch line agrees"
 
 # 17. Reviewer and gate liveness: one contract in both editions ------------------
 # gh-issue's Step 8 "Liveness" section and the standard Phase 2 launch block
 # (per-pass files, watchdog, .exit from the same subshell) must be byte-identical
 # across editions, and no fixed /tmp gate-output name may come back.
-liveness_section() {   # the "#### Liveness" section, up to the next ####
-  awk '/^#### Liveness/ {f=1; print; next} f && /^#### / {exit} f {print}' "$1"
+GH_LOOP="$ROOT/skills/gh-issue/review-loop.md"
+CANON_GH_LOOP="$ROOT/codex/issue-runner/canonical/gh-issue/review-loop.md"
+liveness_section() {   # the "## Liveness" section, up to the next ##
+  awk '/^## Liveness/ {f=1; print; next} f && /^## / {exit} f {print}' "$1"
 }
 gate_launch() {        # the bash block that runs `codex review ... --base`
   awk '/^```bash$/ {buf=""; f=1; next} f && /^```$/ {if (buf ~ /codex review -c model=[^ ]+ --base/) {printf "%s", buf; exit} f=0; next} f {buf = buf $0 "\n"}' "$1"
 }
 live_ok=1
-for f in "$SKILL_GH" "$CANON_GH"; do
+for f in "$GH_LOOP" "$CANON_GH_LOOP"; do
   [ -n "$(liveness_section "$f")" ] || { err "gh-issue Liveness section missing from ${f#"$ROOT"/}"; live_ok=0; }
-  for blk in gate_launch prose_invocation; do
+done
+for f in "$GH_LOOP:gate_launch" "$CANON_GH_LOOP:gate_launch" "$GH_PROFILE:prose_invocation" "$CANON_GH_PROFILE:prose_invocation"; do
+  blk="${f##*:}"; f="${f%:*}"
+  {
     "$blk" "$f" | grep -qF '&& printf '"'"'%s\n'"'"' "$RC" >"$G.exit"' \
       || { err "gh-issue $blk block does not write .exit from its own subshell in ${f#"$ROOT"/}"; live_ok=0; }
-  done
+  }
 done
-if [ "$(liveness_section "$SKILL_GH")" != "$(liveness_section "$CANON_GH")" ]; then
+if [ "$(liveness_section "$GH_LOOP")" != "$(liveness_section "$CANON_GH_LOOP")" ]; then
   err "gh-issue Liveness section differs between editions"; live_ok=0
 fi
-if [ "$(gate_launch "$SKILL_GH")" != "$(gate_launch "$CANON_GH")" ]; then
+if [ "$(gate_launch "$GH_LOOP")" != "$(gate_launch "$CANON_GH_LOOP")" ]; then
   err "gh-issue gate launch block differs between editions"; live_ok=0
 fi
-for f in "$SKILL_GH" "$CANON_GH" "$SKILL_RUNNER" "$CANON_RUNNER"; do
+for f in "$GH_LOOP" "$CANON_GH_LOOP" "$SKILL_RUNNER" "$CANON_RUNNER"; do
   grep -qF 'Silent-reviewer fallback: inline review authorized' "$f" \
     || { err "silent-reviewer fallback dispatch line missing from ${f#"$ROOT"/}"; live_ok=0; }
 done
-if grep -rn '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex" >/dev/null; then
-  err "fixed /tmp Codex gate paths still referenced: $(grep -rln '/tmp/codex-review-\|/tmp/codex-prompt-' "$ROOT/skills" "$ROOT/codex" | tr '\n' ' ')"; live_ok=0
+if grep -rn '/tmp/codex-review-\|/tmp/codex-prompt-\|/tmp/review-profile' "$ROOT/skills" "$ROOT/codex" >/dev/null; then
+  err "fixed /tmp Codex gate or review-profile paths still referenced: $(grep -rln '/tmp/codex-review-\|/tmp/codex-prompt-\|/tmp/review-profile' "$ROOT/skills" "$ROOT/codex" | tr '\n' ' ')"; live_ok=0
 fi
 [ "$live_ok" -eq 1 ] && ok "reviewer and gate liveness: gh-issue section and launch block byte-identical in both editions; no fixed /tmp gate paths"
 
@@ -668,15 +705,24 @@ if [ -z "$(vc_section "$SKILL_GH")" ] || [ "$(vc_section "$SKILL_GH")" != "$(vc_
 fi
 # Those shared sections point at gh-issue's REFERENCE.md rationale entries, so the
 # Codex edition ships the same file.
-cmp -s "$ROOT/skills/gh-issue/REFERENCE.md" "$ROOT/codex/issue-runner/canonical/gh-issue/REFERENCE.md" \
-  || { err "skills/gh-issue/REFERENCE.md missing or differs from codex/issue-runner/canonical/gh-issue/REFERENCE.md"; bundled_ok=0; }
+# The Codex gh-issue wrapper reads the canonical SKILL.md, which links the
+# files beside it one level deep: every gh-issue Markdown file ships byte-identical.
+for f in "$ROOT"/skills/gh-issue/*.md; do
+  c="$ROOT/codex/issue-runner/canonical/gh-issue/${f##*/}"
+  cmp -s "$f" "$c" \
+    || { err "${f#"$ROOT"/} missing or differs from ${c#"$ROOT"/} (copy the Claude file over it)"; bundled_ok=0; }
+done
+for c in "$ROOT"/codex/issue-runner/canonical/gh-issue/*.md; do
+  [ -f "$ROOT/skills/gh-issue/${c##*/}" ] || { err "${c#"$ROOT"/} has no original in skills/gh-issue/"; bundled_ok=0; }
+done
 # The Codex issue-runner reads a canonical copy of the orchestrator procedure;
 # every Codex difference lives in its wrapper skill, so the copy stays exact.
-for f in SKILL.md REFERENCE.md; do
+# Its linked Markdown files (one level deep) are part of that procedure too.
+for f in $(for p in SKILL.md REFERENCE.md "$ROOT"/skills/issue-runner/*.md "$ROOT"/codex/issue-runner/canonical/issue-runner/*.md; do printf '%s\n' "${p##*/}"; done | sort -u); do
   cmp -s "$ROOT/skills/issue-runner/$f" "$ROOT/codex/issue-runner/canonical/issue-runner/$f" \
     || { err "skills/issue-runner/$f missing or differs from codex/issue-runner/canonical/issue-runner/$f (copy the Claude file over it; Codex differences go in codex/issue-runner/skills/issue-runner/SKILL.md)"; bundled_ok=0; }
 done
-[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section, gh-issue REFERENCE.md and issue-runner SKILL.md/REFERENCE.md byte-identical in both editions"
+[ "$bundled_ok" -eq 1 ] && ok "bundled scripts parse ($n_bundled); Codex copies byte-identical ($n_pairs pairs); Validation contract section, every gh-issue and issue-runner Markdown file byte-identical in both editions"
 
 # 19. Merge-proof and PR-shape classification fixtures ----------------------------
 TEST_CLASSIFY="$ROOT/skills/issue-runner/scripts/test-classify.sh"
@@ -731,26 +777,32 @@ else
 fi
 
 # 23. Spec size ceilings -----------------------------------------------------------
-# Procedure stays in SKILL.md; rationale lives in REFERENCE.md. The ceilings stop
-# the specs regrowing: `wc -w` words per file, and no line longer than the limit.
+# Anthropic's skill-authoring guideline: keep the SKILL.md body under 500 lines
+# and split the rest into files one level deep. The word ceiling stops long lines
+# from absorbing the length; the line ceiling stops one line from absorbing it.
+MAX_BODY_LINES=500
+MAX_BODY_WORDS=5000
 MAX_LINE_CHARS=1500
 size_ok=1
-while IFS='|' read -r f ceiling; do
+for f in "$ROOT"/skills/*/SKILL.md; do
   { [ -f "$f" ] && [ -r "$f" ]; } || { err "${f#"$ROOT"/} missing or unreadable (spec size ceilings)"; size_ok=0; continue; }
-  words="$(wc -w < "$f" | tr -d ' ')"
-  case $words in ''|*[!0-9]*) err "${f#"$ROOT"/}: cannot count words"; size_ok=0; continue ;; esac
-  if [ "$words" -gt "$ceiling" ]; then
-    err "${f#"$ROOT"/} has $words words, over its ceiling of $ceiling"; size_ok=0
+  # Body = everything after the closing `---` of the leading frontmatter block.
+  body="$(LC_ALL=C awk 'NR == 1 && $0 == "---" { fm = 1; next } fm && $0 == "---" { fm = 0; next } !fm' "$f")"
+  lines="$(printf '%s\n' "$body" | wc -l | tr -d ' ')"
+  words="$(printf '%s\n' "$body" | LC_ALL=C wc -w | tr -d ' ')"
+  case $lines$words in ''|*[!0-9]*) err "${f#"$ROOT"/}: cannot count lines or words"; size_ok=0; continue ;; esac
+  if [ "$lines" -gt "$MAX_BODY_LINES" ]; then
+    err "${f#"$ROOT"/} body has $lines lines, over the ceiling of $MAX_BODY_LINES"; size_ok=0
   fi
-  longest="$(awk '{ n = length($0); if (n > m) m = n } END { print m + 0 }' "$f")"
+  if [ "$words" -gt "$MAX_BODY_WORDS" ]; then
+    err "${f#"$ROOT"/} body has $words words, over the ceiling of $MAX_BODY_WORDS"; size_ok=0
+  fi
+  longest="$(LC_ALL=C awk '{ n = length($0); if (n > m) m = n } END { print m + 0 }' "$f")"
   if [ "$longest" -gt "$MAX_LINE_CHARS" ]; then
     err "${f#"$ROOT"/} has a $longest-character line, over the ceiling of $MAX_LINE_CHARS"; size_ok=0
   fi
-done <<EOF_SIZE
-$SKILL_RUNNER|11000
-$SKILL_GH|9000
-EOF_SIZE
-[ "$size_ok" -eq 1 ] && ok "spec size ceilings hold (issue-runner SKILL.md <= 11000 words, gh-issue SKILL.md <= 9000, lines <= $MAX_LINE_CHARS chars)"
+done
+[ "$size_ok" -eq 1 ] && ok "spec size ceilings hold (every skills/*/SKILL.md body <= $MAX_BODY_LINES lines and <= $MAX_BODY_WORDS words, lines <= $MAX_LINE_CHARS chars)"
 
 # 24. Issue-runner heading and flag parity between editions ------------------------
 # The `## `/`### ` heading lines and the `--flag` names of the Claude edition's
@@ -808,7 +860,7 @@ else
   err "$TEST_PLAN_FILE not found"
 fi
 pf_ok=1
-for f in "$PLAN_FILE_SH" "$SKILL_PLAN" "$CANON_PLAN"; do
+for f in "$PLAN_FILE_SH" "$TMPL_PLAN" "$CANON_TMPL_PLAN"; do
   for s in '## Plan file' '```issue-runner-plan'; do
     grep -qF -- "$s" "$f" 2>/dev/null \
       || { err "plan-file contract string '$s' missing from ${f#"$ROOT"/}"; pf_ok=0; }
@@ -841,6 +893,58 @@ for f in setup.sh check.sh teardown.sh; do
   [ -f "$ROOT/scripts/smoke/$f" ] || { err "scripts/smoke/$f missing"; smoke_ok=0; }
 done
 [ "$smoke_ok" -eq 1 ] && ok "smoke-test scripts parse ($n_smoke; scripts/smoke/, never executed by lint)"
+
+# 28. Rationale pointers and one-level references resolve ---------------------------
+# Forms: (why: <entry>), (why: <entry>; <entry>), (why: <skill> REFERENCE.md, <entry>).
+# Entries may themselves contain parentheses; the awk scanner tracks the depth.
+# The extraction is written to a file and its exit status checked, so a failing
+# extractor fails lint instead of reading as "no pointers".
+extract_why() {
+  LC_ALL=C awk '{
+    line = $0
+    while ((i = index(line, "(why: ")) > 0) {
+      rest = substr(line, i + 6); depth = 1; out = ""
+      for (j = 1; j <= length(rest); j++) {
+        c = substr(rest, j, 1)
+        if (c == "(") depth++
+        else if (c == ")") { depth--; if (depth == 0) break }
+        out = out c
+      }
+      if (depth == 0) print out
+      line = substr(rest, j + 1)
+    }
+  }' "$1"
+}
+ptr_ok=1; n_ptr=0
+for d in "$ROOT"/skills/*/; do
+  d=${d%/}
+  for f in "$d"/*.md "$d"/*/*.md; do
+    [ -f "$f" ] || continue
+    extract_why "$f" >"$TMP/why.txt" || { err "cannot extract (why: …) pointers from ${f#"$ROOT"/}"; ptr_ok=0; continue; }
+    while IFS= read -r ptr; do
+      [ -n "$ptr" ] || continue
+      ref="$d/REFERENCE.md"
+      case $ptr in
+        *" REFERENCE.md, "*) ref="$ROOT/skills/${ptr%% REFERENCE.md, *}/REFERENCE.md"; ptr=${ptr#* REFERENCE.md, } ;;
+      esac
+      rest=$ptr
+      while [ -n "$rest" ]; do
+        entry=${rest%%; *}; [ "$entry" = "$rest" ] && rest="" || rest=${rest#*; }
+        [ "$entry" = "<entry>" ] && continue
+        n_ptr=$((n_ptr + 1))
+        if [ ! -f "$ref" ] || ! grep -qF -- "- **$entry.**" "$ref"; then
+          err "${f#"$ROOT"/}: (why: $entry) has no '- **$entry.**' entry in ${ref#"$ROOT"/}"; ptr_ok=0
+        fi
+      done
+    done <"$TMP/why.txt"
+  done
+  # Relative Markdown links from SKILL.md must point at files that exist.
+  while IFS= read -r link; do
+    case $link in http*|\#*|'') continue ;; esac
+    [ -f "$d/${link%%#*}" ] || { err "${d#"$ROOT"/}/SKILL.md links to missing file $link"; ptr_ok=0; }
+  done < <(grep -o '\]([^)]*\.md[^)]*)' "$d/SKILL.md" 2>/dev/null | sed 's/^](//; s/)$//')
+done
+[ "$ptr_ok" -eq 1 ] && ok "rationale pointers resolve ($n_ptr) and SKILL.md's Markdown links exist"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
