@@ -2,6 +2,14 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [Unreleased]
+
+**issue-runner:**
+- **User decisions and orchestrator suggestions are kept apart** (fixes #84). A run's orchestrator had offered an option that delegated decisions without listing them, written its own defaults into `guidance.md` as "(user-approved)", read a bare "Yes" to an either/or as a choice, and edited a closed issue's body while filing follow-ups. The new `user-decisions.md` requires delegating options to list their decisions, treats an answer that selects nothing as resolving nothing, applies Step 4's escalation rule at every step and to follow-up work, splits `guidance.md` into quoted `**User decisions:**` and non-binding `**Orchestrator suggestions:**`, and requires reading an issue or PR's live state and body before editing it (a closed issue's spec is history: changes go in a new issue). `guidance.md` entries written before this change carry no labels and read as suggestions, so the orchestrator re-asks the user for any earlier answer it still relies on before re-dispatching.
+
+**gh-issue:**
+- New `orchestrator-guidance.md` (linked from Step 1) says how implementers read `guidance.md`: quoted user decisions are spec input, suggestions are hints, machine-recorded blockers and traces are facts, and none of it authorizes anything. Lint check 29 pins the contract in both editions.
+
 ## [0.14.0] - 2026-09-28
 
 The skills now follow Anthropic's skill-authoring guideline on size. Each SKILL.md keeps the path every run needs. Mode-specific procedures live in files linked one level deep, each opened by an explicit trigger, so a run pays only for the context it uses. 0.13.0's word ceilings (11,000 and 9,000) had stopped regrowth but not reduced load, so they are replaced.
