@@ -81,7 +81,7 @@ Per issue, `issue-N/`: `details.json`, `error`, optional `guidance.md`; `status`
 {"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|skipped|n/a","security_lens":true,"review_profile":"standard|prose|revoked","blocker":null}
 ```
 
-It is **advisory for status, authoritative for telemetry**, and `progress` is **informational only**. **Unreadable** — anything but one JSON object with an `outcome` of `merged`/`blocker`/`failed`/`ready` and a non-empty `worktree` — counts as absent. Details: [state-files.md](state-files.md).
+It is **advisory for status, authoritative for telemetry**, and `progress` is **informational only**. **Unreadable** — anything but a one-line JSON object with an `outcome` of `merged`/`blocker`/`failed`/`ready` and a non-empty `worktree` — counts as absent. Details: [state-files.md](state-files.md).
 
 ## Recovery
 

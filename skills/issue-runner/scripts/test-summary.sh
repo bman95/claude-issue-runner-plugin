@@ -157,7 +157,7 @@ has "hung + failed -> error verbatim" '`implementer hung (no completion): progre
 
 # --- Numbers are decimal, titles are unescaped, odd statuses are contained ------------------
 reset; scope 1 2 3
-issue 1 done 'A & B é'; result 1 merged 09 converged false 08 clean pass created standard null
+issue 1 done 'A \u0026 B \u0060 \u005c \u007f \u00e9'; result 1 merged 09 converged false 08 clean pass created standard null
 printf '08\n' > "$S/issue-1/retries"
 issue 2 'a|b'; clean_result 2
 issue 3 done; result 3 merged 99999999999999999999 converged false 1 clean pass created standard null
@@ -165,7 +165,7 @@ run "$S" 3
 rc_is "leading zeros and huge numbers: exit 0" 0
 has "leading-zero retries and counts do not abort the loop" '- #1: phase1 iterations=09; gate passes=08; checks=pass; checkpoint=created; retries=8'
 has "later issues still print after a leading-zero value" '| #2 | unknown |'
-has "a \\u0026 escape in a title is decoded" 'A & B é'
+has "\\u escapes in a title are decoded and sanitized" 'A & B '"'"' / '
 has "a huge phase1_iterations counts as 0" 'totals: phase1 iterations=11; gate passes=10'
 # agents: issue 1 (1+8)*2 + 2*9 = 36; issue 2: 2 + 2*2 = 6; issue 3: 2 -> 44
 has "agent arithmetic is decimal" 'Actual agents: 44 '
@@ -181,6 +181,14 @@ hasnt "an injected link never reaches the output" 'http://e'
 hasnt "an injected mention never reaches the output" '@team'
 has "a status outside the word set is unknown" '| #2 | unknown |'
 has "duplicate scope entries count once" '(estimate: 8–24)'
+
+# --- A spaced one-line result.json reads like the compact one ------------------------------
+reset; scope 1
+issue 1 blocked
+printf '{"outcome": "blocker", "pr": 5, "branch": "b", "worktree": "/w x", "phase1_iterations": 2, "phase1_inline": false, "phase1_state": "converged", "gate_passes": 1, "gate_state": "clean", "checks": "none", "checkpoint": "skipped", "security_lens": false, "review_profile": "standard", "blocker": "a, \\"checkpoint\\": \\"refused\\""}\n' > "$S/issue-1/result.json"
+run "$S" 3
+has "spaced result.json is read" '- #1: phase1 iterations=2; gate passes=1; checks=none; checkpoint=skipped; retries=0'
+has "spaced result.json still flags a skipped checkpoint" '  ! checkpoint skipped'
 
 # --- Missing per-issue pieces never fail --------------------------------------------------
 reset; scope 7
@@ -198,6 +206,8 @@ case $2 in
   2) printf 'branch feat/issue-2-x no open PR (only merged or closed PRs: #6)\n' ;;
   3) printf 'pr #7 fork/issue-3-x shape unknown (branch not on origin)\n' ;;
   4) echo "gh exploded" >&2; exit 1 ;;
+  7) printf 'pr #8 feat/issue-7-x@team draft (checkpoint)\nbranch `evil` | [l](http://e) no open PR\n' ;;
+  8) printf 'bad `tick` @org\nsecond | line\n' >&2; exit 1 ;;
   *) printf 'none\n' ;;
 esac
 EOF
@@ -217,6 +227,12 @@ if grep -qx 'pr-shape 1 main' "$STUB_LOG" && grep -qx 'pr-shape 4 main' "$STUB_L
 else
   err "pr-shape: unexpected classifier calls:"; sed 's/^/  > /' "$STUB_LOG" >&2
 fi
+reset; scope 7 8; issue 7 blocked; issue 8 failed
+run "$S" 3 main
+has "pr-shape: each hostile shape line is a code span" '  `branch '"'"'evil'"'"' \| [l](http://e) no open PR`'
+has "pr-shape: a hostile branch name stays inside a code span" '  `pr #8 feat/issue-7-x@team draft (checkpoint)`'
+has "pr-shape: a hostile stderr line is a code span" '#8: PR shape unknown: `bad '"'"'tick'"'"' @org`'
+hasnt "pr-shape: only the first stderr line is used" 'second'
 : > "$STUB_LOG"
 run "$S" 3
 hasnt "no default branch -> no pr-shape section" 'Unfinished PRs'
@@ -238,6 +254,8 @@ run "$S" 3;                       rc_is "missing scope.txt -> exit 2" 2
 run "$S" 3;                       rc_is "empty scope.txt -> exit 2" 2
 printf '1\nabc\n' > "$S/scope.txt"
 run "$S" 3;                       rc_is "non-numeric scope entry -> exit 2" 2
+printf '*\n' > "$S/scope.txt"
+run "$S" 3;                       rc_is "a glob in scope.txt is refused, never expanded -> exit 2" 2
 printf '1 \r\n' > "$S/scope.txt"
 run "$S" 3;                       rc_is "CRLF and trailing space in scope.txt tolerated -> exit 0" 0
 

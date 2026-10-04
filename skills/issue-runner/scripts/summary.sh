@@ -45,13 +45,14 @@
 # Exit status: 0 on success; 2 a usage error or an unreadable/empty scope.txt.
 # A missing or unreadable per-issue file is never an error (it prints as absent).
 #
-# result.json is parsed as the compact one-line object gh-issue writes (no space
-# after a colon); a pretty-printed one reads as `no result recorded`.
+# result.json is read as one JSON line; whitespace outside its strings is dropped
+# first, so a spaced `"key": "value"` object reads like the compact one.
 #
 # Dependencies: bash 3.2, coreutils, grep, sed, awk.
 
 set -u
 set +e +o pipefail   # every exit status below is read explicitly
+set -f               # scope.txt entries are never glob-expanded
 
 usage() { echo "summary.sh: $1" >&2; exit 2; }
 
@@ -119,7 +120,7 @@ title_of() {
             h = tolower(substr(rest, i + 1, 4))
             if (h ~ /^00[0-7][0-9a-f]$/) {
               v = (index("0123456789abcdef", substr(h, 3, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 4, 1)) - 1
-              c = (v < 32) ? " " : sprintf("%c", v); i += 4
+              c = (v < 32 || v == 127) ? " " : sprintf("%c", v); i += 4
             } else c = "\\u"
           }
         }
@@ -146,6 +147,15 @@ load_result() {
   [ "$lines" = 1 ] || return 1
   raw=$(awk 'NF { print; exit }' "$f" 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
   case $raw in '{'*'}') ;; *) return 1 ;; esac
+  raw=$(printf '%s' "$raw" | awk '
+    { q = 0; e = 0; o = ""
+      for (i = 1; i <= length($0); i++) {
+        c = substr($0, i, 1)
+        if (q) { o = o c; if (e) e = 0; else if (c == "\\") e = 1; else if (c == "\"") q = 0 }
+        else if (c == "\"") { q = 1; o = o c }
+        else if (c != " " && c != "\t") o = o c
+      }
+      print o }')
   RJ=${raw%%,\"blocker\":*}
   case $(jv outcome) in merged|blocker|failed|ready) ;; *) RJ=""; return 1 ;; esac
   case $RJ in *'"worktree":""'*) RJ=""; return 1 ;; esac
@@ -227,7 +237,7 @@ for n in $SCOPE; do
   fi
 
   if [ -s "$d/profile" ]; then
-    src=$(pick "$(head -1 "$d/profile" | tr -d '\r' | awk '{ print $2 }')" flag escalation)
+    src=$(pick "$(rd "$d/profile" | head -1 | tr -d '\r' | awk '{ print $2 }')" flag escalation)
     case $prof_rt in
       prose|revoked|standard) eff=$prof_rt ;;
       *) eff="no result recorded" ;;
