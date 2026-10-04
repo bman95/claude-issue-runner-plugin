@@ -67,7 +67,11 @@
 #     starting `worktree: ` (a real exit; the interim form never has one). It
 #     reads only: it writes nothing (not `progress`, `status`,
 #     `outcome`, `blocker` or `error`), and on `interim` the caller leaves the
-#     issue `implementing` and classifies nothing.
+#     issue `implementing` and classifies nothing. With no readable
+#     result.json, a missing, unreadable or text-less (empty or whitespace-only)
+#     notification file exits 1: the write failed, so there is no verdict. The
+#     caller rewrites the file and re-runs; it never reads the exit as `final`
+#     or classifies from prose.
 #
 #   classify.sh worktree <N> <issue-dir>
 #     Step 3 item 4's worktree for a stopped implementer. The first match wins:
@@ -411,9 +415,10 @@ classify_notification() {
   if result_readable "$DIR/result.json"; then
     echo final; return 0
   fi
-  # No readable result and no notification file: the orchestrator's write failed
+  # No readable result and no notification text: the orchestrator's write failed
   # or never ran. That is an error, never a verdict (fail-open would be #80).
-  [ -r "$DIR/notification" ] || die "notification: $DIR/notification is missing or unreadable"
+  [ -r "$DIR/notification" ] && grep -aq '[^[:space:]]' "$DIR/notification" \
+    || die "notification: $DIR/notification is missing, unreadable or has no text"
   # The markers are positional, so a final message that merely quotes one (a
   # blocker report, the Step 10 text) stays final: the host's note is the first
   # line, the implementer's fixed form the last non-blank line.

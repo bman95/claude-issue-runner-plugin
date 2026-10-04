@@ -439,7 +439,12 @@ ncase "row 76: a final message with no marker, no result.json -> final (prose cl
 rm -f "$ND/notification" "$ND/result.json"
 check "no notification file and no result.json is an error, never a verdict" 1 "" -- notification 9 "$ND"
 : > "$ND/notification"
-check "an empty notification file and no result.json -> final" 0 "final" -- notification 9 "$ND"
+check "an empty notification file and no result.json is an error too" 1 "" -- notification 9 "$ND"
+printf ' \n\n' > "$ND/notification"
+check "a whitespace-only notification file and no result.json is an error too" 1 "" -- notification 9 "$ND"
+printf '%s\n' "$GOOD_RESULT" > "$ND/result.json"
+check "an empty notification file does not matter once result.json is readable -> final" 0 "final" -- notification 9 "$ND"
+rm -f "$ND/result.json"
 ncase "row 76: a readable result.json wins over the host's note -> final" final \
   "$HOST_NOTE" "$GOOD_RESULT"
 ncase "row 76: a readable result.json wins over the fixed form -> final" final \
