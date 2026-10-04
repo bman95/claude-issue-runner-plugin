@@ -966,6 +966,10 @@ for ed in "$ROOT/skills" "$ROOT/codex/issue-runner/canonical"; do
       grep -qF -- "$lbl" "$f" || { err "${f#"$ROOT"/} lacks the label $lbl"; ud_ok=0; }
     done
   done
+  for f in "$ed/issue-runner/user-decisions.md" "$ed/gh-issue/orchestrator-guidance.md"; do
+    grep -qF -- '## Run <' "$f" \
+      || { err "${f#"$ROOT"/} lacks the ## Run <timestamp> entry heading"; ud_ok=0; }
+  done
   grep -qF -- 'gh issue view <N> --json state,body' "$ed/issue-runner/user-decisions.md" \
     || { err "$rel/issue-runner/user-decisions.md lacks the live-state read before an edit"; ud_ok=0; }
   for f in "$ed/gh-issue/orchestrator-guidance.md" "$ed/gh-issue/SKILL.md"; do
