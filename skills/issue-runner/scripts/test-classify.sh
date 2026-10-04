@@ -443,9 +443,26 @@ ncase "result.json with an unknown outcome is unreadable -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"weird","pr":12,"worktree":"/w"}'
 ncase "a truncated result.json is unreadable -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":12,'
-rm -f "$ND/notification"; printf '%s\n%s\n' '{"outcome":"blocker","pr":12,"worktree":"/w"}' '{}' > "$ND/result.json"
-printf 'interim: waiting on codex gate pass 1\n' > "$ND/notification"
-check "a multi-line result.json is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
+ncase "a second object after the first is not one JSON object -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w"}{}'
+ncase "a second object on the next line is not one JSON object -> interim" interim \
+  "interim: waiting on codex gate pass 1" $'{"outcome":"blocker","pr":12,"worktree":"/w"}\n{}'
+ncase "trailing text after the object -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w"} x'
+ncase "a nested outcome and worktree are not top-level fields -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"extra":{"outcome":"blocker","worktree":"/w"}}'
+ncase "a top-level outcome but a nested worktree -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","extra":{"worktree":"/w"}}'
+ncase "a missing comma between fields -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker" "worktree":"/w"}'
+ncase "not an object (an array) -> interim" interim \
+  "interim: waiting on codex gate pass 1" '[{"outcome":"blocker","worktree":"/w"}]'
+ncase "a readable result with a nested object and braces inside a string -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","pr":12,"extra":{"a":[1,{"b":"}"}]},"worktree":"/w {x}","blocker":null}'
+ncase "a pretty-printed single object is still one JSON object -> final" final \
+  "interim: waiting on codex gate pass 1" $'{\n  "outcome": "failed",\n  "pr": null,\n  "worktree": "/w"\n}'
+ncase "an escaped quote in a string does not end it -> final" final \
+  "interim: waiting on codex gate pass 1" '{"blocker":"say \"hi\", {x}","outcome":"ready","worktree":"/w"}'
 check "notification: missing issue dir -> exit 2" 2 "" -- notification 9 "$TMP/no-such-dir"
 check "notification: missing issue-dir argument -> exit 2" 2 "" -- notification 9
 

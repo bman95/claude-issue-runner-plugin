@@ -329,12 +329,52 @@ classify_hang() {
   echo "implementer hung (no completion): progress unchanged for $(( ($(date +%s) - mtime + 59) / 60 ))m (--hang-minutes $1)"
 }
 
+# result_readable FILE: state-files.md's "readable" rule: the file is exactly one
+# JSON object (nothing after it) whose top-level `outcome` is merged, blocker,
+# failed or ready and whose top-level `worktree` is a non-empty string. A small
+# awk scanner tracks strings and nesting, so a nested `outcome` or a second
+# object after the first never counts. Exit 0 = readable.
+result_readable() {
+  [ -s "$1" ] || return 1
+  awk '
+    { s = s $0 "\n" }
+    END {
+      n = length(s); depth = 0; closed = 0; instr = 0; esc = 0; state = ""; smode = ""; bad = 0
+      for (i = 1; i <= n && !bad; i++) {
+        c = substr(s, i, 1)
+        if (instr) {
+          if (esc) { esc = 0; buf = buf c }
+          else if (c == "\\") { esc = 1; buf = buf c }
+          else if (c == "\"") {
+            instr = 0
+            if (smode == "key") { key = buf; state = "colon" }
+            else if (smode == "val") { val[key] = buf; state = "after" }
+          } else buf = buf c
+          continue
+        }
+        if (c == " " || c == "\t" || c == "\r" || c == "\n") continue
+        if (closed) { bad = 1; continue }
+        if (depth == 0) { if (c == "{") { depth = 1; state = "key" } else bad = 1; continue }
+        if (c == "\"") {
+          instr = 1; buf = ""; smode = ""
+          if (depth == 1) { if (state == "key") smode = "key"; else if (state == "val") smode = "val"; else bad = 1 }
+          continue
+        }
+        if (c == "{" || c == "[") { if (depth == 1 && state != "val") bad = 1; else { if (depth == 1) state = "nested"; depth++ } continue }
+        if (c == "}" || c == "]") { depth--; if (depth == 0) closed = 1; else if (depth == 1) state = "after"; continue }
+        if (depth > 1) continue
+        if (c == ":") { if (state == "colon") state = "val"; else bad = 1; continue }
+        if (c == ",") { if (state == "after") state = "key"; else bad = 1; continue }
+        if (state == "val") state = "after"   # a bare number, true, false or null
+        else if (state != "after") bad = 1
+      }
+      exit !(!bad && closed && !instr && depth == 0 && val["outcome"] ~ /^(merged|blocker|failed|ready)$/ && length(val["worktree"]) > 0)
+    }' "$1"
+}
+
 # classify_notification: final or interim (see the header). Read-only.
 classify_notification() {
-  local f="$DIR/result.json"
-  if [ -s "$f" ] && [ "$(grep -c '' "$f")" -eq 1 ] \
-     && grep -Eq '^[[:space:]]*\{.*"outcome"[[:space:]]*:[[:space:]]*"(merged|blocker|failed|ready)".*\}[[:space:]]*$' "$f" \
-     && grep -Eq '"worktree"[[:space:]]*:[[:space:]]*"[^"]' "$f"; then
+  if result_readable "$DIR/result.json"; then
     echo final; return 0
   fi
   # The markers are positional, so a final message that merely quotes one (a
