@@ -966,6 +966,10 @@ for ed in "$ROOT/skills" "$ROOT/codex/issue-runner/canonical"; do
       grep -qF -- "$lbl" "$f" || { err "${f#"$ROOT"/} lacks the label $lbl"; ud_ok=0; }
     done
   done
+  grep -qF -- 'gh issue view <N> --json state,body' "$ed/issue-runner/user-decisions.md" \
+    || { err "$rel/issue-runner/user-decisions.md lacks the live-state read before an edit"; ud_ok=0; }
+  grep -qF -- 'Suggested (unconfirmed)' "$ed/gh-issue/orchestrator-guidance.md" \
+    || { err "$rel/gh-issue/orchestrator-guidance.md lacks the Suggested (unconfirmed) reading"; ud_ok=0; }
   grep -qF -- '**User decisions:**' "$ed/gh-issue/orchestrator-guidance.md" \
     || { err "$rel/gh-issue/orchestrator-guidance.md lacks the label **User decisions:**"; ud_ok=0; }
 done

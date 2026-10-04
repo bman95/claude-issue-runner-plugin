@@ -26,14 +26,14 @@ Never retry these four within the run, under the cap or at it (no at-cap questio
 
 ## Escalations, cheapest first
 
-- **Retry the implementer.** Append a `## Retry K` section to `$STATE_DIR/issue-N/guidance.md` (K = the counter's new value, 1 for the first retry) with `**Blocker:**` — the `error` file verbatim, or the agent's returned message when none was saved — then `**Guidance:**` — the user's words quoted under `**User decisions:**`, yours and any finding text under `**Orchestrator suggestions (non-binding):**` ([user-decisions.md](user-decisions.md)). Increment the counter **before** re-dispatching, self-resolved or user-authorized:
+- **Retry the implementer.** Append a `## Retry K` section to `$STATE_DIR/issue-N/guidance.md` (K = the counter's new value, 1 for the first retry) with, in this order ([user-decisions.md](user-decisions.md)): the user's words quoted under `**User decisions:**`; yours and any finding text under `**Orchestrator suggestions (non-binding):**`; then `**Blocker:**` — the `error` file verbatim, or the agent's returned message when none was saved. Increment the counter **before** re-dispatching, self-resolved or user-authorized:
 
   ```bash
   RETRIES=$(cat "$STATE_DIR/issue-$N/retries" 2>/dev/null || echo 0)
   printf '%s\n' "$((RETRIES + 1))" > "$STATE_DIR/issue-$N/retries"
   ```
 
-  **Roll the increment back if the dispatch itself never happened.** This retry's `Agent` call hits Step 3a's credit/usage-limit failure → restore `retries` (`printf '%s\n' "$RETRIES" > "$STATE_DIR/issue-$N/retries"`) and remove the `## Retry K` section just appended; the next real retry reuses `K` (why: Why a retry that never dispatched is rolled back).
+  **Roll the increment back if the dispatch itself never happened.** This retry's `Agent` call hits Step 3a's credit/usage-limit failure → restore `retries` (`printf '%s\n' "$RETRIES" > "$STATE_DIR/issue-$N/retries"`) and remove the `## Retry K` section just appended, carrying its `**User decisions:**` quotes into the next entry; the next real retry reuses `K` (why: Why a retry that never dispatched is rolled back).
 
   Re-dispatch per Step 3a **without** `isolation: worktree`, adding the existing worktree path (`cd` there first; continue on its checked-out branch; skip the Step 4 checkpoint) and the existing PR number (push to the same PR). A `branch` file is kept: item 5's proof still needs a non-contract branch.
   - Blocker before gh-issue Step 7 and no PR → omit the PR number: the implementer keeps the branch checked out, creates its feature branch per gh-issue Step 4 only if that is still the `worktree-agent-*` scratch branch, runs the checkpoint unless the branch is already on the remote (`git ls-remote`), and opens the PR (draft checkpoint, or plain at Step 7 where drafts are refused).
