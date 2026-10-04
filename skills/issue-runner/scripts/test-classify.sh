@@ -418,6 +418,8 @@ ncase "the fixed form with CRLF line endings -> interim" interim \
   $'interim: waiting on codex gate pass 1\r' ""
 ncase "the fixed form with nothing after it is not a marker -> final" final \
   "interim: waiting on " ""
+ncase "the fixed form with only trailing spaces after it is not a marker -> final" final \
+  "interim: waiting on   " ""
 ncase "the fixed form quoted mid-message, not last -> final" final \
   $'interim: waiting on codex gate pass 1\nBlocker: spec ambiguity.\nworktree: /w' ""
 ncase "the fixed form indented -> final" final \

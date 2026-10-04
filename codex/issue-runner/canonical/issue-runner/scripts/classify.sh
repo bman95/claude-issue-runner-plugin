@@ -434,6 +434,7 @@ classify_notification() {
   case $first in
     "This agent stopped with background work of its own still running"*) echo interim; return 0 ;;
   esac
+  last=$(printf '%s' "$last" | sed 's/[[:space:]]*$//')
   case $last in
     "interim: waiting on "?*) echo interim ;;
     *) echo final ;;
