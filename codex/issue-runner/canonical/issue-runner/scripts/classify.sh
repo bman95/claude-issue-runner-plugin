@@ -63,7 +63,9 @@
 #     still running` is the file's first line (the caller writes it there,
 #     ahead of the message) or the last non-blank line starts `interim:
 #     waiting on <what>` (gh-issue's fixed form). A marker anywhere else is
-#     quoted text and stays `final`. It reads only: it writes nothing (not `progress`, `status`,
+#     quoted text and stays `final`, and so does any message with a line
+#     starting `worktree: ` (a real exit; the interim form never has one). It
+#     reads only: it writes nothing (not `progress`, `status`,
 #     `outcome`, `blocker` or `error`), and on `interim` the caller leaves the
 #     issue `implementing` and classifies nothing.
 #
@@ -339,6 +341,12 @@ classify_notification() {
   # blocker report, the Step 10 text) stays final: the host's note is the first
   # line, the implementer's fixed form the last non-blank line.
   local first last
+  # A final message always carries a `worktree:` line (gh-issue's dispatch); the
+  # interim form never does. So even with the host's note leading, a message
+  # with that line is a real exit (a blocker whose result.json write failed).
+  if [ -s "$DIR/notification" ] && tr -d '\r' < "$DIR/notification" | grep -q '^worktree: '; then
+    echo final; return 0
+  fi
   first=$(head -n 1 "$DIR/notification" 2>/dev/null | tr -d '\r')
   last=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 1)
   case $first in

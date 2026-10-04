@@ -424,6 +424,12 @@ ncase "the host's phrase quoted on a later line of a final message -> final" fin
   $'Blocker: the agent stopped with background work of its own still running\nworktree: /w' ""
 ncase "the host's phrase not at the start of the first line -> final" final \
   "Blocker: This agent stopped with background work of its own still running" ""
+ncase "row 73: the host's note leading a final blocker message with a worktree: line -> final" final \
+  "$HOST_NOTE"$'\nBlocker: spec ambiguity.\nworktree: /w' ""
+ncase "a worktree: line beats the fixed form too -> final" final \
+  $'Blocker: x\nworktree: /w\ninterim: waiting on y' ""
+ncase "'worktree:' must start a line to count -> the host's note still wins" interim \
+  "$HOST_NOTE"$'\nsee worktree: /w' ""
 ncase "row 73: a final message with no marker, no result.json -> final (prose classification)" final \
   $'Blocker: spec ambiguity.\nworktree: /w' ""
 ncase "no notification text and no result.json -> final" final "" ""

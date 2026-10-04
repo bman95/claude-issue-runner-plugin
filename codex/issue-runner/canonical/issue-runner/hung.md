@@ -4,7 +4,7 @@ Read at Step 3 item 4 when the hang check prints the hung line, or when an in-fl
 
 **No `progress` file** (absent or empty): judge by relative silence — nothing long after its siblings finished, well past its issue's scale (why: Why a hung implementer is stopped, awaited, then classified).
 
-**Interim, then gone.** An interim notification (item 5) leaves the issue `implementing`, and the agent may then end without a further notification. If the host's agent list no longer shows it running and `bash "$CLASSIFY_SCRIPT" hang "$N" "$STATE_DIR/issue-$N" "$HANG_MINUTES"` prints the hung line, treat it as hung with the stop step already done (nothing to `TaskStop`). Never wait on it longer: an interim marker is the only thing that kept it `implementing` (why: Why an interim notification is not a result).
+**Interim, then gone.** An interim notification (item 5) leaves the issue `implementing`, and the agent may then end without a further notification. If the host's agent list no longer shows it running and either `bash "$CLASSIFY_SCRIPT" hang "$N" "$STATE_DIR/issue-$N" "$HANG_MINUTES"` prints the hung line or `progress` is absent or empty (error ending `: no progress file, relative-silence rule`), treat it as hung with the stop step already done (nothing to `TaskStop`). Never wait on it longer: an interim marker is the only thing that kept it `implementing` (why: Why an interim notification is not a result).
 
 **Hung route and `issue-N/notification`.** `rm -f "$STATE_DIR/issue-$N/notification"` before item 5, so a stale interim marker cannot make the hung classification read as interim.
 
