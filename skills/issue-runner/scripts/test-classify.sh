@@ -386,34 +386,60 @@ check "hang minutes must be a positive integer -> exit 2" 2 "" -- hang 8 "$HD" 0
 # An interim "Agent finished" (the implementer stopped with a gate pass of its own
 # running in the background) with no result.json and a fresh progress marker must
 # change nothing: no status, no outcome, no blocker, no error, no progress write.
+# Every case below writes its own notification text and result.json state.
 ND="$TMP/state/issue-9"; rm -rf "$ND"; mkdir -p "$ND"
 printf 'implementing\n' > "$ND/status"
 printf 'step=8.2 pass=1 pr=#12\n' > "$ND/progress"
 touch -t "$(date -d '-2 minutes' +%Y%m%d%H%M 2>/dev/null || date -v-2M +%Y%m%d%H%M)" "$ND/progress"
 nd_snapshot() { ( cd "$ND" && for f in *; do printf '%s %s %s\n' "$f" "$(cat "$f")" "$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")"; done ); }
-printf 'Agent finished: the agent stopped with background work of its own still running.\nGate pass 1 is running with gpt-6.1-sol; I will check the results when it finishes.\n' > "$ND/notification"
+HOST_NOTE='This agent stopped with background work of its own still running. It may resume on its own when that work completes.'
+# ncase NAME WANT NOTIFICATION RESULT_JSON ("" = no file / no notification file)
+ncase() {
+  rm -f "$ND/notification" "$ND/result.json"
+  [ -z "$3" ] || printf '%s\n' "$3" > "$ND/notification"
+  [ -z "$4" ] || printf '%s\n' "$4" > "$ND/result.json"
+  check "$1" 0 "$2" -- notification 9 "$ND"
+}
+GOOD_RESULT='{"outcome":"blocker","pr":12,"worktree":"/w","blocker":"x"}'
+ncase "row 73: the host's note as the first line, no result.json -> interim" interim \
+  "$HOST_NOTE"$'\nGate pass 1 is running with gpt-6.1-sol; I will check the results when it finishes.' ""
 nd_before=$(nd_snapshot)
-check "row 73: host's interim note, no result.json -> interim" 0 "interim" -- notification 9 "$ND"
-check "row 73: the same notification leaves a fresh progress marker un-hung" 0 "" -- hang 9 "$ND" 30
+check "row 73: the same state leaves a fresh progress marker un-hung" 0 "" -- hang 9 "$ND" 30
+check "row 73: ... and re-running the call is idempotent" 0 "interim" -- notification 9 "$ND"
 [ "$(nd_snapshot)" = "$nd_before" ] && ok "row 73: an interim notification changes no state file (status stays implementing, progress mtime untouched)" \
   || err "row 73: the notification mode modified the issue directory"
+ncase "row 73: the fixed form 'interim: waiting on <what>' as the only line -> interim" interim \
+  "interim: waiting on codex gate pass 1" ""
+ncase "the fixed form after other text, as the last non-blank line -> interim" interim \
+  $'Pass 1 launched.\ninterim: waiting on codex gate pass 1\n\n' ""
+ncase "the fixed form with CRLF line endings -> interim" interim \
+  $'interim: waiting on codex gate pass 1\r' ""
+ncase "the fixed form with nothing after it is not a marker -> final" final \
+  "interim: waiting on " ""
+ncase "the fixed form quoted mid-message, not last -> final" final \
+  $'interim: waiting on codex gate pass 1\nBlocker: spec ambiguity.\nworktree: /w' ""
+ncase "the fixed form indented -> final" final \
+  "  interim: waiting on x" ""
+ncase "the host's phrase quoted on a later line of a final message -> final" final \
+  $'Blocker: the agent stopped with background work of its own still running\nworktree: /w' ""
+ncase "the host's phrase not at the start of the first line -> final" final \
+  "Blocker: This agent stopped with background work of its own still running" ""
+ncase "row 73: a final message with no marker, no result.json -> final (prose classification)" final \
+  $'Blocker: spec ambiguity.\nworktree: /w' ""
+ncase "no notification text and no result.json -> final" final "" ""
+ncase "row 73: a readable result.json wins over the host's note -> final" final \
+  "$HOST_NOTE" "$GOOD_RESULT"
+ncase "row 73: a readable result.json wins over the fixed form -> final" final \
+  "interim: waiting on codex gate pass 1" "$GOOD_RESULT"
+ncase "row 73: result.json with an empty worktree is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":12,"worktree":"","blocker":"x"}'
+ncase "result.json with an unknown outcome is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"weird","pr":12,"worktree":"/w"}'
+ncase "a truncated result.json is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":12,'
+rm -f "$ND/notification"; printf '%s\n%s\n' '{"outcome":"blocker","pr":12,"worktree":"/w"}' '{}' > "$ND/result.json"
 printf 'interim: waiting on codex gate pass 1\n' > "$ND/notification"
-check "row 73: the fixed form 'interim: waiting on <what>' -> interim" 0 "interim" -- notification 9 "$ND"
-printf 'Some text\n  interim: waiting on x\n' > "$ND/notification"
-check "the fixed form must start the line -> final" 0 "final" -- notification 9 "$ND"
-printf 'Blocker: spec ambiguity.\nworktree: /w\n' > "$ND/notification"
-check "row 73: a final message with no interim marker, no result.json -> final (prose classification)" 0 "final" -- notification 9 "$ND"
-rm -f "$ND/notification"
-check "no notification text and no result.json -> final" 0 "final" -- notification 9 "$ND"
-printf 'interim: waiting on codex gate pass 1\n' > "$ND/notification"
-printf '{"outcome":"blocker","pr":12,"worktree":"/w","blocker":"x"}\n' > "$ND/result.json"
-check "row 73: a readable result.json wins over an interim marker -> final" 0 "final" -- notification 9 "$ND"
-printf '{"outcome":"blocker","pr":12,"worktree":"","blocker":"x"}\n' > "$ND/result.json"
-check "row 73: result.json with an empty worktree is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
-printf '{"outcome":"weird","pr":12,"worktree":"/w"}\n' > "$ND/result.json"
-check "result.json with an unknown outcome is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
-printf '{"outcome":"blocker","pr":12,\n' > "$ND/result.json"
-check "a truncated result.json is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
+check "a multi-line result.json is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
 check "notification: missing issue dir -> exit 2" 2 "" -- notification 9 "$TMP/no-such-dir"
 check "notification: missing issue-dir argument -> exit 2" 2 "" -- notification 9
 

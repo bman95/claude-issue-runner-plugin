@@ -127,9 +127,11 @@ fixture "wait: nothing ready, an implementer is in flight" \
   "wait"
 
 # Row 73: an interim completion notification leaves the issue `implementing`
-# (classify.sh notification, test-classify.sh), so the scheduler must keep
-# waiting: no cascade skip over its dependent chain, no cycle, no dispatch.
-fixture "row 73: implementing with a dependent chain -> wait, nothing skipped" \
+# (classify.sh notification, test-classify.sh, which proves the call writes
+# nothing). This fixture pins only the scheduler's half of that contract: an
+# `implementing` issue with a dependent chain yields `wait`, never a skip, a
+# cycle or a dispatch. Item 5's prose is not executable here.
+fixture "row 73: an implementing issue with a dependent chain -> wait, nothing skipped" \
   $'1:\n2: 1\n3: 2' "1=implementing 2=pending 3=pending" "" \
   "wait"
 

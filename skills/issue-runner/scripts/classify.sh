@@ -59,9 +59,11 @@
 #     with an `outcome` of merged/blocker/failed/ready and a non-empty
 #     `worktree`, the state-files.md rule), or when the text carries no
 #     interim marker. Prints `interim` when result.json is not readable and
-#     the text holds the host's note `stopped with background work of its own
-#     still running` or a line starting `interim: waiting on ` (gh-issue's
-#     fixed form). It reads only: it writes nothing (not `progress`, `status`,
+#     the host's note `This agent stopped with background work of its own
+#     still running` is the file's first line (the caller writes it there,
+#     ahead of the message) or the last non-blank line starts `interim:
+#     waiting on <what>` (gh-issue's fixed form). A marker anywhere else is
+#     quoted text and stays `final`. It reads only: it writes nothing (not `progress`, `status`,
 #     `outcome`, `blocker` or `error`), and on `interim` the caller leaves the
 #     issue `implementing` and classifies nothing.
 #
@@ -333,12 +335,19 @@ classify_notification() {
      && grep -Eq '"worktree"[[:space:]]*:[[:space:]]*"[^"]' "$f"; then
     echo final; return 0
   fi
-  if [ -s "$DIR/notification" ] \
-     && grep -Eq 'stopped with background work of its own still running|^interim: waiting on ' "$DIR/notification"; then
-    echo interim
-  else
-    echo final
-  fi
+  # The markers are positional, so a final message that merely quotes one (a
+  # blocker report, the Step 10 text) stays final: the host's note is the first
+  # line, the implementer's fixed form the last non-blank line.
+  local first last
+  first=$(head -n 1 "$DIR/notification" 2>/dev/null | tr -d '\r')
+  last=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 1)
+  case $first in
+    "This agent stopped with background work of its own still running"*) echo interim; return 0 ;;
+  esac
+  case $last in
+    "interim: waiting on "?*) echo interim ;;
+    *) echo final ;;
+  esac
 }
 
 # classify_worktree: Step 3 item 4's worktree resolution for a stopped implementer.
