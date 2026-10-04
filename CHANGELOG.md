@@ -7,9 +7,9 @@ All notable changes to this plugin will be documented here. Versions follow semv
 Cross-repository dependencies (#85). A run serves one repository, and the DAG only knew `#N` edges inside it, so work that needed an endpoint in another repository merged and deployed in a degraded mode before any backend issue existed.
 
 **issue-runner:**
-- **External edges** (dag.md). Step 2 recognizes `owner/repo#N` references and stated missing capabilities in other repositories, prints an `External:` line, and asks: extend (a run in that repository), override, drop-issue, or contract-first. They never enter `dag.json`, `dag.txt` or `scope.txt`.
+- **External edges** (dag.md). Step 2 recognizes `owner/repo#N` references and stated missing capabilities in other repositories, prints an `External:` line, and asks: run-elsewhere (a run in that repository), override, drop-issue, or contract-first. They never enter `dag.json`, `dag.txt` or `scope.txt`.
 - **One run serves one repository** is now a hard rule: no cross-repository worktree, branch or dispatch; the answer is a command for the user to run in the other repository.
-- Step 4 asks once per issue about a `contract-first:` blocker (wait, override, drop); the new `external` state file turns the user's answers into dispatch lines.
+- Step 4 asks once per issue about a `contract-first:` blocker (wait, override, drop); the new `external` state file turns the user's answers into dispatch lines (`override`, `contract-first`, filing authorization).
 
 **gh-issue:**
 - **Contract-first outcome** (`contract-first.md`). An issue whose dependency is absent in another repository ends before any code: the implementer documents the proposed contract, files the dependency issue only where the dispatch authorized it, and returns an ordinary `blocker`.
