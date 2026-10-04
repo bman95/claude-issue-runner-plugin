@@ -330,45 +330,75 @@ classify_hang() {
 }
 
 # result_readable FILE: state-files.md's "readable" rule: the file is exactly one
-# JSON object (nothing after it) whose top-level `outcome` is merged, blocker,
-# failed or ready and whose top-level `worktree` is a non-empty string. A small
-# awk scanner tracks strings and nesting, so a nested `outcome` or a second
-# object after the first never counts. Exit 0 = readable.
+# well-formed JSON document (RFC 8259 grammar, a recursive-descent check in awk:
+# nothing may follow it, no trailing commas, matched delimiters) that is an
+# object whose top-level `outcome` is the string merged, blocker, failed or
+# ready and whose top-level `worktree` is a non-empty string. A nested
+# `outcome` never counts. Exit 0 = readable.
 result_readable() {
   [ -s "$1" ] || return 1
-  awk '
+  LC_ALL=C awk '
+    function ws() { while (p <= n && index(" \t\r\n", substr(s, p, 1))) p++ }
+    function str(   c, e) {
+      p++; buf = ""
+      while (p <= n) {
+        c = substr(s, p, 1)
+        if (c == "\"") { p++; return 1 }
+        if (c == "\\") {
+          e = substr(s, p + 1, 1)
+          if (index("\"\\/bfnrt", e) && e != "") { buf = buf c e; p += 2; continue }
+          if (e == "u" && substr(s, p + 2, 4) ~ /^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$/) { buf = buf substr(s, p, 6); p += 6; continue }
+          return 0
+        }
+        if (c ~ /[[:cntrl:]]/) return 0
+        buf = buf c; p++
+      }
+      return 0
+    }
+    function value(depth,   r) {
+      ws(); c0 = substr(s, p, 1)
+      if (c0 == "{") return object(depth)
+      if (c0 == "[") return array(depth)
+      if (c0 == "\"") return str()
+      r = substr(s, p)
+      if (match(r, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/)) { p += RLENGTH; return 1 }
+      if (match(r, /^(true|false|null)/)) { p += RLENGTH; return 1 }
+      return 0
+    }
+    function array(depth,   c) {
+      p++; ws()
+      if (substr(s, p, 1) == "]") { p++; return 1 }
+      while (1) {
+        if (!value(depth + 1)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "]") { p++; return 1 }
+        return 0
+      }
+    }
+    function object(depth,   c, key, isstr) {
+      p++; ws()
+      if (substr(s, p, 1) == "}") { p++; return 1 }
+      while (1) {
+        ws()
+        if (substr(s, p, 1) != "\"" || !str()) return 0
+        key = buf; ws()
+        if (substr(s, p, 1) != ":") return 0
+        p++; ws(); isstr = (substr(s, p, 1) == "\"")
+        if (!value(depth + 1)) return 0
+        if (depth == 0 && isstr) val[key] = buf
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "}") { p++; return 1 }
+        return 0
+      }
+    }
     { s = s $0 "\n" }
     END {
-      n = length(s); depth = 0; closed = 0; instr = 0; esc = 0; state = ""; smode = ""; bad = 0
-      for (i = 1; i <= n && !bad; i++) {
-        c = substr(s, i, 1)
-        if (instr) {
-          if (esc) { esc = 0; buf = buf c }
-          else if (c == "\\") { esc = 1; buf = buf c }
-          else if (c == "\"") {
-            instr = 0
-            if (smode == "key") { key = buf; state = "colon" }
-            else if (smode == "val") { val[key] = buf; state = "after" }
-          } else buf = buf c
-          continue
-        }
-        if (c == " " || c == "\t" || c == "\r" || c == "\n") continue
-        if (closed) { bad = 1; continue }
-        if (depth == 0) { if (c == "{") { depth = 1; state = "key" } else bad = 1; continue }
-        if (c == "\"") {
-          instr = 1; buf = ""; smode = ""
-          if (depth == 1) { if (state == "key") smode = "key"; else if (state == "val") smode = "val"; else bad = 1 }
-          continue
-        }
-        if (c == "{" || c == "[") { if (depth == 1 && state != "val") bad = 1; else { if (depth == 1) state = "nested"; depth++ } continue }
-        if (c == "}" || c == "]") { depth--; if (depth == 0) closed = 1; else if (depth == 1) state = "after"; continue }
-        if (depth > 1) continue
-        if (c == ":") { if (state == "colon") state = "val"; else bad = 1; continue }
-        if (c == ",") { if (state == "after") state = "key"; else bad = 1; continue }
-        if (state == "val") state = "after"   # a bare number, true, false or null
-        else if (state != "after") bad = 1
-      }
-      exit !(!bad && closed && !instr && depth == 0 && val["outcome"] ~ /^(merged|blocker|failed|ready)$/ && length(val["worktree"]) > 0)
+      n = length(s); p = 1; ws()
+      ok = (substr(s, p, 1) == "{") && object(0)
+      ws()
+      exit !(ok && p > n && val["outcome"] ~ /^(merged|blocker|failed|ready)$/ && length(val["worktree"]) > 0)
     }' "$1"
 }
 

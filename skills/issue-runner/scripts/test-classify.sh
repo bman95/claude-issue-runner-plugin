@@ -457,6 +457,28 @@ ncase "a missing comma between fields -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"blocker" "worktree":"/w"}'
 ncase "not an object (an array) -> interim" interim \
   "interim: waiting on codex gate pass 1" '[{"outcome":"blocker","worktree":"/w"}]'
+ncase "a trailing comma is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w",}'
+ncase "mismatched delimiters are invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w"]'
+ncase "a missing value is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":,"worktree":"/w"}'
+ncase "a missing colon is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr" 12,"worktree":"/w"}'
+ncase "an unterminated string is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w}'
+ncase "an array with a trailing comma inside is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w","a":[1,2,]}'
+ncase "a bad escape is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w\x","a":1}'
+ncase "a leading-zero number is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w","pr":01}'
+ncase "a truncated nested object is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w","a":{"b":1}'
+ncase "an outcome that is not a string -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":12,"worktree":"/w"}'
+ncase "numbers, literals, unicode escapes and empty containers are valid -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","worktree":"/wé","n":-1.5e+3,"t":true,"f":false,"z":null,"o":{},"a":[]}'
 ncase "a readable result with a nested object and braces inside a string -> final" final \
   "interim: waiting on codex gate pass 1" '{"outcome":"merged","pr":12,"extra":{"a":[1,{"b":"}"}]},"worktree":"/w {x}","blocker":null}'
 ncase "a pretty-printed single object is still one JSON object -> final" final \
