@@ -382,6 +382,41 @@ case $out in "implementer hung (no completion): progress unchanged for 18"[0-9]"
 check "an empty progress file is no progress file -> nothing" 0 "" -- hang 8 "$HD" 30
 check "hang minutes must be a positive integer -> exit 2" 2 "" -- hang 8 "$HD" 0
 
+# --- notification: Step 3 item 5's final-or-interim question (row 73) --------------------
+# An interim "Agent finished" (the implementer stopped with a gate pass of its own
+# running in the background) with no result.json and a fresh progress marker must
+# change nothing: no status, no outcome, no blocker, no error, no progress write.
+ND="$TMP/state/issue-9"; rm -rf "$ND"; mkdir -p "$ND"
+printf 'implementing\n' > "$ND/status"
+printf 'step=8.2 pass=1 pr=#12\n' > "$ND/progress"
+touch -t "$(date -d '-2 minutes' +%Y%m%d%H%M 2>/dev/null || date -v-2M +%Y%m%d%H%M)" "$ND/progress"
+nd_snapshot() { ( cd "$ND" && for f in *; do printf '%s %s %s\n' "$f" "$(cat "$f")" "$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")"; done ); }
+printf 'Agent finished: the agent stopped with background work of its own still running.\nGate pass 1 is running with gpt-6.1-sol; I will check the results when it finishes.\n' > "$ND/notification"
+nd_before=$(nd_snapshot)
+check "row 73: host's interim note, no result.json -> interim" 0 "interim" -- notification 9 "$ND"
+check "row 73: the same notification leaves a fresh progress marker un-hung" 0 "" -- hang 9 "$ND" 30
+[ "$(nd_snapshot)" = "$nd_before" ] && ok "row 73: an interim notification changes no state file (status stays implementing, progress mtime untouched)" \
+  || err "row 73: the notification mode modified the issue directory"
+printf 'interim: waiting on codex gate pass 1\n' > "$ND/notification"
+check "row 73: the fixed form 'interim: waiting on <what>' -> interim" 0 "interim" -- notification 9 "$ND"
+printf 'Some text\n  interim: waiting on x\n' > "$ND/notification"
+check "the fixed form must start the line -> final" 0 "final" -- notification 9 "$ND"
+printf 'Blocker: spec ambiguity.\nworktree: /w\n' > "$ND/notification"
+check "row 73: a final message with no interim marker, no result.json -> final (prose classification)" 0 "final" -- notification 9 "$ND"
+rm -f "$ND/notification"
+check "no notification text and no result.json -> final" 0 "final" -- notification 9 "$ND"
+printf 'interim: waiting on codex gate pass 1\n' > "$ND/notification"
+printf '{"outcome":"blocker","pr":12,"worktree":"/w","blocker":"x"}\n' > "$ND/result.json"
+check "row 73: a readable result.json wins over an interim marker -> final" 0 "final" -- notification 9 "$ND"
+printf '{"outcome":"blocker","pr":12,"worktree":"","blocker":"x"}\n' > "$ND/result.json"
+check "row 73: result.json with an empty worktree is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
+printf '{"outcome":"weird","pr":12,"worktree":"/w"}\n' > "$ND/result.json"
+check "result.json with an unknown outcome is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
+printf '{"outcome":"blocker","pr":12,\n' > "$ND/result.json"
+check "a truncated result.json is unreadable -> interim" 0 "interim" -- notification 9 "$ND"
+check "notification: missing issue dir -> exit 2" 2 "" -- notification 9 "$TMP/no-such-dir"
+check "notification: missing issue-dir argument -> exit 2" 2 "" -- notification 9
+
 # --- worktree: Step 3 item 4's worktree for a stopped implementer ----------------------
 WD="$TMP/state/issue-7"; rm -rf "$WD"; mkdir -p "$WD"
 printf '%s\n' "$W_OTHER" > "$WD/worktree"
@@ -484,8 +519,8 @@ unset CWD
 # case; rows 23-25 only for the Step 5 label (the resume, the revert to draft
 # and the crash are Step 3a's and the implementer's). Every other row is outside these two
 # classifications: see test-scheduler.sh for the state machine's rows.
-IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35"
-EXPECTED_ROW_COUNT=72
+IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35 73"
+EXPECTED_ROW_COUNT=73
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then

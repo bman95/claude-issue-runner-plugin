@@ -61,7 +61,7 @@ cat 2>/dev/null > "<STATE_DIR>/issue-<number>/result.json" <<'EOF' || true
 EOF
 ```
 
-JSON-escape `"`, `\` and control characters in every string value. Order: `step=10` marker, this file, final message (with the `worktree:` line and Step 10 report). No key for Step 10's `validation:` line. The progress marker's rules apply. (why: Why the result file is advisory)
+JSON-escape `"`, `\` and control characters in every string value. Order: `step=10` marker, this file, final message (with the `worktree:` line and Step 10 report). No key for Step 10's `validation:` line. An interim turn end (review-loop.md "Liveness") is not an exit: no result file. The progress marker's rules apply. (why: Why the result file is advisory)
 
 ## Validation contract
 

@@ -2,6 +2,14 @@
 
 All notable changes to this plugin will be documented here. Versions follow semver-ish: pre-1.0 minor bumps may include breaking changes to the skill spec.
 
+## [Unreleased]
+
+**issue-runner:**
+- **An interim "Agent finished" is no longer read as a result** (fixes #80). The host reports it whenever an implementer stops with background work of its own (a Codex gate pass) still running, with no `result.json` yet. Step 3 item 5 would have classified that healthy implementer as blocked or failed and cascaded it to its dependents. A notification is now final only if the host marks it so or `result.json` is readable; an interim one leaves the issue `implementing`, writes nothing and keeps the hang clock on `progress`. `classify.sh notification` makes the call and `test-classify.sh` and `test-scheduler.sh` pin it (docs/scenarios.md row 73; Expected behavior changed, so this is a minor bump at release).
+
+**gh-issue:**
+- An implementer that must end a turn while a gate pass or reviewer runs in the background says so in a fixed form, `interim: waiting on <what>`, with no `worktree:` line and no result file.
+
 ## [0.14.0] - 2026-09-28
 
 The skills now follow Anthropic's skill-authoring guideline on size. Each SKILL.md keeps the path every run needs. Mode-specific procedures live in files linked one level deep, each opened by an explicit trigger, so a run pays only for the context it uses. 0.13.0's word ceilings (11,000 and 9,000) had stopped regrowth but not reduced load, so they are replaced.

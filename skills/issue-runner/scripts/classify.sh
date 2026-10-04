@@ -51,6 +51,20 @@
 #     when there is no progress file (the relative-silence rule is the
 #     orchestrator's). It never writes.
 #
+#   classify.sh notification <N> <issue-dir>
+#     Step 3 item 5's first question: is the completion notification just
+#     received final or interim? The caller writes the notification's text to
+#     <issue-dir>/notification (a file, never a command line: untrusted text).
+#     Prints `final` when <issue-dir>/result.json is readable (one JSON object
+#     with an `outcome` of merged/blocker/failed/ready and a non-empty
+#     `worktree`, the state-files.md rule), or when the text carries no
+#     interim marker. Prints `interim` when result.json is not readable and
+#     the text holds the host's note `stopped with background work of its own
+#     still running` or a line starting `interim: waiting on ` (gh-issue's
+#     fixed form). It reads only: it writes nothing (not `progress`, `status`,
+#     `outcome`, `blocker` or `error`), and on `interim` the caller leaves the
+#     issue `implementing` and classifies nothing.
+#
 #   classify.sh worktree <N> <issue-dir>
 #     Step 3 item 4's worktree for a stopped implementer. The first match wins:
 #     <issue-dir>/worktree, only while that directory still exists; else the
@@ -134,7 +148,7 @@ usage() { echo "classify.sh: $1" >&2; exit 2; }
 
 MODE=${1:-}
 N=${2:-}
-case $MODE in result|pr-shape|hang|worktree) ;; *) usage "unknown mode '$MODE' (expected result, pr-shape, hang or worktree)" ;; esac
+case $MODE in result|pr-shape|hang|notification|worktree) ;; *) usage "unknown mode '$MODE' (expected result, pr-shape, hang, notification or worktree)" ;; esac
 case $N in ''|*[!0-9]*|0*) usage "issue number must be a positive integer, got '${N}'" ;; esac
 
 # finish STATUS PR ERROR: rewrite the error file (through a temp file in the
@@ -311,6 +325,22 @@ classify_hang() {
   echo "implementer hung (no completion): progress unchanged for $(( ($(date +%s) - mtime + 59) / 60 ))m (--hang-minutes $1)"
 }
 
+# classify_notification: final or interim (see the header). Read-only.
+classify_notification() {
+  local f="$DIR/result.json"
+  if [ -s "$f" ] && [ "$(grep -c '' "$f")" -eq 1 ] \
+     && grep -Eq '^[[:space:]]*\{.*"outcome"[[:space:]]*:[[:space:]]*"(merged|blocker|failed|ready)".*\}[[:space:]]*$' "$f" \
+     && grep -Eq '"worktree"[[:space:]]*:[[:space:]]*"[^"]' "$f"; then
+    echo final; return 0
+  fi
+  if [ -s "$DIR/notification" ] \
+     && grep -Eq 'stopped with background work of its own still running|^interim: waiting on ' "$DIR/notification"; then
+    echo interim
+  else
+    echo final
+  fi
+}
+
 # classify_worktree: Step 3 item 4's worktree resolution for a stopped implementer.
 classify_worktree() {
   local wt ag
@@ -341,6 +371,11 @@ case $MODE in
     case $4 in ''|*[!0-9]*|0*) usage "hang minutes must be a positive integer, got '$4'" ;; esac
     DIR=${3%/}
     classify_hang "$4" ;;
+  notification)
+    [ $# -ge 3 ] && [ -n "$3" ] || usage "notification needs <N> <issue-dir>"
+    DIR=${3%/}
+    [ -d "$DIR" ] || usage "not a directory: $DIR"
+    classify_notification ;;
   worktree)
     [ $# -ge 3 ] && [ -n "$3" ] || usage "worktree needs <N> <issue-dir>"
     DIR=${3%/}
