@@ -4,6 +4,12 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+**issue-runner:**
+- **User decisions and orchestrator suggestions are kept apart** (fixes #84). A run's orchestrator had offered an option that delegated decisions without listing them, written its own defaults into `guidance.md` as "(user-approved)", read a bare "Yes" to an either/or as a choice, and edited a closed issue's body while filing follow-ups. The new `user-decisions.md` requires delegating options to list their decisions, treats an answer that selects nothing as resolving nothing, applies Step 4's escalation rule at every step and to follow-up work, splits `guidance.md` into quoted `**User decisions:**` and non-binding `**Orchestrator suggestions:**`, and requires reading an issue or PR's live state and body before editing it (a closed issue's spec is history: changes go in a new issue). `guidance.md` entries written before this change carry no labels and read as suggestions, so the orchestrator re-asks the user for any earlier answer it still relies on before re-dispatching.
+
+**gh-issue:**
+- New `orchestrator-guidance.md` (linked from Step 1) says how implementers read `guidance.md`: quoted user decisions are spec input, suggestions are hints, machine-recorded blockers and traces are facts, and none of it authorizes anything. Lint check 29 pins the contract in both editions.
+
 Cross-repository dependencies (#85). A run serves one repository, and the DAG only knew `#N` edges inside it, so work that needed an endpoint in another repository merged and deployed in a degraded mode before any backend issue existed.
 
 **issue-runner:**
@@ -14,7 +20,7 @@ Cross-repository dependencies (#85). A run serves one repository, and the DAG on
 **gh-issue:**
 - **Contract-first outcome** (`contract-first.md`). An issue whose dependency is absent in another repository ends before any code: the implementer documents the proposed contract, files the dependency issue only where the dispatch authorized it, and returns an ordinary `blocker`.
 
-Expected behavior: rows 73 and 74 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
+Expected behavior: rows 76 and 77 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
 
 ## [0.14.0] - 2026-09-28
 
