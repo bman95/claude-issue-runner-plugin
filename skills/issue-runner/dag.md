@@ -1,6 +1,6 @@
 # Step 2 — out-of-scope edges, external edges, conflict edges and the plan printout
 
-Read at Step 2 of every orchestrated run and `--plan` (SKILL.md, Step 2), once the `## Blocked by` and heuristic dependency edges are read, and follow it through the plan printout.
+Read at Step 2 of every orchestrated run and `--plan` (the single-issue fast path builds no DAG, so it scans no external edges and relies on gh-issue's own contract-first check) (SKILL.md, Step 2), once the `## Blocked by` and heuristic dependency edges are read, and follow it through the plan printout.
 
 ## Out-of-scope edges
 
