@@ -86,9 +86,12 @@ printf '{"outcome":"nonsense","worktree":"/w","phase1_iterations":9}\n' > "$S/is
 printf '{"outcome":"merged","worktree":"","phase1_iterations":9}\n' > "$S/issue-4/result.json"
 printf 'phase1_iterations: 9\n' > "$S/issue-5/result.json"
 : > "$S/issue-6/result.json"
+scope 1 2 3 4 5 6 7 8; issue 7 blocked; issue 8 blocked
+printf '{"outcome":"merged","worktree":null,"phase1_iterations":4,"gate_passes":3}\n' > "$S/issue-7/result.json"
+printf '{"outcome":"merged","worktree":"/w","phase1_iterations":4,broken}\n' > "$S/issue-8/result.json"
 run "$S" 3
 rc_is "unreadable results: exit 0" 0
-for n in 1 2 3 4 5 6; do has "unreadable result #$n -> no result recorded" "- #$n: no result recorded (retries=0)"; done
+for n in 1 2 3 4 5 6 7 8; do has "unreadable result #$n -> no result recorded" "- #$n: no result recorded (retries=0)"; done
 has "unreadable results add no phase1 iterations" 'totals: phase1 iterations=0; gate passes=0'
 
 # --- Telemetry, flags, checkpoint skipped vs refused -----------------------------------

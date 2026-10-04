@@ -184,9 +184,13 @@ load_result() {
       }
       print o }')
   RJ=$raw
+  # Well-formed: a flat object of "key":string|number|true|false|null members
+  # (the blocker member is already gone).
+  member='"([^"\\]|\\.)*":("([^"\\]|\\.)*"|[-+0-9.eE]+|true|false|null)'
+  printf '%s\n' "$RJ" | grep -Eq "^\{($member(,$member)*)?\}\$" || { RJ=""; return 1; }
   case $(jv outcome) in merged|blocker|failed|ready) ;; *) RJ=""; return 1 ;; esac
-  case $RJ in *'"worktree":""'*) RJ=""; return 1 ;; esac
-  [ -n "$(jv worktree)" ] || { RJ=""; return 1; }
+  # The worktree must be a non-empty string (not null, not "").
+  printf '%s\n' "$RJ" | grep -Eq '"worktree":"[^"]' || { RJ=""; return 1; }
   return 0
 }
 
