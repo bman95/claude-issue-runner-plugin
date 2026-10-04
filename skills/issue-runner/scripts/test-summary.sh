@@ -115,6 +115,23 @@ has "telemetry: repeated refusals are a run-level note" 'run-level note: checkpo
 has "telemetry: skipped checkpoint is a run-level note" 'run-level note: checkpoint skipped on 1 issue(s)'
 has "telemetry: totals" 'totals: phase1 iterations=9; gate passes=4'
 
+# --- A single refusal is no run-level note; hung-after-merge covers every merged-class status
+reset; scope 1 2 3
+issue 1 done; result 1 merged 1 converged false 1 clean pass refused standard null
+issue 2 blocked; printf 'hung\n' > "$S/issue-2/outcome"; printf 'implementer hung: progress unchanged for 40m\n' > "$S/issue-2/error"
+issue 3 closed-externally; printf 'hung\n' > "$S/issue-3/outcome"; printf 'implementer hung: progress unchanged for 35m\n' > "$S/issue-3/error"
+run "$S" 3
+hasnt "telemetry: one refusal is no run-level note" 'run-level note: checkpoint refused'
+has "hung + blocked -> stopped as hung after merge" '#2: stopped as hung after merge'
+has "hung + closed-externally -> stopped as hung after merge" '#3: stopped as hung after merge'
+
+# --- A profile file with an unrecognised source prints (?) ---------------------------------
+reset; scope 1
+issue 1 done; result 1 merged 1 converged false 1 clean pass created prose null
+printf 'prose bogus\n' > "$S/issue-1/profile"
+run "$S" 3
+has "profile: unknown source -> (?)" 'review profile: prose (?) → prose'
+
 # --- Review profile ----------------------------------------------------------------------
 reset; scope 1 2 3 4
 issue 1 done; result 1 merged 1 converged false 1 clean pass created prose null
