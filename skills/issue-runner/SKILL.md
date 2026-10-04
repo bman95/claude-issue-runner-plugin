@@ -350,4 +350,4 @@ Last, unless the run stopped paused, release the lock and session pointer: `bash
 - **The orchestrator never hand-manages worktrees.** Orchestrated isolation comes only from Agent-tool dispatch; the parent touches worktrees only in Step 5.
 - **The orchestrator never enters a worktree.** In-worktree work (fixes, re-reviews, merges) belongs to implementers (why: Why the orchestrator never enters a worktree).
 - **Single-host state, one run per repo.** State is per repo (`${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`); the lock (`$RUN_ROOT/lock`) refuses a second run while its PID is alive **or** its heartbeat is younger than `--lock-ttl-minutes` (State section). Never delete a live lock to force one (the own-process exception in REFERENCE.md aside).
-- **One run serves one repository.** External edges (dag.md) get no worktree, dispatch or branch (why: Why one run serves one repository).
+- **One run serves one repository.** External edges (dag.md) get no worktree, dispatch or branch elsewhere (why: Why one run serves one repository).
