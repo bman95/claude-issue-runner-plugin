@@ -411,6 +411,9 @@ classify_notification() {
   if result_readable "$DIR/result.json"; then
     echo final; return 0
   fi
+  # No readable result and no notification file: the orchestrator's write failed
+  # or never ran. That is an error, never a verdict (fail-open would be #80).
+  [ -r "$DIR/notification" ] || die "notification: $DIR/notification is missing or unreadable"
   # The markers are positional, so a final message that merely quotes one (a
   # blocker report, the Step 10 text) stays final: the host's note is the first
   # line, the implementer's fixed form the last non-blank line.
@@ -418,11 +421,11 @@ classify_notification() {
   # A final message always carries a `worktree:` line (gh-issue's dispatch); the
   # interim form never does. So even with the host's note leading, a message
   # with that line is a real exit (a blocker whose result.json write failed).
-  if [ -s "$DIR/notification" ] && tr -d '\r' < "$DIR/notification" | grep -q '^worktree: '; then
+  if [ -s "$DIR/notification" ] && tr -d '\r' < "$DIR/notification" | grep -aq '^worktree: '; then
     echo final; return 0
   fi
   first=$(head -n 1 "$DIR/notification" 2>/dev/null | tr -d '\r')
-  last=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 1)
+  last=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -av '^[[:space:]]*$' | tail -n 1)
   case $first in
     "This agent stopped with background work of its own still running"*) echo interim; return 0 ;;
   esac

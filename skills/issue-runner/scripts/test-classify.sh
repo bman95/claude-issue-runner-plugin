@@ -401,9 +401,11 @@ ncase() {
   check "$1" 0 "$2" -- notification 9 "$ND"
 }
 GOOD_RESULT='{"outcome":"blocker","pr":12,"worktree":"/w","blocker":"x"}'
-ncase "row 76: the host's note as the first line, no result.json -> interim" interim \
-  "$HOST_NOTE"$'\nGate pass 1 is running with gpt-6.1-sol; I will check the results when it finishes.' ""
+# Snapshot BEFORE the first call: the call itself must change nothing.
+rm -f "$ND/notification" "$ND/result.json"
+printf '%s\n' "$HOST_NOTE"$'\nGate pass 1 is running with gpt-6.1-sol; I will check the results when it finishes.' > "$ND/notification"
 nd_before=$(nd_snapshot)
+check "row 76: the host's note as the first line, no result.json -> interim" 0 "interim" -- notification 9 "$ND"
 check "row 76: the same state leaves a fresh progress marker un-hung" 0 "" -- hang 9 "$ND" 30
 check "row 76: ... and re-running the call is idempotent" 0 "interim" -- notification 9 "$ND"
 [ "$(nd_snapshot)" = "$nd_before" ] && ok "row 76: an interim notification changes no state file (status stays implementing, progress mtime untouched)" \
@@ -434,7 +436,10 @@ ncase "the host's note leading a crash message with no worktree: line stays inte
   "$HOST_NOTE"$'\nError: connection reset' ""
 ncase "row 76: a final message with no marker, no result.json -> final (prose classification)" final \
   $'Blocker: spec ambiguity.\nworktree: /w' ""
-ncase "no notification text and no result.json -> final" final "" ""
+rm -f "$ND/notification" "$ND/result.json"
+check "no notification file and no result.json is an error, never a verdict" 1 "" -- notification 9 "$ND"
+: > "$ND/notification"
+check "an empty notification file and no result.json -> final" 0 "final" -- notification 9 "$ND"
 ncase "row 76: a readable result.json wins over the host's note -> final" final \
   "$HOST_NOTE" "$GOOD_RESULT"
 ncase "row 76: a readable result.json wins over the fixed form -> final" final \
