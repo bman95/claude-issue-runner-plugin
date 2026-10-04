@@ -120,7 +120,7 @@ area. End with a `Files:` block, one repo-relative path per line.
 
 Seed it with the issue's `## Interfaces` section or `Files likely touched:` hint, if any, but verify them against current code.
 
-Needs something missing in another repository (absent endpoint, unmerged `owner/repo#N`) → read [contract-first.md](contract-first.md) first.
+An `External dependency:` dispatch line, or something missing in another repository → read [contract-first.md](contract-first.md) first.
 
 Agent tool unavailable → explore inline, and settle Step 8 Phase 1's authorization now: orchestrated without inline-review authorization → return the Phase 1 blocker here; interactive → ask whether to proceed inline or stop ("Your subagents").
 
