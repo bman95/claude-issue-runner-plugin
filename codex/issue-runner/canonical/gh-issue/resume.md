@@ -9,7 +9,8 @@ Inspect the branch before the PR body (why: Why resume reads the branch before t
 - Fresh worktree: `git fetch origin '+refs/heads/<default-branch>:refs/remotes/origin/<default-branch>' '+refs/heads/<branch>:refs/remotes/origin/<branch>'`, then `git log --oneline origin/<default-branch>..origin/<branch>`.
 
 The commits decide:
-- Only the lone `chore: checkpoint plan for #<number>` commit, clean tree → start from the `## Plan` in the PR body (`gh pr view <PR> --json isDraft,body`), verified against the acceptance criteria and current code; drop anything the issue does not ask for.
+- Only the lone `chore: checkpoint plan for #<number>` commit, clean tree, and a `## Plan` headed `Contract-first stop` → that plan is a stop, never a plan to execute (contract-first.md): derive your own plan from the contract in the body, after re-checking whether the dependency has since merged.
+- Only the lone `chore: checkpoint plan for #<number>` commit, clean tree (any other plan) → start from the `## Plan` in the PR body (`gh pr view <PR> --json isDraft,body`), verified against the acceptance criteria and current code; drop anything the issue does not ask for.
 - More than the checkpoint (commits or uncommitted changes) → continue where it stopped; never re-execute. If Step 7 already replaced `## Plan`, reconstruct the intent from `## Changes`, `## Review notes` and the branch diff.
 - No checkpoint commit → derive your own plan.
 - A branch with no PR (orphan) → derive your own plan, stay on that branch, and open its draft in Step 4 (only the `gh pr create --draft` line).

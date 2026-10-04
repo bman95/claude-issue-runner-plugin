@@ -14,7 +14,7 @@ Cross-repository dependencies (#85). A run serves one repository, and the DAG on
 **gh-issue:**
 - **Contract-first outcome** (`contract-first.md`). An issue whose dependency is absent in another repository ends before any code: the implementer documents the proposed contract, files the dependency issue only where the dispatch authorized it, and returns an ordinary `blocker`.
 
-Expected behavior: rows 73 and 74 of `docs/scenarios.md`.
+Expected behavior: rows 73 and 74 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
 
 ## [0.14.0] - 2026-09-28
 
