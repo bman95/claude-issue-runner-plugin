@@ -131,6 +131,9 @@ issue 1 done; result 1 merged 1 converged false 1 clean pass created prose null
 printf 'prose bogus\n' > "$S/issue-1/profile"
 run "$S" 3
 has "profile: unknown source -> (?)" 'review profile: prose (?) → prose'
+issue 1 done; result 1 merged 1 converged false 1 clean pass created bogus null
+run "$S" 3
+has "profile: recorded result with an unrecognised review_profile is not 'no result recorded'" 'review profile: prose (?) → unrecognised'
 
 # --- Review profile ----------------------------------------------------------------------
 reset; scope 1 2 3 4
@@ -280,6 +283,8 @@ reset; scope 1; issue 1 done
 run;                              rc_is "no arguments -> exit 2" 2
 run "$S";                         rc_is "missing max-codex-iterations -> exit 2" 2
 run "$S" 0;                       rc_is "max-codex-iterations 0 -> exit 2" 2
+run "$S" 00;                      rc_is "max-codex-iterations 00 -> exit 2" 2
+run "$S" 03;                      rc_is "max-codex-iterations with a leading zero is accepted" 0
 run "$S" x;                       rc_is "non-numeric max-codex-iterations -> exit 2" 2
 run "$S" 3 --bogus;               rc_is "unknown option -> exit 2" 2
 run "$S" 3 main extra;            rc_is "two default branches -> exit 2" 2

@@ -60,8 +60,10 @@ STATE_DIR=${1:-}
 MAXG=${2:-}
 [ -n "$STATE_DIR" ] || usage "usage: summary.sh <state-dir> <max-codex-iterations> [--gateless] [<default-branch>]"
 [ -d "$STATE_DIR" ] || usage "state dir '$STATE_DIR' is not a directory"
-case $MAXG in ''|*[!0-9]*|0*) usage "max-codex-iterations must be a positive integer, got '${MAXG}'" ;; esac
+case $MAXG in ''|*[!0-9]*) usage "max-codex-iterations must be a positive integer, got '${MAXG}'" ;; esac
 [ ${#MAXG} -le 6 ] || usage "max-codex-iterations is too large, got '${MAXG}'"
+MAXG=$((10#$MAXG))
+[ "$MAXG" -ge 1 ] || usage "max-codex-iterations must be a positive integer, got '${MAXG}'"
 shift 2
 GATELESS=0 DEFAULT_BRANCH=""
 for a in "$@"; do
@@ -272,6 +274,7 @@ for n in $SCOPE; do
     src=$(pick "$(rd "$d/profile" | head -1 | tr -d '\r' | awk '{ print $2 }')" flag escalation)
     case $prof_rt in
       prose|revoked|standard) eff=$prof_rt ;;
+      '?') eff="unrecognised" ;;
       *) eff="no result recorded" ;;
     esac
     TELE="$TELE  review profile: prose (${src:-?}) → $eff$NL"
