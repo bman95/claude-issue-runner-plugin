@@ -109,6 +109,12 @@
 #  28. every `(why: <entry>)` pointer in a skill's Markdown files resolves: the
 #      same skill's REFERENCE.md has a bullet opening `- **<entry>.**`, and
 #      every Markdown file a SKILL.md links by relative path exists
+#  29. the user-decision contract (issue #84) is one contract in both editions:
+#      the orchestrator's user-decisions.md and gh-issue's
+#      orchestrator-guidance.md exist, each SKILL.md links its file, and the
+#      `**User decisions:**` and `**Orchestrator suggestions (non-binding):**`
+#      labels appear in user-decisions.md and escalations.md (the first also
+#      in orchestrator-guidance.md)
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -945,6 +951,25 @@ for d in "$ROOT"/skills/*/; do
   done < <(grep -o '\]([^)]*\.md[^)]*)' "$d/SKILL.md" 2>/dev/null | sed 's/^](//; s/)$//')
 done
 [ "$ptr_ok" -eq 1 ] && ok "rationale pointers resolve ($n_ptr) and SKILL.md's Markdown links exist"
+
+# 29. User decisions vs orchestrator suggestions: one contract in both editions -----
+ud_ok=1
+for ed in "$ROOT/skills" "$ROOT/codex/issue-runner/canonical"; do
+  rel="${ed#"$ROOT"/}"
+  for pair in issue-runner:user-decisions.md gh-issue:orchestrator-guidance.md; do
+    sk=${pair%%:*}; fl=${pair#*:}
+    [ -f "$ed/$sk/$fl" ] || { err "$rel/$sk/$fl missing (user-decision contract)"; ud_ok=0; continue; }
+    grep -qF "]($fl)" "$ed/$sk/SKILL.md" || { err "$rel/$sk/SKILL.md does not link $fl"; ud_ok=0; }
+  done
+  for lbl in '**User decisions:**' '**Orchestrator suggestions (non-binding):**'; do
+    for f in "$ed/issue-runner/user-decisions.md" "$ed/issue-runner/escalations.md"; do
+      grep -qF -- "$lbl" "$f" || { err "${f#"$ROOT"/} lacks the label $lbl"; ud_ok=0; }
+    done
+  done
+  grep -qF -- '**User decisions:**' "$ed/gh-issue/orchestrator-guidance.md" \
+    || { err "$rel/gh-issue/orchestrator-guidance.md lacks the label **User decisions:**"; ud_ok=0; }
+done
+[ "$ud_ok" -eq 1 ] && ok "user-decision contract present in both editions (user-decisions.md, orchestrator-guidance.md, labels)"
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2

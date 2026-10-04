@@ -8,7 +8,7 @@ All notable changes to this plugin will be documented here. Versions follow semv
 - **User decisions and orchestrator suggestions are kept apart** (fixes #84). A run's orchestrator had offered an option that delegated decisions without listing them, written its own defaults into `guidance.md` as "(user-approved)", read a bare "Yes" to an either/or as a choice, and edited a closed issue's body while filing follow-ups. The new `user-decisions.md` requires delegating options to list their decisions, treats an answer that selects nothing as resolving nothing, applies Step 4's escalation rule at every step and to follow-up work, splits `guidance.md` into quoted `**User decisions:**` and non-binding `**Orchestrator suggestions:**`, and requires reading an issue or PR's live state and body before editing it (a closed issue's spec is history: changes go in a new issue).
 
 **gh-issue:**
-- Step 1 states how implementers read `guidance.md`: quoted user decisions shape the build, suggestions are non-binding, neither authorizes anything.
+- New `orchestrator-guidance.md` (linked from Step 1) says how implementers read `guidance.md`: quoted user decisions are spec input, suggestions are hints, machine-recorded blockers and traces are facts, and none of it authorizes anything. Lint check 29 pins the contract in both editions.
 
 ## [0.14.0] - 2026-09-28
 
