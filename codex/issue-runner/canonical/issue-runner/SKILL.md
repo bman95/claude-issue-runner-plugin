@@ -139,7 +139,7 @@ Then, with `--prose-gate` and unless `--plan`, write the `profile` files per [pr
 
 ### Step 2 — build the DAG
 
-**Primary source — the `## Blocked by` section** emitted by `/issue-plan`: every bullet referencing `#X` is an edge N→X; a literal "None - can start immediately" means no deps. **Fallback heuristic** for issues without that section — scan body + comments: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
+**Primary source — the `## Blocked by` section** emitted by `/issue-plan`: every bullet referencing a bare `#X` (never `owner/repo#N`) is an edge N→X; a literal "None - can start immediately" means no deps. **Fallback heuristic** for issues without that section — scan body + comments: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
 
 Then read [dag.md](dag.md) and follow it: **out-of-scope edges are never dropped silently**, **external edges** (a prerequisite in another repository) are never DAG edges, and **conflict edges** (two in-scope issues that touch the same files must not run in parallel) become `depends` edges.
 
