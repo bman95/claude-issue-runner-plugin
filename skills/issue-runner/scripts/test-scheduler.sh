@@ -302,7 +302,7 @@ fi
 # there is nothing here to fixture. Pin the total row count so a scenarios.md
 # edit that adds or removes a row is caught here for review, not silently.
 IN_SCOPE_ROWS="1 2 3 4 29 32 34"
-EXPECTED_ROW_COUNT=72
+EXPECTED_ROW_COUNT=75
 
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"

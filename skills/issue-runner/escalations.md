@@ -26,7 +26,7 @@ Never retry these four within the run, under the cap or at it (no at-cap questio
 
 ## Escalations, cheapest first
 
-- **Retry the implementer.** Append a `## Retry K` section to `$STATE_DIR/issue-N/guidance.md` (K = the counter's new value, 1 for the first retry) with `**Blocker:**` — the `error` file verbatim, or the agent's returned message when none was saved — then `**Guidance:**` — yours or the user's, plus any finding text. Increment the counter **before** re-dispatching, self-resolved or user-authorized:
+- **Retry the implementer.** Append a `## Retry K` section to `$STATE_DIR/issue-N/guidance.md` (K = the counter's new value, 1 for the first retry) with `**Blocker:**` — the `error` file verbatim, or the agent's returned message when none was saved — then `**Guidance:**` — the user's words quoted under `**User decisions:**`, yours and any finding text under `**Orchestrator suggestions (non-binding):**` ([user-decisions.md](user-decisions.md)). Increment the counter **before** re-dispatching, self-resolved or user-authorized:
 
   ```bash
   RETRIES=$(cat "$STATE_DIR/issue-$N/retries" 2>/dev/null || echo 0)
