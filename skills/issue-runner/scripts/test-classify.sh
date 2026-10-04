@@ -430,6 +430,8 @@ ncase "a worktree: line beats the fixed form too -> final" final \
   $'Blocker: x\nworktree: /w\ninterim: waiting on y' ""
 ncase "'worktree:' must start a line to count -> the host's note still wins" interim \
   "$HOST_NOTE"$'\nsee worktree: /w' ""
+ncase "the host's note leading a crash message with no worktree: line stays interim (fail safe: hung.md's bound ends it)" interim \
+  "$HOST_NOTE"$'\nError: connection reset' ""
 ncase "row 76: a final message with no marker, no result.json -> final (prose classification)" final \
   $'Blocker: spec ambiguity.\nworktree: /w' ""
 ncase "no notification text and no result.json -> final" final "" ""
@@ -451,6 +453,12 @@ ncase "an escaped outcome that decodes to an unknown word is unreadable -> inter
   "interim: waiting on codex gate pass 1" '{"outcome":"m\u0065rged!","pr":12,"worktree":"/w"}'
 ncase "an escaped worktree that decodes to nothing printable still counts as non-empty -> final" final \
   "interim: waiting on codex gate pass 1" '{"outcome":"failed","pr":12,"worktree":"\u00e9"}'
+ncase "a duplicate top-level outcome with a non-string value is unreadable (last key wins) -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","outcome":5,"worktree":"/w"}'
+ncase "a duplicate top-level worktree with a non-string value is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","worktree":"/w","worktree":5}'
+ncase "a raw DEL byte inside a string is legal JSON -> final" final \
+  "interim: waiting on codex gate pass 1" "$(printf '{"outcome":"merged","pr":1,"worktree":"/w\177x"}')"
 ncase "an invalid escape in a string is unreadable -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"ready","pr":12,"worktree":"\x"}'
 ncase "a second object after the first is not one JSON object -> interim" interim \

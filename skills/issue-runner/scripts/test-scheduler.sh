@@ -126,7 +126,7 @@ fixture "wait: nothing ready, an implementer is in flight" \
   $'1:\n2: 1' "1=implementing 2=pending" "" \
   "wait"
 
-# Row 73: an interim completion notification leaves the issue `implementing`
+# Row 76: an interim completion notification leaves the issue `implementing`
 # (classify.sh notification, test-classify.sh, which proves the call writes
 # nothing). This fixture pins only the scheduler's half of that contract: an
 # `implementing` issue with a dependent chain yields `wait`, never a skip, a

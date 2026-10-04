@@ -354,7 +354,7 @@ result_readable() {
           if (e == "u" && substr(s, p + 2, 4) ~ /^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$/) { buf = buf uni(substr(s, p + 2, 4)); p += 6; continue }
           return 0
         }
-        if (c ~ /[[:cntrl:]]/) return 0
+        if (c < " ") return 0
         buf = buf c; p++
       }
       return 0
@@ -390,7 +390,7 @@ result_readable() {
         if (substr(s, p, 1) != ":") return 0
         p++; ws(); isstr = (substr(s, p, 1) == "\"")
         if (!value(depth + 1)) return 0
-        if (depth == 0 && isstr) val[key] = buf
+        if (depth == 0) { if (isstr) val[key] = buf; else delete val[key] }
         ws(); c = substr(s, p, 1)
         if (c == ",") { p++; continue }
         if (c == "}") { p++; return 1 }
