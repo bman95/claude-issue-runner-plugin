@@ -190,6 +190,20 @@ run "$S" 3
 has "spaced result.json is read" '- #1: phase1 iterations=2; gate passes=1; checks=none; checkpoint=skipped; retries=0'
 has "spaced result.json still flags a skipped checkpoint" '  ! checkpoint skipped'
 
+# --- Key order does not matter: only the blocker member is dropped -------------------------
+T='"phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged","gate_passes":1,"gate_state":"clean","checks":"none","checkpoint":"skipped","security_lens":false,"review_profile":"standard"'
+reorder() {  # reorder LABEL JSON
+  reset; scope 1; issue 1 blocked
+  printf '%s\n' "$2" > "$S/issue-1/result.json"
+  run "$S" 3
+  has "$1" '- #1: phase1 iterations=2; gate passes=1; checks=none; checkpoint=skipped; retries=0'
+}
+reorder "blocker first" "{\"blocker\":\"x, \\\"checkpoint\\\": \\\"refused\\\"\",\"outcome\":\"blocker\",\"pr\":5,\"branch\":\"b\",\"worktree\":\"/w\",$T}"
+reorder "blocker in the middle" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",\"blocker\":\"a, b\",$T,\"pr\":5}"
+reorder "blocker null before the telemetry" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",\"blocker\":null,$T}"
+reorder "blocker as an object" "{\"outcome\":\"blocker\",\"blocker\":{\"checkpoint\":\"refused\",\"a\":[1,{\"b\":\"}\"}]},\"worktree\":\"/w\",$T}"
+reorder "blocker last" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",$T,\"blocker\":\"z\"}"
+
 # --- Missing per-issue pieces never fail --------------------------------------------------
 reset; scope 7
 run "$S" 3

@@ -148,15 +148,42 @@ load_result() {
   raw=$(awk 'NF { print; exit }' "$f" 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
   case $raw in '{'*'}') ;; *) return 1 ;; esac
   raw=$(printf '%s' "$raw" | awk '
-    { q = 0; e = 0; o = ""
-      for (i = 1; i <= length($0); i++) {
+    # strend(s, i): index of the quote closing the string that opens at i
+    function strend(s, i,    j, d) {
+      for (j = i + 1; j <= length(s); j++) { d = substr(s, j, 1); if (d == "\\") j++; else if (d == "\"") return j }
+      return length(s)
+    }
+    function skipws(s, k) { while (substr(s, k, 1) == " " || substr(s, k, 1) == "\t") k++; return k }
+    { o = ""; n = length($0); i = 1
+      while (i <= n) {
         c = substr($0, i, 1)
-        if (q) { o = o c; if (e) e = 0; else if (c == "\\") e = 1; else if (c == "\"") q = 0 }
-        else if (c == "\"") { q = 1; o = o c }
-        else if (c != " " && c != "\t") o = o c
+        if (c == "\"") {
+          j = strend($0, i); key = substr($0, i, j - i + 1); k = skipws($0, j + 1)
+          if (key == "\"blocker\"" && substr($0, k, 1) == ":") {
+            # drop the blocker member (key, value, one adjoining comma)
+            k = skipws($0, k + 1); d = substr($0, k, 1)
+            if (d == "\"") k = strend($0, k) + 1
+            else if (d == "{" || d == "[") {
+              depth = 0
+              while (k <= n) {
+                d = substr($0, k, 1)
+                if (d == "\"") k = strend($0, k)
+                else if (d == "{" || d == "[") depth++
+                else if (d == "}" || d == "]") { depth--; if (depth == 0) { k++; break } }
+                k++
+              }
+            } else while (k <= n && substr($0, k, 1) != "," && substr($0, k, 1) != "}") k++
+            if (substr(o, length(o), 1) == ",") o = substr(o, 1, length(o) - 1)
+            else if (substr($0, k, 1) == ",") k++
+            i = k; continue
+          }
+          o = o key; i = j + 1; continue
+        }
+        if (c != " " && c != "\t") o = o c
+        i++
       }
       print o }')
-  RJ=${raw%%,\"blocker\":*}
+  RJ=$raw
   case $(jv outcome) in merged|blocker|failed|ready) ;; *) RJ=""; return 1 ;; esac
   case $RJ in *'"worktree":""'*) RJ=""; return 1 ;; esac
   [ -n "$(jv worktree)" ] || { RJ=""; return 1; }
