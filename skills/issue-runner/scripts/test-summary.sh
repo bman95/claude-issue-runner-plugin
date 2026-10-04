@@ -89,6 +89,7 @@ printf 'phase1_iterations: 9\n' > "$S/issue-5/result.json"
 scope 1 2 3 4 5 6 7 8; issue 7 blocked; issue 8 blocked
 printf '{"outcome":"merged","worktree":null,"phase1_iterations":4,"gate_passes":3}\n' > "$S/issue-7/result.json"
 printf '{"outcome":"merged","worktree":"/w","phase1_iterations":4,broken}\n' > "$S/issue-8/result.json"
+for n in 1 2 3 4 5 6 7 8; do printf 'agent-%s\n' "$n" > "$S/issue-$n/agent"; done   # dispatched
 run "$S" 3
 rc_is "unreadable results: exit 0" 0
 for n in 1 2 3 4 5 6 7 8; do has "unreadable result #$n -> no result recorded" "- #$n: no result recorded (retries=0)"; done
@@ -156,7 +157,7 @@ issue 2 done; result 2 merged 3 converged true 2 clean pass created standard nul
 issue 3 failed                                                                              # no result: 2
 issue 4 pending                                                                             # not dispatched
 issue 5 skipped; result 5 failed 4 converged false 4 clean none created standard null        # not dispatched
-printf '2\n' > "$S/issue-1/retries"; printf 'junk\n' > "$S/issue-3/retries"
+printf '2\n' > "$S/issue-1/retries"; printf 'junk\n' > "$S/issue-3/retries"; printf 'agent-3\n' > "$S/issue-3/agent"
 run "$S" 3
 # issue 1: (1+2) implementers + (1+2) explore + 2*2 reviewers = 10; issue 2: 1 implementer; issue 3: 2
 has "actual: agent arithmetic with retries, inline and no result" 'Actual agents: 13 (estimate: 20–60); actual Codex gate passes: 3 (estimate: 5–15)'
@@ -234,7 +235,17 @@ reset; scope 7
 run "$S" 3
 rc_is "no issue directory at all -> exit 0" 0
 has "no issue directory -> status unknown" '| #7 | unknown |  |  |  |'
-has "no issue directory -> no result recorded" '- #7: no result recorded (retries=0)'
+has "no issue directory -> not dispatched" '- #7: not dispatched (unknown)'
+
+# --- A blocked issue that never reached a dispatch ran no agents ----------------------------
+reset; scope 1 2 3
+issue 1 blocked; printf 'resume check failed\n' > "$S/issue-1/error"   # no agent, progress or result
+issue 2 blocked; printf 'agent-2\n' > "$S/issue-2/agent"               # dispatched, no result: 2 agents
+issue 3 failed; printf 'step=5\n' > "$S/issue-3/progress"              # progress alone is dispatch evidence: 2 agents
+run "$S" 3
+has "pre-dispatch blocker -> not dispatched" '- #1: not dispatched (blocked)'
+has "pre-dispatch blocker adds no agents" 'Actual agents: 4 (estimate: 12–36)'
+has "agent id alone marks a dispatch" '- #2: no result recorded (retries=0)'
 
 # --- pr-shape section (stub classify.sh) ------------------------------------------------------
 cat > "$TMP/classify-stub.sh" <<'EOF'
