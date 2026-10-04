@@ -45,6 +45,9 @@
 # Exit status: 0 on success; 2 a usage error or an unreadable/empty scope.txt.
 # A missing or unreadable per-issue file is never an error (it prints as absent).
 #
+# result.json is parsed as the compact one-line object gh-issue writes (no space
+# after a colon); a pretty-printed one reads as `no result recorded`.
+#
 # Dependencies: bash 3.2, coreutils, grep, sed, awk.
 
 set -u
@@ -57,6 +60,7 @@ MAXG=${2:-}
 [ -n "$STATE_DIR" ] || usage "usage: summary.sh <state-dir> <max-codex-iterations> [--gateless] [<default-branch>]"
 [ -d "$STATE_DIR" ] || usage "state dir '$STATE_DIR' is not a directory"
 case $MAXG in ''|*[!0-9]*|0*) usage "max-codex-iterations must be a positive integer, got '${MAXG}'" ;; esac
+[ ${#MAXG} -le 6 ] || usage "max-codex-iterations is too large, got '${MAXG}'"
 shift 2
 GATELESS=0 DEFAULT_BRANCH=""
 for a in "$@"; do
@@ -70,7 +74,7 @@ done
 
 SCOPE_FILE="$STATE_DIR/scope.txt"
 [ -r "$SCOPE_FILE" ] || usage "cannot read $SCOPE_FILE"
-SCOPE=$(tr -s ' \t\r\n' '\n\n\n\n' < "$SCOPE_FILE" | grep -v '^$')
+SCOPE=$(tr -s ' \t\r\n' '\n\n\n\n' < "$SCOPE_FILE" | grep -v '^$' | awk '!seen[$0]++')
 [ -n "$SCOPE" ] || usage "$SCOPE_FILE lists no issues"
 for n in $SCOPE; do
   case $n in *[!0-9]*|0*) usage "scope.txt entry '$n' is not a positive integer" ;; esac
@@ -111,6 +115,13 @@ title_of() {
           i++; c = substr(rest, i, 1)
           if (c == "n" || c == "t" || c == "r") c = " "
           else if (c == "b" || c == "f") c = ""
+          else if (c == "u") {
+            h = tolower(substr(rest, i + 1, 4))
+            if (h ~ /^00[0-7][0-9a-f]$/) {
+              v = (index("0123456789abcdef", substr(h, 3, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 4, 1)) - 1
+              c = (v < 32) ? " " : sprintf("%c", v); i += 4
+            } else c = "\\u"
+          }
         }
         out = out c
       }
@@ -142,7 +153,13 @@ load_result() {
   return 0
 }
 
-isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; return 0; }
+# pick V ALLOWED...: V when it is one of the allowed words, else ?
+# (telemetry is posted to GitHub: only enum values and numbers are printed).
+pick() { local v=$1 x; shift; for x in "$@"; do [ "$v" = "$x" ] && { printf '%s' "$v"; return; }; done; printf '?'; }
+
+# isnum V: 1-6 digits (a longer or non-numeric value is rejected); callers read it
+# through 10# so a leading zero is never octal.
+isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; [ ${#1} -le 6 ]; }
 
 N_SCOPE=0; for n in $SCOPE; do N_SCOPE=$((N_SCOPE + 1)); done
 TOTAL_ITER=0 TOTAL_GATE=0 AGENTS=0 REFUSED=0 SKIPPED=0
@@ -152,12 +169,12 @@ for n in $SCOPE; do
   d="$STATE_DIR/issue-$n"
   ckp=""
   status=$(rd "$d/status" | head -1 | tr -d '\r')
-  [ -n "$status" ] || status=unknown
+  case $status in ''|*[!a-z-]*) status=unknown ;; esac
   ttl=$(title_of "$d/details.json")
   err=$(rd "$d/error")
   outcome=$(rd "$d/outcome" | head -1 | tr -d '\r')
   retries=$(rd "$d/retries" | head -1 | tr -d ' \r')
-  isnum "$retries" || retries=0
+  if isnum "$retries"; then retries=$((10#$retries)); else retries=0; fi
 
   prog=""
   if [ "$status" = failed ]; then
@@ -182,10 +199,15 @@ for n in $SCOPE; do
     TELE="$TELE- #$n: not dispatched ($status)$NL"
   elif load_result "$d"; then
     it=$(jv phase1_iterations); gp=$(jv gate_passes)
-    p1s=$(jv phase1_state); gs=$(jv gate_state); inl=$(jv phase1_inline)
-    chk=$(jv checks); ckp=$(jv checkpoint); rp=$(jv review_profile)
-    it_n=0; isnum "$it" && it_n=$it
-    gp_n=0; isnum "$gp" && gp_n=$gp
+    isnum "$it" || it=''; isnum "$gp" || gp=''
+    p1s=$(pick "$(jv phase1_state)" converged cap-stop bouncing)
+    gs=$(pick "$(jv gate_state)" clean degraded waived cap-stop errored bouncing unavailable)
+    inl=$(pick "$(jv phase1_inline)" true false)
+    chk=$(pick "$(jv checks)" pass none fail none-after-ready all-skipped unchanged-after-ready)
+    ckp=$(pick "$(jv checkpoint)" created refused skipped n/a)
+    rp=$(pick "$(jv review_profile)" standard prose revoked)
+    it_n=0; isnum "$it" && it_n=$((10#$it))
+    gp_n=0; isnum "$gp" && gp_n=$((10#$gp))
     TOTAL_ITER=$((TOTAL_ITER + it_n)); TOTAL_GATE=$((TOTAL_GATE + gp_n))
     TELE="$TELE- #$n: phase1 iterations=${it:-?}; gate passes=${gp:-?}; checks=${chk:-?}; checkpoint=${ckp:-?}; retries=$retries$NL"
     case $p1s in cap-stop|bouncing) TELE="$TELE  ! phase1_state $p1s$NL" ;; esac
@@ -205,7 +227,7 @@ for n in $SCOPE; do
   fi
 
   if [ -s "$d/profile" ]; then
-    src=$(head -1 "$d/profile" | tr -d '\r' | awk '{ print $2 }')
+    src=$(pick "$(head -1 "$d/profile" | tr -d '\r' | awk '{ print $2 }')" flag escalation)
     case $prof_rt in
       prose|revoked|standard) eff=$prof_rt ;;
       *) eff="no result recorded" ;;
@@ -219,12 +241,12 @@ for n in $SCOPE; do
         shape=$(bash "$CLASSIFY" pr-shape "$n" "$DEFAULT_BRANCH" 2>"$SHAPE_ERR")
         rc=$?
         if [ "$rc" -ne 0 ]; then
-          SHAPES="$SHAPES- #$n: PR shape unknown: $(head -1 "$SHAPE_ERR" 2>/dev/null)$NL"
+          SHAPES="$SHAPES- #$n: PR shape unknown: $(cell "$(head -1 "$SHAPE_ERR" 2>/dev/null | grep . || echo "classify.sh exit $rc")")$NL"
         else
-          SHAPES="$SHAPES- #$n:$NL$(printf '%s\n' "$shape" | sed 's/^/  /')$NL"
+          SHAPES="$SHAPES- #$n:$NL$(printf '%s\n' "$shape" | while IFS= read -r l; do printf '  %s\n' "$(cell "$l")"; done)$NL"
           case $shape in *'no open PR (only merged or closed PRs'*) SHAPES="$SHAPES  the branch may hold unmerged work$NL" ;; esac
           case $shape in *'shape unknown (branch not on origin)'*) SHAPES="$SHAPES  a fork's PR, never the runner's$NL" ;; esac
-          case $shape in *'non-draft ('*) SHAPES="$SHAPES  non-draft: checkpoint=${ckp:-no result recorded}; a refused checkpoint is expected, otherwise a failed revert to draft or a death in gh-issue's ready→merge window: an unfinished PR a human could merge by hand$NL" ;; esac
+          case $shape in *'non-draft ('*) SHAPES="$SHAPES  non-draft: checkpoint=${ckp:-no result recorded}; a refused checkpoint is expected, a skipped one is not, otherwise a failed revert to draft or a death in gh-issue's ready→merge window: an unfinished PR a human could merge by hand$NL" ;; esac
         fi ;;
     esac
   fi

@@ -340,7 +340,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, surface anything new, never auto-discard.
 
-**Summary.** Run `bash "$SUMMARY_SCRIPT" "$STATE_DIR" <MAX_CODEX_ITERATIONS> [--gateless] "$DEFAULT_BRANCH"` from the repository root (`--gateless` for a gateless run) and print its output verbatim, never reconstructed; relay its `!` lines. Then [summary-report.md](summary-report.md): grouping, `ready` PRs and the post to the tracking issue (every in-scope issue carrying the same `Part of #P` line).
+**Summary.** Run `bash "$SUMMARY_SCRIPT" "$STATE_DIR" <MAX_CODEX_ITERATIONS> [--gateless] "$DEFAULT_BRANCH"` from the repository root (`--gateless` if gateless; without Step 2, as in `--merge-ready`: 3, gated) and print its output verbatim, never reconstructed. Then [summary-report.md](summary-report.md): grouping, `ready` PRs and the post to the tracking issue (every in-scope issue carrying the same `Part of #P` line).
 
 Last, unless the run stopped paused, release the lock and session pointer: `bash "<RUN_STATE_SCRIPT>" release "<RUN_ROOT>"` (why: Why resume pointers are written at dispatch, not at failure).
 

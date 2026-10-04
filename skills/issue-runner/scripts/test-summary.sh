@@ -155,6 +155,33 @@ has "hung + done -> stopped as hung after merge" '#1: stopped as hung after merg
 hasnt "hung + failed -> no after-merge note (the error is verbatim in the table)" '#2: stopped as hung after merge'
 has "hung + failed -> error verbatim" '`implementer hung (no completion): progress unchanged for 31m`'
 
+# --- Numbers are decimal, titles are unescaped, odd statuses are contained ------------------
+reset; scope 1 2 3
+issue 1 done 'A & B é'; result 1 merged 09 converged false 08 clean pass created standard null
+printf '08\n' > "$S/issue-1/retries"
+issue 2 'a|b'; clean_result 2
+issue 3 done; result 3 merged 99999999999999999999 converged false 1 clean pass created standard null
+run "$S" 3
+rc_is "leading zeros and huge numbers: exit 0" 0
+has "leading-zero retries and counts do not abort the loop" '- #1: phase1 iterations=09; gate passes=08; checks=pass; checkpoint=created; retries=8'
+has "later issues still print after a leading-zero value" '| #2 | unknown |'
+has "a \\u0026 escape in a title is decoded" 'A & B é'
+has "a huge phase1_iterations counts as 0" 'totals: phase1 iterations=11; gate passes=10'
+# agents: issue 1 (1+8)*2 + 2*9 = 36; issue 2: 2 + 2*2 = 6; issue 3: 2 -> 44
+has "agent arithmetic is decimal" 'Actual agents: 44 '
+run "$S" 1000000;                 rc_is "oversized max-codex-iterations -> exit 2" 2
+
+# --- Posted text is enumerated or sanitized ---------------------------------------------------
+reset; scope 1 1 2
+issue 1 blocked; result 1 blocker 1 '[x](http://e)' false 1 '@team' '[y](z)' '@org' standard null
+issue 2 'a|b'
+run "$S" 3
+has "free-form telemetry values print as ?" '- #1: phase1 iterations=1; gate passes=1; checks=?; checkpoint=?; retries=0'
+hasnt "an injected link never reaches the output" 'http://e'
+hasnt "an injected mention never reaches the output" '@team'
+has "a status outside the word set is unknown" '| #2 | unknown |'
+has "duplicate scope entries count once" '(estimate: 8–24)'
+
 # --- Missing per-issue pieces never fail --------------------------------------------------
 reset; scope 7
 run "$S" 3
@@ -183,7 +210,7 @@ rc_is "pr-shape: exit 0" 0
 has "pr-shape: a non-draft PR names its checkpoint value" 'non-draft: checkpoint=refused'
 has "pr-shape: merged-or-closed branch warns of unmerged work" 'the branch may hold unmerged work'
 has "pr-shape: a fork PR is never the runner's" "a fork's PR, never the runner's"
-has "pr-shape: a failing classifier is listed, not fatal" '#4: PR shape unknown: gh exploded'
+has "pr-shape: a failing classifier is listed, not fatal" '#4: PR shape unknown: `gh exploded`'
 if grep -qx 'pr-shape 1 main' "$STUB_LOG" && grep -qx 'pr-shape 4 main' "$STUB_LOG" \
    && ! grep -qE 'pr-shape (5|6) ' "$STUB_LOG"; then
   ok "pr-shape: runs for blocked/failed/skipped/closed-externally only"
