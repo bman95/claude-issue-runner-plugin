@@ -24,7 +24,7 @@ Orchestrated: write `step=9 pr=#P` immediately before. Run the validation script
 The only place the draft flag comes off. A failed `gh pr ready` is a blocker (interactive: report it). For `READIED=1`, the bounded poll lets CI register before "no checks" or "all skipped" can mean "no CI":
 
 ```bash
-READIED=1   # "this PR was ever a draft": set 0 only for a PR created plain at Step 7 (checkpoint: refused or skipped)
+READIED=1   # "this PR was ever a draft": set 0 only for a PR created plain at Step 7 (checkpoint: refused)
             # and for an interactive PR that never was a draft. Carry the value forward yourself.
 if [ "$(gh pr view "$PR_NUM" --json isDraft -q .isDraft)" = true ]; then
   if ! gh pr ready "$PR_NUM"; then echo "gh pr ready failed" >&2; exit 1; fi   # blocker — do not continue

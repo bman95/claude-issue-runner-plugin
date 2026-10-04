@@ -278,6 +278,14 @@ hasnt "no default branch -> no pr-shape section" 'Unfinished PRs'
 [ ! -s "$STUB_LOG" ] && ok "no default branch -> classifier never called" || err "classifier called without a default branch"
 unset CLASSIFY_SCRIPT
 
+# --- pr-shape: a non-draft PR whose checkpoint was skipped names that value ------------------
+export CLASSIFY_SCRIPT="$TMP/classify-stub.sh"
+reset; scope 1; : > "$STUB_LOG"
+issue 1 blocked; result 1 blocker 1 converged false 1 clean pass skipped standard '"x"'
+run "$S" 3 main
+has "pr-shape: a non-draft PR names a skipped checkpoint" 'non-draft: checkpoint=skipped; a refused checkpoint is expected, a skipped one is not'
+unset CLASSIFY_SCRIPT
+
 # --- Usage errors ---------------------------------------------------------------------------
 reset; scope 1; issue 1 done
 run;                              rc_is "no arguments -> exit 2" 2
