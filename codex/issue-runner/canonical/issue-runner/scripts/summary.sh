@@ -156,8 +156,19 @@ load_result() {
       for (j = i + 1; j <= length(s); j++) { d = substr(s, j, 1); if (d == "\\") j++; else if (d == "\"") return j }
       return length(s)
     }
+    # goodstr(s, a, b): the string s[a..b] (quotes included) uses only valid JSON escapes
+    function goodstr(s, a, b,    m, d, h) {
+      for (m = a + 1; m < b; m++) {
+        d = substr(s, m, 1)
+        if (d != "\\") continue
+        d = substr(s, ++m, 1)
+        if (d == "u") { h = substr(s, m + 1, 4); if (h !~ /^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$/) return 0; m += 4 }
+        else if (index("\"\\/bfnrt", d) == 0 || d == "") return 0
+      }
+      return b > a && substr(s, b, 1) == "\""
+    }
     function skipws(s, k) { while (substr(s, k, 1) == " " || substr(s, k, 1) == "\t") k++; return k }
-    { o = ""; n = length($0); i = 1
+    { o = ""; n = length($0); i = 1; bad = 0
       while (i <= n) {
         c = substr($0, i, 1)
         if (c == "\"") {
@@ -165,7 +176,7 @@ load_result() {
           if (key == "\"blocker\"" && substr($0, k, 1) == ":") {
             # drop the blocker member (key, value, one adjoining comma)
             k = skipws($0, k + 1); d = substr($0, k, 1)
-            if (d == "\"") k = strend($0, k) + 1
+            if (d == "\"") { e = strend($0, k); if (!goodstr($0, k, e)) bad = 1; k = e + 1 }
             else if (d == "{" || d == "[") {
               depth = 0
               while (k <= n) {
@@ -175,7 +186,12 @@ load_result() {
                 else if (d == "}" || d == "]") { depth--; if (depth == 0) { k++; break } }
                 k++
               }
-            } else while (k <= n && substr($0, k, 1) != "," && substr($0, k, 1) != "}") k++
+            } else {
+              t = ""
+              while (k <= n && substr($0, k, 1) != "," && substr($0, k, 1) != "}") { t = t substr($0, k, 1); k++ }
+              sub(/[ \t]+$/, "", t)
+              if (t !~ /^(null|true|false|-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?)$/) bad = 1
+            }
             k = skipws($0, k)
             if (substr(o, length(o), 1) == ",") o = substr(o, 1, length(o) - 1)
             else if (substr($0, k, 1) == ",") k++
@@ -186,11 +202,14 @@ load_result() {
         if (c != " " && c != "\t") o = o c
         i++
       }
-      print o }')
+      print (bad ? o "@" : o) }')
   RJ=$raw
   # Well-formed: a flat object of "key":string|number|true|false|null members
   # (the blocker member is already gone).
-  member='"([^"\\]|\\.)*":("([^"\\]|\\.)*"|[-+0-9.eE]+|true|false|null)'
+  str='"([^"\\]|\\(["\\/bfnrt]|u[0-9a-fA-F]{4}))*"'
+  # digits only after the sign: a leading zero is tolerated (callers read counts through 10#)
+  num='-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?'
+  member="$str:($str|$num|true|false|null)"
   printf '%s\n' "$RJ" | grep -Eq "^\{($member(,$member)*)?\}\$" || { RJ=""; return 1; }
   case $(jv outcome) in merged|blocker|failed|ready) ;; *) RJ=""; return 1 ;; esac
   # The worktree must be a non-empty string (not null, not "").

@@ -150,6 +150,21 @@ has "profile: escalation -> revoked" 'review profile: prose (escalation) → rev
 has "profile: flag -> standard" 'review profile: prose (flag) → standard'
 has "profile: no result -> no result recorded" 'review profile: prose (flag) → no result recorded'
 
+# --- Malformed JSON tokens are unreadable, wherever they sit ---------------------------------
+reset; scope 1 2 3 4 5 6 7
+for n in 1 2 3 4 5 6 7; do issue "$n" blocked; printf 'agent-%s\n' "$n" > "$S/issue-$n/agent"; done
+W='"worktree":"/w","phase1_iterations":4'
+printf '{"outcome":"merged","pr":+,%s}\n' "$W" > "$S/issue-1/result.json"
+printf '{"outcome":"merged","pr":1e,%s}\n' "$W" > "$S/issue-2/result.json"
+printf '{"outcome":"merged","branch":"a\\qb",%s}\n' "$W" > "$S/issue-3/result.json"
+printf '{"outcome":"merged","blocker":"a\\qb",%s}\n' "$W" > "$S/issue-4/result.json"
+printf '{"outcome":"merged","blocker":+,%s}\n' "$W" > "$S/issue-5/result.json"
+printf '{"outcome":"merged","branch":"a\\u12g4b",%s}\n' "$W" > "$S/issue-6/result.json"
+printf '{"outcome":"merged","blocker":"a\\u00e9\\n\\"b",%s}\n' "$W" > "$S/issue-7/result.json"
+run "$S" 3
+for n in 1 2 3 4 5 6; do has "malformed token #$n -> no result recorded" "- #$n: no result recorded (retries=0)"; done
+has "valid escapes in a blocker stay readable" '- #7: phase1 iterations=4;'
+
 # --- Actual vs. estimate -----------------------------------------------------------------
 reset; scope 1 2 3 4 5
 issue 1 done; result 1 merged 2 converged false 1 clean pass created standard null          # 2 + 4 = 6
