@@ -109,7 +109,13 @@
 #  28. every `(why: <entry>)` pointer in a skill's Markdown files resolves: the
 #      same skill's REFERENCE.md has a bullet opening `- **<entry>.**`, and
 #      every Markdown file a SKILL.md links by relative path exists
-#  29. skills/issue-runner/scripts/test-summary.sh passes against both
+#  29. the user-decision contract (issue #84) is one contract in both editions:
+#      the orchestrator's user-decisions.md and gh-issue's
+#      orchestrator-guidance.md exist, each SKILL.md links its file, and the
+#      `**User decisions:**` and `**Orchestrator suggestions (non-binding):**`
+#      labels appear in user-decisions.md and escalations.md (the first also
+#      in orchestrator-guidance.md)
+#  30. skills/issue-runner/scripts/test-summary.sh passes against both
 #      editions' summary.sh — the fixtures for Step 5's summary table,
 #      telemetry and actual-vs-estimate line
 #
@@ -950,7 +956,36 @@ for d in "$ROOT"/skills/*/; do
 done
 [ "$ptr_ok" -eq 1 ] && ok "rationale pointers resolve ($n_ptr) and SKILL.md's Markdown links exist"
 
-# 29. Step 5 summary script fixtures ------------------------------------------------
+# 29. User decisions vs orchestrator suggestions: one contract in both editions -----
+ud_ok=1
+for ed in "$ROOT/skills" "$ROOT/codex/issue-runner/canonical"; do
+  rel="${ed#"$ROOT"/}"
+  for pair in issue-runner:user-decisions.md gh-issue:orchestrator-guidance.md; do
+    sk=${pair%%:*}; fl=${pair#*:}
+    [ -f "$ed/$sk/$fl" ] || { err "$rel/$sk/$fl missing (user-decision contract)"; ud_ok=0; continue; }
+    grep -qF "]($fl)" "$ed/$sk/SKILL.md" || { err "$rel/$sk/SKILL.md does not link $fl"; ud_ok=0; }
+  done
+  for lbl in '**User decisions:**' '**Orchestrator suggestions (non-binding):**'; do
+    for f in "$ed/issue-runner/user-decisions.md" "$ed/issue-runner/escalations.md"; do
+      grep -qF -- "$lbl" "$f" || { err "${f#"$ROOT"/} lacks the label $lbl"; ud_ok=0; }
+    done
+  done
+  for f in "$ed/issue-runner/user-decisions.md" "$ed/gh-issue/orchestrator-guidance.md"; do
+    grep -qF -- '## Run <' "$f" \
+      || { err "${f#"$ROOT"/} lacks the ## Run <timestamp> entry heading"; ud_ok=0; }
+  done
+  grep -qF -- 'gh issue view <N> --json state,body' "$ed/issue-runner/user-decisions.md" \
+    || { err "$rel/issue-runner/user-decisions.md lacks the live-state read before an edit"; ud_ok=0; }
+  for f in "$ed/gh-issue/orchestrator-guidance.md" "$ed/gh-issue/SKILL.md"; do
+    grep -qF -- 'Suggested (unconfirmed)' "$f" \
+      || { err "${f#"$ROOT"/} lacks the Suggested (unconfirmed) reading"; ud_ok=0; }
+  done
+  grep -qF -- '**User decisions:**' "$ed/gh-issue/orchestrator-guidance.md" \
+    || { err "$rel/gh-issue/orchestrator-guidance.md lacks the label **User decisions:**"; ud_ok=0; }
+done
+[ "$ud_ok" -eq 1 ] && ok "user-decision contract present in both editions (user-decisions.md, orchestrator-guidance.md, labels)"
+
+# 30. Step 5 summary script fixtures ------------------------------------------------
 # summary.sh prints the table, telemetry and spend line the orchestrator relays;
 # the same fixtures run against both editions' copies of the script.
 TEST_SUMMARY="$ROOT/skills/issue-runner/scripts/test-summary.sh"

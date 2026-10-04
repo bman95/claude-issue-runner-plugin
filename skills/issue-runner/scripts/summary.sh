@@ -173,6 +173,7 @@ load_result() {
                 k++
               }
             } else while (k <= n && substr($0, k, 1) != "," && substr($0, k, 1) != "}") k++
+            k = skipws($0, k)
             if (substr(o, length(o), 1) == ",") o = substr(o, 1, length(o) - 1)
             else if (substr($0, k, 1) == ",") k++
             i = k; continue

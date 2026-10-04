@@ -202,6 +202,8 @@ reorder() {  # reorder LABEL JSON
   has "$1" '- #1: phase1 iterations=2; gate passes=1; checks=none; checkpoint=skipped; retries=0'
 }
 reorder "blocker first" "{\"blocker\":\"x, \\\"checkpoint\\\": \\\"refused\\\"\",\"outcome\":\"blocker\",\"pr\":5,\"branch\":\"b\",\"worktree\":\"/w\",$T}"
+reorder "blocker first, whitespace before the comma" "{\"blocker\":\"r\" , \"outcome\":\"blocker\",\"pr\":5,\"branch\":\"b\",\"worktree\":\"/w\",$T}"
+reorder "blocker first as an object, whitespace before the comma" "{\"blocker\":{\"a\":1}  , \"outcome\":\"blocker\",\"pr\":5,\"branch\":\"b\",\"worktree\":\"/w\",$T}"
 reorder "blocker in the middle" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",\"blocker\":\"a, b\",$T,\"pr\":5}"
 reorder "blocker null before the telemetry" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",\"blocker\":null,$T}"
 reorder "blocker as an object" "{\"outcome\":\"blocker\",\"blocker\":{\"checkpoint\":\"refused\",\"a\":[1,{\"b\":\"}\"}]},\"worktree\":\"/w\",$T}"
