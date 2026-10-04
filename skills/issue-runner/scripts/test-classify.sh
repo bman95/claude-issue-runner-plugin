@@ -382,7 +382,7 @@ case $out in "implementer hung (no completion): progress unchanged for 18"[0-9]"
 check "an empty progress file is no progress file -> nothing" 0 "" -- hang 8 "$HD" 30
 check "hang minutes must be a positive integer -> exit 2" 2 "" -- hang 8 "$HD" 0
 
-# --- notification: Step 3 item 5's final-or-interim question (row 73) --------------------
+# --- notification: Step 3 item 5's final-or-interim question (row 76) --------------------
 # An interim "Agent finished" (the implementer stopped with a gate pass of its own
 # running in the background) with no result.json and a fresh progress marker must
 # change nothing: no status, no outcome, no blocker, no error, no progress write.
@@ -401,14 +401,14 @@ ncase() {
   check "$1" 0 "$2" -- notification 9 "$ND"
 }
 GOOD_RESULT='{"outcome":"blocker","pr":12,"worktree":"/w","blocker":"x"}'
-ncase "row 73: the host's note as the first line, no result.json -> interim" interim \
+ncase "row 76: the host's note as the first line, no result.json -> interim" interim \
   "$HOST_NOTE"$'\nGate pass 1 is running with gpt-6.1-sol; I will check the results when it finishes.' ""
 nd_before=$(nd_snapshot)
-check "row 73: the same state leaves a fresh progress marker un-hung" 0 "" -- hang 9 "$ND" 30
-check "row 73: ... and re-running the call is idempotent" 0 "interim" -- notification 9 "$ND"
-[ "$(nd_snapshot)" = "$nd_before" ] && ok "row 73: an interim notification changes no state file (status stays implementing, progress mtime untouched)" \
-  || err "row 73: the notification mode modified the issue directory"
-ncase "row 73: the fixed form 'interim: waiting on <what>' as the only line -> interim" interim \
+check "row 76: the same state leaves a fresh progress marker un-hung" 0 "" -- hang 9 "$ND" 30
+check "row 76: ... and re-running the call is idempotent" 0 "interim" -- notification 9 "$ND"
+[ "$(nd_snapshot)" = "$nd_before" ] && ok "row 76: an interim notification changes no state file (status stays implementing, progress mtime untouched)" \
+  || err "row 76: the notification mode modified the issue directory"
+ncase "row 76: the fixed form 'interim: waiting on <what>' as the only line -> interim" interim \
   "interim: waiting on codex gate pass 1" ""
 ncase "the fixed form after other text, as the last non-blank line -> interim" interim \
   $'Pass 1 launched.\ninterim: waiting on codex gate pass 1\n\n' ""
@@ -424,25 +424,35 @@ ncase "the host's phrase quoted on a later line of a final message -> final" fin
   $'Blocker: the agent stopped with background work of its own still running\nworktree: /w' ""
 ncase "the host's phrase not at the start of the first line -> final" final \
   "Blocker: This agent stopped with background work of its own still running" ""
-ncase "row 73: the host's note leading a final blocker message with a worktree: line -> final" final \
+ncase "row 76: the host's note leading a final blocker message with a worktree: line -> final" final \
   "$HOST_NOTE"$'\nBlocker: spec ambiguity.\nworktree: /w' ""
 ncase "a worktree: line beats the fixed form too -> final" final \
   $'Blocker: x\nworktree: /w\ninterim: waiting on y' ""
 ncase "'worktree:' must start a line to count -> the host's note still wins" interim \
   "$HOST_NOTE"$'\nsee worktree: /w' ""
-ncase "row 73: a final message with no marker, no result.json -> final (prose classification)" final \
+ncase "row 76: a final message with no marker, no result.json -> final (prose classification)" final \
   $'Blocker: spec ambiguity.\nworktree: /w' ""
 ncase "no notification text and no result.json -> final" final "" ""
-ncase "row 73: a readable result.json wins over the host's note -> final" final \
+ncase "row 76: a readable result.json wins over the host's note -> final" final \
   "$HOST_NOTE" "$GOOD_RESULT"
-ncase "row 73: a readable result.json wins over the fixed form -> final" final \
+ncase "row 76: a readable result.json wins over the fixed form -> final" final \
   "interim: waiting on codex gate pass 1" "$GOOD_RESULT"
-ncase "row 73: result.json with an empty worktree is unreadable -> interim" interim \
+ncase "row 76: result.json with an empty worktree is unreadable -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":12,"worktree":"","blocker":"x"}'
 ncase "result.json with an unknown outcome is unreadable -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"weird","pr":12,"worktree":"/w"}'
 ncase "a truncated result.json is unreadable -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":12,'
+ncase "a valid result.json with a \\u-escaped outcome is readable -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"\u0072eady","pr":12,"worktree":"/w"}'
+ncase "a valid result.json with escapes in the worktree string is readable -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","pr":12,"worktree":"C:\\w\"x\/\n"}'
+ncase "an escaped outcome that decodes to an unknown word is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"m\u0065rged!","pr":12,"worktree":"/w"}'
+ncase "an escaped worktree that decodes to nothing printable still counts as non-empty -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"failed","pr":12,"worktree":"\u00e9"}'
+ncase "an invalid escape in a string is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"ready","pr":12,"worktree":"\x"}'
 ncase "a second object after the first is not one JSON object -> interim" interim \
   "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w"}{}'
 ncase "a second object on the next line is not one JSON object -> interim" interim \
@@ -590,8 +600,8 @@ unset CWD
 # case; rows 23-25 only for the Step 5 label (the resume, the revert to draft
 # and the crash are Step 3a's and the implementer's). Every other row is outside these two
 # classifications: see test-scheduler.sh for the state machine's rows.
-IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35 73"
-EXPECTED_ROW_COUNT=73
+IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35 76"
+EXPECTED_ROW_COUNT=76
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then

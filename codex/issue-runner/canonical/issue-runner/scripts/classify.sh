@@ -339,15 +339,19 @@ result_readable() {
   [ -s "$1" ] || return 1
   LC_ALL=C awk '
     function ws() { while (p <= n && index(" \t\r\n", substr(s, p, 1))) p++ }
-    function str(   c, e) {
+    function uni(h,   i, v) {
+      for (i = 1; i <= 4; i++) v = v * 16 + index("0123456789abcdef", tolower(substr(h, i, 1))) - 1
+      return (v > 0 && v < 128) ? sprintf("%c", v) : "\001"
+    }
+    function str(   c, e, k) {
       p++; buf = ""
       while (p <= n) {
         c = substr(s, p, 1)
         if (c == "\"") { p++; return 1 }
         if (c == "\\") {
           e = substr(s, p + 1, 1)
-          if (index("\"\\/bfnrt", e) && e != "") { buf = buf c e; p += 2; continue }
-          if (e == "u" && substr(s, p + 2, 4) ~ /^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$/) { buf = buf substr(s, p, 6); p += 6; continue }
+          if (e != "" && (k = index("\"\\/bfnrt", e))) { buf = buf substr("\"\\/\b\f\n\r\t", k, 1); p += 2; continue }
+          if (e == "u" && substr(s, p + 2, 4) ~ /^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$/) { buf = buf uni(substr(s, p + 2, 4)); p += 6; continue }
           return 0
         }
         if (c ~ /[[:cntrl:]]/) return 0

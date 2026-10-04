@@ -131,7 +131,7 @@ fixture "wait: nothing ready, an implementer is in flight" \
 # nothing). This fixture pins only the scheduler's half of that contract: an
 # `implementing` issue with a dependent chain yields `wait`, never a skip, a
 # cycle or a dispatch. Item 5's prose is not executable here.
-fixture "row 73: an implementing issue with a dependent chain -> wait, nothing skipped" \
+fixture "row 76: an implementing issue with a dependent chain -> wait, nothing skipped" \
   $'1:\n2: 1\n3: 2' "1=implementing 2=pending 3=pending" "" \
   "wait"
 
@@ -310,8 +310,8 @@ fi
 # machine, so
 # there is nothing here to fixture. Pin the total row count so a scenarios.md
 # edit that adds or removes a row is caught here for review, not silently.
-IN_SCOPE_ROWS="1 2 3 4 29 32 34 73"
-EXPECTED_ROW_COUNT=73
+IN_SCOPE_ROWS="1 2 3 4 29 32 34 76"
+EXPECTED_ROW_COUNT=76
 
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
