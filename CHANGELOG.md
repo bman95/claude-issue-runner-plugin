@@ -4,10 +4,20 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-04
+
+Fixes #83 and #84. #83: in a production run the orchestrator skipped a required read, paraphrased the Step 5 summary instead of building it, misreported a deliberately skipped checkpoint as refused, and left a wake timer armed past the lock release. The summary becomes a script, the skip gets its own value, and Step 5 ends its wakes. This is a minor bump because the `result.json` `checkpoint` enum gained a value.
+
+Versions: issue-runner 0.13.0 → 0.14.0, gh-issue 0.11.0 → 0.12.0, Claude plugin manifests and Codex edition manifest 0.14.0 → 0.15.0, each skill's version mirrored into its Codex copies.
+
 **issue-runner:**
+- **The Step 5 summary is `scripts/summary.sh`** (new, with `test-summary.sh` and lint check 30). It reads `scope.txt` and each issue's files and prints the summary table, the per-issue telemetry with `!` flag lines, the review-profile lines, the hung-after-merge note, the optional `pr-shape` section and the exact `Actual agents: … (estimate: …)` line with its caveat. Free text goes into sanitized code spans and every other value is an enumerated word or a number, so the output can be posted to the tracking issue as it stands (the post now also carries the unfinished-PR shapes and the spend line). The orchestrator prints its output as it stands; `summary-report.md` keeps only grouping, ready PRs and the tracking-issue post. A Codex copy ships byte-identically.
+- **Step 5 stops every armed wake first**: it ends each item 4 `Monitor` and `TaskStop`s each `run_in_background` sleep, so no timer fires on a released run.
+- **Fewer read-before gates.** The rule that decides whether a `result.json` is readable now sits in SKILL.md's State section and in `summary.sh`, instead of behind a mandatory read of `state-files.md`, which is now reference material.
 - **User decisions and orchestrator suggestions are kept apart** (fixes #84). A run's orchestrator had offered an option that delegated decisions without listing them, written its own defaults into `guidance.md` as "(user-approved)", read a bare "Yes" to an either/or as a choice, and edited a closed issue's body while filing follow-ups. The new `user-decisions.md` requires delegating options to list their decisions, treats an answer that selects nothing as resolving nothing, applies Step 4's escalation rule at every step and to follow-up work, splits `guidance.md` into quoted `**User decisions:**` and non-binding `**Orchestrator suggestions:**`, and requires reading an issue or PR's live state and body before editing it (a closed issue's spec is history: changes go in a new issue). `guidance.md` entries written before this change carry no labels and read as suggestions, so the orchestrator re-asks the user for any earlier answer it still relies on before re-dispatching.
 
 **gh-issue:**
+- **`checkpoint: skipped`.** A Step 4 checkpoint the implementer deliberately did not run is reported as `skipped`, no longer as `refused` (which means a push or draft was actually refused). The Step 5 summary flags both.
 - New `orchestrator-guidance.md` (linked from Step 1) says how implementers read `guidance.md`: quoted user decisions are spec input, suggestions are hints, machine-recorded blockers and traces are facts, and none of it authorizes anything. Lint check 29 pins the contract in both editions.
 
 ## [0.14.0] - 2026-09-28
