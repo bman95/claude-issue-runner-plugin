@@ -4,6 +4,17 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+Fixes #87. Two PRs of a production run merged with reviewer findings the implementer chose not to fix, recorded only in PR prose, in code the PR had just written; the orchestrator then turned them into issues by hand. This changes Expected behavior (`docs/scenarios.md` rows 76 and 77) and adds a `result.json` key.
+
+**gh-issue:**
+- **Small in-diff findings are Apply-class.** A finding in code the PR added or changed, fixable in a few lines plus a test and needing no product decision, is fixed in the worktree whatever its severity label (cosmetic nits are still skipped). The prose profile's Apply class is not widened by it.
+- **New Defer class and `deferred` in `result.json`.** A finding that needs a decision or is large is deferred, as is a pre-existing one (Surface). Every deferral goes into `"deferred":[{"finding","reason"}]`, as well as the PR body. Converged tolerates Defer- and Surface-class findings in every profile (Surface was named only under prose).
+- To stay within the 5,000-word body ceiling, the Security lens text and the "Relation to CI" paragraph moved to `review-loop.md` and `validation.md`, verbatim.
+
+**issue-runner:**
+- **Step 5 lists deferrals and asks the user once** whether to file them, fix them in a follow-up PR, or drop them; it never files, dispatches or drops on its own judgment. `summary.sh` prints a `## Deferred findings` section and a `!` flag line per issue; a malformed `deferred` array prints `deferred unreadable` and keeps the telemetry.
+- The Codex canonical copies carry every change byte-identically.
+
 ## [0.15.0] - 2026-10-04
 
 Fixes #83 and #84. #83: in a production run the orchestrator skipped a required read, paraphrased the Step 5 summary instead of building it, misreported a deliberately skipped checkpoint as refused, and left a wake timer armed past the lock release. The summary becomes a script, the skip gets its own value, and Step 5 ends its wakes. This is a minor bump because the `result.json` `checkpoint` enum gained a value.

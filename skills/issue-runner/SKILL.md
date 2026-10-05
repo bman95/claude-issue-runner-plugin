@@ -26,10 +26,10 @@ You are the orchestrator. Implementers are `general-purpose` subagents in isolat
 - `/issue-runner --flush` — ask the project's CI to validate the default branch's tip now: read-only, per [integration.md](integration.md), "`--flush`".
 - `/issue-runner --max-parallel N` — concurrency cap (default 3); `--sequential` ≡ `--max-parallel 1`
 - `/issue-runner --hang-minutes N` — hung-implementer threshold (default 30): `progress` unchanged for more than N minutes → stopped and classified (Step 3 item 4)
-- `/issue-runner --lock-ttl-minutes N` — run-lock heartbeat threshold (default 120): `run-state.sh init` refuses a second run while the lock's PID is alive **or** its mtime is younger than N minutes
+- `/issue-runner --lock-ttl-minutes N` — run-lock heartbeat threshold (default 120; see Hard rules, "Single-host state")
 - `/issue-runner --max-codex-iterations N` — Codex gate cap per implementer (default 3): at most N `codex review` passes, the gate review plus a verification pass after every fix round
 - `/issue-runner --max-retries N` — cap on Step 4 re-dispatches per issue, self-resolved and user-authorized alike (default 2); at the cap only the user can authorize more
-- `/issue-runner --no-codex-gate` — no Codex certification gate: implementers merge on local fresh-eyes convergence alone, recorded in each PR body like the credit/quota degradation
+- `/issue-runner --no-codex-gate` — no Codex certification gate: implementers merge on local fresh-eyes convergence alone, recorded in each PR body
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass; conflict edges from `Files likely touched:` intersection are still computed (Step 2)
 - `/issue-runner --no-merge` — implementers stop at ready-to-merge (gh-issue Step 9's no-merge stop) and return `ready: PR #<P>` for a human to merge; the issue lands `ready`, terminal for the run, worktree and branch kept; dependents wait (Step 3 item 6). Forwarded only via the dispatch prompt (Step 3a).
 - `/issue-runner --prose-gate N,…` — authorize gh-issue's prose review profile (gh-issue Step 8, "Review profile") for these in-scope issues (`--prose-gate 43,45`); Step 1 checks it and writes the `profile` files per [prose-gate.md](prose-gate.md). Refused before the run lock (messages in prose-gate.md): any other shape, a number outside the scope, use with `--merge-ready`, and use with `--no-codex-gate`.
@@ -79,7 +79,7 @@ Per issue, `issue-N/`: `details.json`, `error`, optional `guidance.md`; `status`
 `session` and `agent` are the only **resume pointers**, never status inputs. `result.json` carries exactly these keys (lint-checked against gh-issue's copy):
 
 ```json
-{"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|skipped|n/a","security_lens":true,"review_profile":"standard|prose|revoked","blocker":null}
+{"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|skipped|n/a","security_lens":true,"review_profile":"standard|prose|revoked","deferred":[{"finding":"<text>","reason":"<text>"}],"blocker":null}
 ```
 
 It is **advisory for status, authoritative for telemetry**, and `progress` is **informational only**. **Unreadable** (not one JSON object with a valid `outcome` and a non-empty `worktree`) counts as absent: [state-files.md](state-files.md).
@@ -341,7 +341,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, surface anything new, never auto-discard.
 
-**Summary.** Run `bash "$SUMMARY_SCRIPT" "$STATE_DIR" <MAX_CODEX_ITERATIONS> [--gateless] "$DEFAULT_BRANCH"` from the repository root (`--gateless` if gateless; under `--merge-ready`: 3, gated) and print its output verbatim. Then [summary-report.md](summary-report.md): grouping, `ready` PRs and the tracking-issue post (every in-scope issue carrying the same `Part of #P` line).
+**Summary.** Run `bash "$SUMMARY_SCRIPT" "$STATE_DIR" <MAX_CODEX_ITERATIONS> [--gateless] "$DEFAULT_BRANCH"` from the repository root (`--gateless` if gateless; under `--merge-ready`: 3, gated) and print its output verbatim. Then [summary-report.md](summary-report.md): grouping, `ready` PRs and the tracking-issue post (every in-scope issue carrying the same `Part of #P` line). If the summary lists deferred findings, ask the user once: file them, fix them in a follow-up PR, or drop them. Never decide that yourself.
 
 Last, unless the run stopped paused, release the lock and session pointer: `bash "<RUN_STATE_SCRIPT>" release "<RUN_ROOT>"` (why: Why resume pointers are written at dispatch, not at failure).
 
@@ -351,6 +351,5 @@ Last, unless the run stopped paused, release the lock and session pointer: `bash
 - **State goes through files.** Reference paths in prompts; don't paste file contents.
 - **Never `Skill()` for `gh-issue`, `/review`, or `/codex:review`.** Inline the procedures; run codex via Bash (why: Why skills are inlined, never invoked).
 - **Single-issue scope → inline fast path.** No orchestrator state, DAG or Step 5; gh-issue's interactive mode owns the worktree (Step 4 creates, Step 9 removes).
-- **The orchestrator never hand-manages worktrees.** Orchestrated isolation comes only from Agent-tool dispatch; the parent touches worktrees only in Step 5.
-- **The orchestrator never enters a worktree.** In-worktree work (fixes, re-reviews, merges) belongs to implementers (why: Why the orchestrator never enters a worktree).
+- **The orchestrator never enters or hand-manages a worktree.** Isolation comes only from Agent-tool dispatch; the parent touches worktrees only in Step 5; in-worktree work (fixes, re-reviews, merges) belongs to implementers (why: Why the orchestrator never enters a worktree).
 - **Single-host state, one run per repo.** State is per repo (`${XDG_STATE_HOME:-$HOME/.local/state}/issue-runner/<repo-key>/state`); the lock (`$RUN_ROOT/lock`) refuses a second run while its PID is alive **or** its heartbeat is younger than `--lock-ttl-minutes` (State section). Never delete a live lock to force one (the own-process exception in REFERENCE.md aside).
