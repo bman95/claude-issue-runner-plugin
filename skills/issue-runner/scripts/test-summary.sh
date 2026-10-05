@@ -368,7 +368,8 @@ has "telemetry shows the reviewer count and the gate model" '- #1: phase1 iterat
 reset; scope 1
 issue 1 done; clean_result 1
 run "$S" 3
-hasnt "a result without gate_model is not flagged as a gate-model mismatch" '! gate model'
+hasnt "a result without gate_model is not flagged as a gate-model mismatch" '!= requested'
+has "a result with gate passes and no gate_model is flagged as not recorded" '  ! gate model not recorded (gate passes 1'
 reset; scope 1 2 3 4
 issue 1 done; result_cfg 1 2 '"gpt-6.1-sol"' 4        # 2 + 4*2 = 10 agents; configured 4
 issue 2 done; result_cfg 2 1 '"gpt-6-sol"' 3          # 2 + 3*1 = 5; configured 3
