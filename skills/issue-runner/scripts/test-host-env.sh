@@ -70,6 +70,13 @@ has "wrapped command: the piped tool" "- tee:"
 has "wrapped command: the tool after env" "- wrapped-tool:"
 hasnt "wrapped command: cd itself is not probed" "- cd:"
 
+# A shell builtin is not a missing tool; a glob in the contract is never expanded.
+: > "$TMP/repo2/canary"
+printf 'preflight: test -f x && * \n' > "$TMP/repo2/.issue-runner/validation"
+run "$TMP/state" "$TMP/repo2"
+has "a builtin is reported as such, not as not found" "- test: shell builtin or keyword"
+hasnt "a glob in the contract is not expanded against the repo" "canary"
+
 # Other manifests map to their tools.
 mkdir -p "$TMP/repo3/.husky"; : > "$TMP/repo3/Cargo.toml"; : > "$TMP/repo3/uv.lock"; : > "$TMP/repo3/go.mod"; : > "$TMP/repo3/Makefile"; : > "$TMP/repo3/yarn.lock"; printf '{}\n' > "$TMP/repo3/package.json"
 run "$TMP/state" "$TMP/repo3"

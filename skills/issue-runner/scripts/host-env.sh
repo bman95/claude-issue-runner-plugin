@@ -80,7 +80,11 @@ for t in $TOOLS; do
   case $SEEN in *" $t "*) continue ;; esac
   SEEN="$SEEN$t "
   p=$(command -v "$t" 2>/dev/null)
-  case $p in /*) ;; *) p="" ;; esac     # an alias, function or builtin is not a path
+  case $p in
+    /*) ;;
+    ?*) LINES="$LINES- $t: shell builtin or keyword (nothing to install)"$'\n'; continue ;;   # an alias, function or builtin is not a path
+    *) p="" ;;
+  esac
   if [ -n "$p" ]; then
     if safe "$p"; then LINES="$LINES- $t: $p"$'\n'; else LINES="$LINES- $t: on PATH (path omitted: unusual characters)"$'\n'; fi
     continue
