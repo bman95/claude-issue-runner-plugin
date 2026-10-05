@@ -24,6 +24,8 @@ A fourth blocker is never self-resolved: `PR #P merged but issue still open — 
 
 Never retry these four within the run, under the cap or at it (no at-cap question either): `validation contract invalid: <reason>`, `validation command not runnable (exit N): <command>`, `validation contract changed in this PR — a human must review and merge`, its `integration contract …` twin (why: Why validation-contract blockers are never retried). Leave the issue `blocked` (worktree kept); the Step 5 summary says what a human must do: fix `.issue-runner/validation` on the base branch and re-run, or review and merge the PR by hand.
 
+`repository hooks bypassed without authorization: <how>` (gh-issue's hooks.md) is never retried or self-resolved either: leave the issue `blocked` (worktree kept; the PR is a draft) and have the user decide whether the bypassed commits stand. A `hook failed for the environment: …` failure is the host's to fix (host-environment.md), then retried like any `failed` issue.
+
 ## Escalations, cheapest first
 
 - **Retry the implementer.** Append a `## Retry K` section to `$STATE_DIR/issue-N/guidance.md` (K = the counter's new value, 1 for the first retry) with, in this order ([user-decisions.md](user-decisions.md)): the user's words quoted under `**User decisions:**`; yours and any finding text under `**Orchestrator suggestions (non-binding):**`; then `**Blocker:**` — the `error` file verbatim, or the agent's returned message when none was saved. Increment the counter **before** re-dispatching, self-resolved or user-authorized:

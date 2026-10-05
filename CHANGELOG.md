@@ -4,6 +4,15 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+Fixes #82. A production run's implementer met a failing husky pre-commit hook (`pnpm: command not found`; node and pnpm lived in `~/.local/node/bin`, which the orchestrator knew and never passed on) and committed with `--no-verify`, skipping lint-staged on every commit of a PR that was merged and auto-deployed. Only its report mentioned it. `result.json` gains a `hook_bypass` key, so the next release is a minor bump.
+
+**issue-runner:**
+- **Host environment facts reach implementers.** New `scripts/host-env.sh` (with `test-host-env.sh` and lint check 31) probes the toolchain with `command -v` and a few well-known directories (`~/.local/node/bin` and the like) for a fixed tool list, the repository's manifests and the commands of `.issue-runner/validation`, and writes `$STATE_DIR/environment.md`: absolute paths, or the directory to prepend to PATH, never environment variable values or the PATH string. Step 3a runs it once per invocation and every dispatch names the file. New `host-environment.md` holds the rules.
+- **The summary surfaces any hook bypass per issue**: `summary.sh` prints a `!` line for `hook_bypass` `authorized`, `unauthorized`, unrecognised or absent, and a run-level note counting bypassed issues. An unauthorized bypass is never retried by the orchestrator (escalations.md). The dispatch line `Hook bypass: authorized for issue #<N> (user-authorized)` exists only from the user's escalation answer (dispatch-variants.md).
+
+**gh-issue:**
+- **Hooks are never bypassed** unless the dispatch authorizes it: `--no-verify`, `HUSKY=0` and other skip variables, `core.hooksPath` or `-c` overrides, editing the hooks. New `hooks.md` covers the routes, a hook failing for the environment (read `environment.md`, prepend the PATH directory, else return `failed` with `hook failed for the environment: …`), and what to do when a bypass happened anyway (`unauthorized` is a blocker). The result file gains `hook_bypass` (`none|authorized|unauthorized`) and Step 10 reports it.
+
 ## [0.15.0] - 2026-10-04
 
 Fixes #83 and #84. #83: in a production run the orchestrator skipped a required read, paraphrased the Step 5 summary instead of building it, misreported a deliberately skipped checkpoint as refused, and left a wake timer armed past the lock release. The summary becomes a script, the skip gets its own value, and Step 5 ends its wakes. This is a minor bump because the `result.json` `checkpoint` enum gained a value.

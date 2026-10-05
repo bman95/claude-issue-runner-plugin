@@ -225,7 +225,7 @@ pick() { local v=$1 x; shift; for x in "$@"; do [ "$v" = "$x" ] && { printf '%s'
 isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; [ ${#1} -le 6 ]; }
 
 N_SCOPE=0; for n in $SCOPE; do N_SCOPE=$((N_SCOPE + 1)); done
-TOTAL_ITER=0 TOTAL_GATE=0 AGENTS=0 REFUSED=0 SKIPPED=0
+TOTAL_ITER=0 TOTAL_GATE=0 AGENTS=0 REFUSED=0 SKIPPED=0 HOOKS=0
 TABLE="" NOTES="" TELE="" SHAPES=""
 
 for n in $SCOPE; do
@@ -274,6 +274,7 @@ for n in $SCOPE; do
     chk=$(pick "$(jv checks)" pass none fail none-after-ready all-skipped unchanged-after-ready)
     ckp=$(pick "$(jv checkpoint)" created refused skipped n/a)
     rp=$(pick "$(jv review_profile)" standard prose revoked)
+    hb=$(jv hook_bypass); [ -n "$hb" ] && hb=$(pick "$hb" none authorized unauthorized)
     it_n=0; isnum "$it" && it_n=$((10#$it))
     gp_n=0; isnum "$gp" && gp_n=$((10#$gp))
     TOTAL_ITER=$((TOTAL_ITER + it_n)); TOTAL_GATE=$((TOTAL_GATE + gp_n))
@@ -281,6 +282,12 @@ for n in $SCOPE; do
     case $p1s in cap-stop|bouncing) TELE="$TELE  ! phase1_state $p1s$NL" ;; esac
     case $gs in degraded|waived|cap-stop|errored|bouncing|unavailable) TELE="$TELE  ! gate_state $gs$NL" ;; esac
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
+    case $hb in
+      authorized) HOOKS=$((HOOKS + 1)); TELE="$TELE  ! hook_bypass authorized (the repository's hooks were bypassed under the dispatch's authorization)$NL" ;;
+      unauthorized) HOOKS=$((HOOKS + 1)); TELE="$TELE  ! hook_bypass UNAUTHORIZED (the repository's hooks were bypassed without authorization)$NL" ;;
+      '') TELE="$TELE  ! hook_bypass not recorded (the result predates the key, or the implementer left it out: hooks unverified)$NL" ;;
+      '?') TELE="$TELE  ! hook_bypass unrecognised (not none, authorized or unauthorized)$NL" ;;
+    esac
     case $ckp in
       refused) REFUSED=$((REFUSED + 1)); TELE="$TELE  ! checkpoint refused (the draft-PR checkpoint push or draft creation was refused)$NL" ;;
       skipped) SKIPPED=$((SKIPPED + 1)); TELE="$TELE  ! checkpoint skipped (the implementer did not run the Step 4 checkpoint; not a refused push)$NL" ;;
@@ -330,6 +337,7 @@ printf '## Summary table\n\n| # | Status | Title | Error | Last progress |\n|---
 printf '\n## Telemetry\n\n%s' "$TELE"
 [ "$REFUSED" -ge 2 ] && printf -- '- run-level note: checkpoint refused on %s issues (drafts are probably unavailable on this repository)\n' "$REFUSED"
 [ "$SKIPPED" -ge 1 ] && printf -- '- run-level note: checkpoint skipped on %s issue(s): the crash-recovery checkpoint did not run there\n' "$SKIPPED"
+[ "$HOOKS" -ge 1 ] && printf -- '- run-level note: repository hooks bypassed on %s issue(s) (see the hook_bypass lines above)\n' "$HOOKS"
 printf -- '- totals: phase1 iterations=%s; gate passes=%s\n' "$TOTAL_ITER" "$TOTAL_GATE"
 
 printf '\nActual agents: %s (estimate: %s–%s); actual Codex gate passes: %s (estimate: %s)\n' \

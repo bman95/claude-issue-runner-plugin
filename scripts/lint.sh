@@ -69,7 +69,7 @@
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
 #      resume-check.sh, merge-ready.sh, run-state.sh, scheduler.sh, integration.sh,
-#      plan-file.sh or summary.sh;
+#      plan-file.sh, summary.sh or host-env.sh;
 #      gh-issue's "## Validation contract" section, every skills/gh-issue/*.md
 #      and every skills/issue-runner/*.md are byte-identical across
 #      editions
@@ -118,6 +118,12 @@
 #  30. skills/issue-runner/scripts/test-summary.sh passes against both
 #      editions' summary.sh — the fixtures for Step 5's summary table,
 #      telemetry and actual-vs-estimate line
+#  31. the host-environment and hook-bypass contract (issue #82): test-host-env.sh
+#      passes against both editions' host-env.sh; gh-issue's SKILL.md (both
+#      editions) forbids the bypass routes by name and links hooks.md, whose
+#      authorization line and blocker string are present; the issue-runner
+#      SKILL.md names environment.md in the dispatch template and links
+#      host-environment.md; the dispatch line is stated in dispatch-variants.md
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -703,7 +709,7 @@ for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/cla
                 issue-runner/scripts/resume-check.sh issue-runner/scripts/merge-ready.sh \
                 issue-runner/scripts/run-state.sh issue-runner/scripts/scheduler.sh \
                 issue-runner/scripts/plan-file.sh issue-runner/scripts/integration.sh \
-                issue-runner/scripts/summary.sh; do
+                issue-runner/scripts/summary.sh issue-runner/scripts/host-env.sh; do
   [ -f "$ROOT/codex/issue-runner/canonical/$required" ] \
     || { err "codex/issue-runner/canonical/$required missing (the Codex canonical procedure runs it)"; bundled_ok=0; }
 done
@@ -999,6 +1005,35 @@ if [ -f "$TEST_SUMMARY" ]; then
   [ "$sum_ok" -eq 1 ] && ok "summary fixtures pass against both editions' summary.sh (skills/issue-runner/scripts/test-summary.sh)"
 else
   err "$TEST_SUMMARY not found"
+fi
+
+# 31. host environment and hook-bypass contract -------------------------------------
+TEST_HOSTENV="$ROOT/skills/issue-runner/scripts/test-host-env.sh"
+if [ -f "$TEST_HOSTENV" ]; then
+  he_ok=1
+  for he in skills/issue-runner/scripts/host-env.sh codex/issue-runner/canonical/issue-runner/scripts/host-env.sh; do
+    if ! bash "$TEST_HOSTENV" "$ROOT/$he" >"$TMP/test-host-env.out" 2>&1; then
+      err "host-env fixtures failed against $he:"; cat "$TMP/test-host-env.out" >&2; he_ok=0
+    fi
+  done
+  for ed in skills codex/issue-runner/canonical; do
+    f="$ROOT/$ed/gh-issue/SKILL.md"
+    for needle in '--no-verify' 'HUSKY=0' 'core.hooksPath' '[hooks.md](hooks.md)' '"hook_bypass":"none|authorized|unauthorized"'; do
+      grep -qF -- "$needle" "$f" || { err "$ed/gh-issue/SKILL.md lacks '$needle' (hook-bypass contract)"; he_ok=0; }
+    done
+    grep -qF -- 'Hook bypass: authorized for issue #<number> (user-authorized)' "$ROOT/$ed/gh-issue/hooks.md" \
+      || { err "$ed/gh-issue/hooks.md lacks the authorization dispatch line"; he_ok=0; }
+    grep -qF -- 'hook failed for the environment:' "$ROOT/$ed/gh-issue/hooks.md" \
+      || { err "$ed/gh-issue/hooks.md lacks the environmental-failure blocker"; he_ok=0; }
+    g="$ROOT/$ed/issue-runner/SKILL.md"
+    grep -qF -- 'environment.md' "$g" && grep -qF -- '[host-environment.md](host-environment.md)' "$g" \
+      || { err "$ed/issue-runner/SKILL.md lacks the environment.md dispatch input or the host-environment.md link"; he_ok=0; }
+    grep -qF -- 'Hook bypass: authorized for issue #<N> (user-authorized)' "$ROOT/$ed/issue-runner/dispatch-variants.md" \
+      || { err "$ed/issue-runner/dispatch-variants.md lacks the hook-bypass dispatch line"; he_ok=0; }
+  done
+  [ "$he_ok" -eq 1 ] && ok "host-environment and hook-bypass contract present in both editions (host-env fixtures, hooks.md, dispatch lines)"
+else
+  err "$TEST_HOSTENV not found"
 fi
 
 if [ "$fail" -ne 0 ]; then

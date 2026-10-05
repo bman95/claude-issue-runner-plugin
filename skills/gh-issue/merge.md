@@ -13,7 +13,7 @@ Step 9's stages in order, each with its recipe and outcomes. SKILL.md Step 9 say
 
 ## Full validation and the contract-change check, before ready
 
-Orchestrated: write `step=9 pr=#P` immediately before. Run the validation script with `full`, unconditionally, once per head, on the converged head (it reports `full not declared` itself); under a standing fallback authorization, validate by the conventions instead (still run `changed`). Failure → exactly a preflight failure: the Validation contract outcomes apply (for exit 1, fix and re-run first); unfixable → Block `full validation failed (exit N): <command>`. Then run it with `changed`:
+Orchestrated: write `step=9 pr=#P` immediately before (a project whose `full` outlasts `--hang-minutes` raises that flag). Run the validation script with `full`, unconditionally, once per head, on the converged head (it reports `full not declared` itself); under a standing fallback authorization, validate by the conventions instead (still run `changed`). Failure → exactly a preflight failure: the Validation contract outcomes apply (for exit 1, fix and re-run first); unfixable → Block `full validation failed (exit N): <command>`. Then run it with `changed`:
 
 - exit 0 (`contract unchanged in this PR`) → continue.
 - exit 2 or 7 → the script's `failed` class; a git failure is never "unchanged".
