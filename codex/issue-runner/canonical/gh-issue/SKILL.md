@@ -61,7 +61,7 @@ cat 2>/dev/null > "<STATE_DIR>/issue-<number>/result.json" <<'EOF' || true
 EOF
 ```
 
-JSON-escape `"`, `\` and control characters in every string value. Order: `step=10` marker, this file, final message (with the `worktree:` line and Step 10 report). No key for Step 10's `validation:` line. The progress marker's rules apply. (why: Why the result file is advisory)
+JSON-escape `"`, `\` and control characters in every string value. Order: `step=10` marker, this file, final message (with the `worktree:` line and Step 10 report). The progress marker's rules apply. (why: Why the result file is advisory)
 
 ## Validation contract
 
@@ -120,7 +120,7 @@ area. End with a `Files:` block, one repo-relative path per line.
 
 Seed it with the issue's `## Interfaces` section or `Files likely touched:` hint, if any, but verify them against current code.
 
-External dependency → [contract-first.md](contract-first.md).
+Cross-repository dependency or `External` dispatch line → [contract-first.md](contract-first.md) (overrides Step 4's `Closes`).
 
 Agent tool unavailable → explore inline, and settle Step 8 Phase 1's authorization now: orchestrated without inline-review authorization → return the Phase 1 blocker here; interactive → ask whether to proceed inline or stop ("Your subagents").
 
