@@ -262,6 +262,15 @@ has "pre-dispatch blocker -> not dispatched" '- #1: not dispatched (blocked)'
 has "pre-dispatch blocker adds no agents" 'Actual agents: 4 (estimate: 12–36)'
 has "agent id alone marks a dispatch" '- #2: no result recorded (retries=0)'
 
+# A retry that failed before launching (Step 3a cleared agent, progress, result.json) was dispatched earlier.
+reset; scope 1 2
+issue 1 failed; printf '2\n' > "$S/issue-1/retries"    # retries>0 alone is dispatch evidence: 2 + 2*2 = 6 agents
+issue 2 blocked; printf '0\n' > "$S/issue-2/retries"   # retries=0 alone is not
+run "$S" 3
+has "retries alone marks a dispatch" '- #1: no result recorded (retries=2)'
+has "retries=0 alone is not a dispatch" '- #2: not dispatched (blocked)'
+has "retried-but-cleared issue keeps its agents" 'Actual agents: 6 (estimate: 8–24)'
+
 # --- pr-shape section (stub classify.sh) ------------------------------------------------------
 cat > "$TMP/classify-stub.sh" <<'EOF'
 #!/usr/bin/env bash

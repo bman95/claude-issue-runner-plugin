@@ -37,8 +37,8 @@
 # flag lines for anything that needs a human, totals), the one-line `Actual
 # agents: <A> (estimate: <N*4>–<N*12>); actual Codex gate passes: <P>
 # (estimate: <G>)` and its caveat. <A> counts, over every issue not `pending`
-# or `skipped` and that left an agent id, progress marker or result.json
-# (dispatched at least once), 1 + retries implementers, 1 +
+# or `skipped` and that left an agent id, progress marker, result.json or a
+# retries count above 0 (dispatched at least once), 1 + retries implementers, 1 +
 # retries Explore helpers (none when phase1_inline is true) and 2 ×
 # phase1_iterations reviewers (none when phase1_inline is true or no result is
 # recorded); <P> sums gate_passes. N is scope.txt's issue count.
@@ -257,9 +257,10 @@ for n in $SCOPE; do
     pending|skipped) dispatched=0 ;;
     *)
       # An issue blocked before its dispatch (resume check, paused run) has no
-      # agent id, progress marker or result: it ran no agents.
+      # agent id, progress marker or result (and no retries; a retry that failed
+      # before launching had cleared them): it ran no agents.
       dispatched=0
-      [ -s "$d/agent" ] || [ -s "$d/progress" ] || [ -e "$d/result.json" ] && dispatched=1 ;;
+      [ -s "$d/agent" ] || [ -s "$d/progress" ] || [ -e "$d/result.json" ] || [ "$retries" -gt 0 ] && dispatched=1 ;;
   esac
 
   prof_rt=""
