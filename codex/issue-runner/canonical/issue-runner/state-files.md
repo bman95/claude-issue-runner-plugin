@@ -24,6 +24,6 @@ A completion notification is **final** when `result.json` is readable, or when i
 
 `hook-bypass` (the line `authorized <run-id>`, the run's `run-id`) is written only by the orchestrator, after the user's explicit yes to bypassing that issue's repository hooks (host-environment.md). Step 3a reads it alone to add the dispatch line, and `summary.sh` reads it to flag a result that claims `authorized` without it. It survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.
 
-## `profile`
+## `profile` and `external`
 
-`profile` (`prose flag` or `prose escalation`) is written only by Step 1 (`--prose-gate`) or Step 4 (the user's explicit answer); it survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.
+`profile` (`prose flag` or `prose escalation`) is written only by Step 1 (`--prose-gate`) or Step 4 (the user's explicit answer); it survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub. `external` (dag.md, "External edges") is rewritten by Step 2 and by Step 4's `contract-first:` answer; only its `override` line and that line's `covers` text survive a same-session re-entry (a `file` authorization does not).

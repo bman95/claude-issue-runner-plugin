@@ -15,6 +15,6 @@ The branch contract is not sufficient alone (why: Why dispatch resumes open PRs)
 - **One `pr` line** (`pr #P <B> …`) → resume, don't duplicate: the prompt says continue on `B`, skip the Step 4 checkpoint, skip only `gh pr create` in gh-issue Step 7 (the body rewrite still applies), push to PR `#P`.
   - `worktree=` a path (not `-`) → dispatch **without** `isolation: worktree`, record the path in `$STATE_DIR/issue-N/worktree`, and tell the agent to `cd` there first. Otherwise keep `isolation: worktree` and tell it to check out `B` (fetch first, no new branch).
   - `via=keyword` → write `B` to `$STATE_DIR/issue-N/branch` after the clear (SKILL.md, Step 3a) (item 5's merge proof accepts it alongside the contract, nothing else).
-  - `draft=true` resumes like any other; the implementer starts from the body's plan (gh-issue Step 3).
+  - `draft=true` resumes like any other; the implementer starts from the body's plan (gh-issue Step 3), except a `Contract-first stop` plan, which is never executed (gh-issue `resume.md`).
 - **Several `pr` lines** → ask the user which PR to resume and close the rest.
 - **Matched only by closing keyword** (`via=keyword`) → assume nothing: read `gh pr view <P> --json state,mergeable,mergeStateStatus,isDraft,files,body` and `gh pr checks <P>`. Already implements the issue → do **not** dispatch; show the user its check status and ask: review-and-merge, or close and rebuild. A PR closing several in-scope issues is one decision; mark every issue it covers.

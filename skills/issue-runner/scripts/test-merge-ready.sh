@@ -545,7 +545,7 @@ expect "merged, but the merge commit oid unreadable -> merged unknown" 0 "merged
 # and the head-pinned merge. The dependency precondition, the status writes
 # and the Step 5 summary lines are the prose's.
 IN_SCOPE_ROWS="37 72"
-EXPECTED_ROW_COUNT=80
+EXPECTED_ROW_COUNT=82
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then
