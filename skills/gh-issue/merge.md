@@ -13,7 +13,9 @@ Step 9's stages in order, each with its recipe and outcomes. SKILL.md Step 9 say
 
 ## Full validation and the contract-change check, before ready
 
-Orchestrated: write `step=9 pr=#P` immediately before. Run the validation script with `full`, unconditionally, once per head, on the converged head (it reports `full not declared` itself); under a standing fallback authorization, validate by the conventions instead (still run `changed`). Failure → exactly a preflight failure: the Validation contract outcomes apply (for exit 1, fix and re-run first); unfixable → Block `full validation failed (exit N): <command>`. Then run it with `changed`:
+**Contract-first guard, before anything else here.** Read the PR body (`gh pr view "$PR_NUM" --json body -q .body`). A line starting `Contract-first stop:` (under `## Review notes`) or a `## Plan` headed `Contract-first stop` makes the PR a stop, not a deliverable. Unless the dependency is proven merged (contract-first.md's test) or an `External dependency: override` line covers every capability the stop names (the body is then unstopped first, contract-first.md), Block `contract-first stop on PR: <capability>; dependency missing` (interactive: report and ask), and run neither `full`, ready nor merge. A cover of only some of the capabilities leaves the stop in place.
+
+Orchestrated: write `step=9 pr=#P` immediately before (a project whose `full` outlasts `--hang-minutes` raises that flag). Run the validation script with `full`, unconditionally, once per head, on the converged head (it reports `full not declared` itself); under a standing fallback authorization, validate by the conventions instead (still run `changed`). Failure → exactly a preflight failure: the Validation contract outcomes apply (for exit 1, fix and re-run first); unfixable → Block `full validation failed (exit N): <command>`. Then run it with `changed`:
 
 - exit 0 (`contract unchanged in this PR`) → continue.
 - exit 2 or 7 → the script's `failed` class; a git failure is never "unchanged".
@@ -67,7 +69,7 @@ if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ]; then
 fi
 ```
 
-- Merge failed → never resolve it yourself. Read the printed output, then Block naming it (interactive: ask how to proceed).
+- Merge failed → never resolve it yourself. Read the printed output, then Block naming it (interactive: ask how to proceed). A hook that rejected the merge (`pre-merge-commit`, `commit-msg`) is hooks.md's "A hook fails" case, not this blocker.
 - Clean merge → re-run the validation that gated ready (`preflight`, then `full`; else the project's tests, or the conventions under a standing fallback authorization). Failure → interactive: ask; orchestrated: push the merge commit, then blocker citing the failing validation. Never merge over it.
 - Passing → push; while the prose profile holds, re-run the revoke-only guard block (review-profile.md; a revocation here is Step 8's); for `READIED=1`, repeat the registration poll; then the checks gate. Never push after the gate passes. (why: Why base freshness runs before the checks gate)
 

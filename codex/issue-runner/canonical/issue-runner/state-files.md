@@ -6,7 +6,7 @@ The full rules behind SKILL.md's State section (the decisive one, what makes `re
 
 Its keys are the shape line in SKILL.md, State.
 
-It is **advisory for status, authoritative for telemetry** (why: Why `result.json` is advisory for status decisions and authoritative for telemetry). `merged` and `ready` are claims until item 5's script confirms them against GitHub, anchored on the worktree's git state, never the file's `branch` or `pr`. **Unreadable** — anything but one JSON object with an `outcome` of `merged`/`blocker`/`failed`/`ready` and a non-empty `worktree` — counts as absent. The telemetry keys (`phase1_*`, `gate_*`, `checks`, `checkpoint`, `security_lens`, `review_profile`, `deferred`) are read only from this file, never from the Step 10 report text. `deferred` is an array of objects with exactly the two non-empty string members `finding` and `reason`; `[]`, `null` or absent means none. Any other well-formed JSON value, or an array with a bad entry, only prints `deferred unreadable` and keeps the telemetry; broken JSON makes the file unreadable like anywhere else (`summary.sh` documents the rule).
+It is **advisory for status, authoritative for telemetry** (why: Why `result.json` is advisory for status decisions and authoritative for telemetry). `merged` and `ready` are claims until item 5's script confirms them against GitHub, anchored on the worktree's git state, never the file's `branch` or `pr`. **Unreadable** — anything but one JSON object with an `outcome` of `merged`/`blocker`/`failed`/`ready` and a non-empty `worktree` — counts as absent. The telemetry keys (`phase1_*`, `gate_*`, `checks`, `checkpoint`, `security_lens`, `review_profile`, `deferred`, `hook_bypass`) are read only from this file, never from the Step 10 report text. `deferred` is an array of objects with exactly the two non-empty string members `finding` and `reason`; `[]`, `null` or absent means none. Any other well-formed JSON value, or an array with a bad entry, only prints `deferred unreadable` and keeps the telemetry; broken JSON makes the file unreadable like anywhere else (`summary.sh` documents the rule).
 
 ## Interim notifications
 
@@ -19,6 +19,10 @@ A completion notification is **final** when `result.json` is readable, or when i
 ## Resume pointers
 
 `session` and `agent` are the only **resume pointers**, never status inputs (why: Why resume pointers are written at dispatch, not at failure): `agent` only locates a hung implementer's worktree and tells which notifications count (compared with item 4's normalisation, `agent-…` or bare); `session` only decides the heartbeat bypass, rotation and `heartbeat` ownership.
+
+## `hook-bypass`
+
+`hook-bypass` (the line `authorized <run-id>`, the run's `run-id`) is written only by the orchestrator, after the user's explicit yes to bypassing that issue's repository hooks (host-environment.md). Step 3a reads it alone to add the dispatch line, and `summary.sh` reads it to flag a result that claims `authorized` without it. It survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.
 
 ## `profile` and `external`
 

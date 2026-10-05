@@ -17,6 +17,15 @@ Fixes #87. Two PRs of a production run merged with reviewer findings the impleme
 - **Step 5 lists deferrals and asks the user once** whether to file them, fix them in a follow-up PR, or drop them; it never files, dispatches or drops on its own judgment. `summary.sh` prints a `!` flag line per issue and, last, a `## Deferred findings` section; a well-formed `deferred` value of the wrong shape prints `deferred unreadable` and keeps the telemetry (`null` means none). The tracking-issue post omits that section, so finding text stays on the terminal.
 - The Codex canonical copies carry every change byte-identically.
 
+Fixes #82. A production run's implementer met a failing husky pre-commit hook (`pnpm: command not found`; node and pnpm lived in `~/.local/node/bin`, which the orchestrator knew and never passed on) and committed with `--no-verify`, skipping lint-staged on every commit of a PR that was merged and auto-deployed. Only its report mentioned it. `result.json` gains a `hook_bypass` key, so the next release is a minor bump.
+
+**issue-runner:**
+- **Host environment facts reach implementers.** New `scripts/host-env.sh` (with `test-host-env.sh` and lint check 31) probes the toolchain with `command -v` and a few well-known directories (`~/.local/node/bin` and the like) for a fixed tool list, the repository's manifests and the commands of `.issue-runner/validation`, and writes `$STATE_DIR/environment.md`: absolute paths, or the directory to prepend to PATH, never environment variable values or the PATH string. Step 3a runs it once per invocation and every dispatch names the file. New `host-environment.md` holds the rules.
+- **The summary surfaces any hook bypass per issue**: `summary.sh` prints a `!` line for `hook_bypass` `authorized`, `unauthorized`, unrecognised or absent, and a run-level note counting bypassed issues. An unauthorized bypass is never retried by the orchestrator (escalations.md). The dispatch line `Hook bypass: authorized for issue #<N> (user-authorized)` exists only after the user's explicit yes, recorded in `issue-N/hook-bypass` (dispatch-variants.md, host-environment.md); a result claiming `authorized` without that file is flagged UNAUTHORIZED. A result with no `hook_bypass` key (older implementers) is flagged `not recorded`, and a dispatched issue with no result `unverified`.
+
+**gh-issue:**
+- **Hooks are never bypassed** unless the dispatch authorizes it: `--no-verify`, `HUSKY=0` and other skip variables, `core.hooksPath` or `-c` overrides, editing the hooks. New `hooks.md` covers the routes, a hook failing for the environment (read `environment.md`, prepend the PATH directory, else return `failed` with `hook failed for the environment: …`), and what to do when a bypass happened anyway (`unauthorized` is a blocker). The result file gains `hook_bypass` (`none|authorized|unauthorized`) and Step 10 reports it.
+
 Cross-repository dependencies (#85). A run serves one repository, and the DAG only knew `#N` edges inside it, so work that needed an endpoint in another repository merged and deployed in a degraded mode before any backend issue existed.
 
 **issue-runner:**
@@ -27,7 +36,7 @@ Cross-repository dependencies (#85). A run serves one repository, and the DAG on
 **gh-issue:**
 - **Contract-first outcome** (`contract-first.md`). An issue whose dependency is absent in another repository ends before any code: the implementer documents the proposed contract, files the dependency issue only where the dispatch authorized it, and returns an ordinary `blocker`.
 
-Expected behavior: rows 79 and 80 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
+Expected behavior: rows 81 and 82 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
 
 ## [0.15.0] - 2026-10-04
 
