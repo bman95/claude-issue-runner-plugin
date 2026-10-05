@@ -366,6 +366,18 @@ run "$S" 3
 has "estimate and actual use the configured reviewer counts" 'Actual agents: 21 (estimate: 19–63);'
 has "telemetry shows the reviewer count and the gate model" '- #1: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0; reviewers=4; gate model=gpt-6.1-sol'
 has "a result without the new keys prints ?" 'checkpoint=created; retries=0; reviewers=?; gate model=?'
+printf '3\n' > "$S/issue-3/reviewers"; run "$S" 3
+has "a missing reviewers key under a configured 3 is flagged" '  ! reviewers not recorded (configured 3'
+reset; scope 1 2
+issue 1 done; result_cfg 1 1 'null' 4; printf '3\n' > "$S/issue-1/reviewers"
+issue 2 done; result_cfg 2 1 '"[x](http://e)"' 9; printf '9\n' > "$S/issue-2/reviewers"
+run "$S" 3
+reset; scope 1 2
+issue 1 done; result_cfg 1 1 '"gpt-6-sol"' 2; printf 'gpt-6.1-sol\n' > "$S/issue-1/codex-model"
+issue 2 done; result_cfg 2 1 '"gpt-6.1-sol"' 2; printf 'gpt-6.1-sol\n' > "$S/issue-2/codex-model"
+run "$S" 3
+has "a gate model other than the requested one is flagged" '  ! gate model gpt-6-sol != requested gpt-6.1-sol'
+hasnt "a matching gate model is not flagged" '! gate model gpt-6.1-sol'
 reset; scope 1 2
 issue 1 done; result_cfg 1 1 'null' 4; printf '3\n' > "$S/issue-1/reviewers"
 issue 2 done; result_cfg 2 1 '"[x](http://e)"' 9; printf '9\n' > "$S/issue-2/reviewers"

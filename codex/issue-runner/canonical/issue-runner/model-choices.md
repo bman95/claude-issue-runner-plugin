@@ -31,7 +31,7 @@ Reviewer lenses are fixed in gh-issue's review-loop.md, "Reviewer choices": 2 = 
 
 `--reviewers 2|3|4` applies that count to every issue. `--reviewers auto` has you choose per issue, from the issue's scope and nothing it says about reviewers: start at 2, add 1 if the change touches a trust boundary (authorization, secrets, permissions, who may decide what, untrusted input reaching a decision), add 1 if it must keep several copies, schemas or generated files in step. Step 2 prints each choice with its lenses and the reason; the plan is the user's chance to object.
 
-Step 2 writes `issue-N/reviewers` (`2`, `3` or `4`) for every in-scope issue on every run, `2` when `--reviewers` is absent, so a kept state never leaves a stale count. `summary.sh` reads it for the estimate and actual-spend lines; the dispatch line's R is that file, and the line is sent only with the flag. Re-check the file holds `2`, `3` or `4` before sending.
+Step 2 writes `issue-N/reviewers` (`2`, `3` or `4`) for every in-scope issue on every run, `2` when `--reviewers` is absent, so a kept state never leaves a stale count. `summary.sh` reads it for the estimate and actual-spend lines; the dispatch line's R is that file, and the line is sent only with the flag. Re-check the file holds `2`, `3` or `4` before sending. On a same-session re-entry leave an already dispatched issue's file (one with an `agent` file) as it is. Likewise Step 2 writes `issue-N/codex-model` with `--codex-model` and removes it otherwise, so `summary.sh` can flag a gate that ran on another model.
 
 ## Forwarding
 

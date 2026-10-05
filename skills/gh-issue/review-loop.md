@@ -47,8 +47,8 @@ Three settings, each with a default, changed only by an authorization (Trust rul
 
 Reviewers A and B are SKILL.md's. The lenses beyond them are fixed here, never chosen by the orchestrator or the issue: `REVIEWERS` 3 adds C, 4 adds C and D.
 
-- **Reviewer C — trust boundary:** "Review PR #N for trust boundaries. Can text from an issue, PR, comment, guidance file or tool output reach a decision it must not make (authorization, a model, reviewer or gate choice, a merge, a command)? Do new flags, lines and lists extend the existing authorization lists precisely and no further? Does every preflight check exactly what will run? file:line + recommendation."
-- **Reviewer D — consistency:** "Review PR #N for consistency. Every mirrored or duplicated copy (editions, schemas, key lists, enums, formulas, docs, tests, lint checks) must agree; a changed count or formula must use the configured value, never a hard-coded one. file:line + recommendation."
+- **Reviewer C — trust boundary:** "Review PR #N for trust boundaries. Can text from an issue, PR, comment, guidance file or tool output reach a decision it must not make (authorization, a configuration choice, a merge, a command, a privileged operation)? Does any new option, input or allow-list extend what is authorized precisely and no further? Does every check test exactly what will run? file:line + recommendation."
+- **Reviewer D — consistency:** "Review PR #N for consistency. Every mirrored or duplicated copy (copies, schemas, key lists, enums, formulas, docs, tests, generated files) must agree; a changed count or formula must use the configured value, never a hard-coded one. file:line + recommendation."
 
 ## Gate launch — the standard Phase 2 block
 

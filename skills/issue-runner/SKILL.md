@@ -147,7 +147,7 @@ Then read [dag.md](dag.md) and follow it: **out-of-scope edges are never dropped
 
 Persist `dag.json`, and beside it `dag.txt` (the scheduler's input, Step 3): one `N: dep dep …` line per in-scope issue, the same edges as `dag.json`, empty after the colon when N has none. **Print the plan** as [dag.md](dag.md) lays out, then the estimate below.
 
-**Estimate the agent spend.** Resolve `MAX_CODEX_ITERATIONS` (default 3; `--max-codex-iterations`) and whether the run is gateless (`--no-codex-gate`, or the user's Step 0 proceed-without-gate) — Step 3a's dispatch template needs both too. Then print one closing line, `N` = `scope.txt`'s issue count, `R` an issue's reviewer count (`issue-N/reviewers`, default 2); with `--reviewers`, first print each issue's `R`, its lenses and, for `auto`, the reason (model-choices.md) (why: How the agent-spend estimate is computed):
+**Estimate the agent spend.** Resolve `MAX_CODEX_ITERATIONS` (default 3; `--max-codex-iterations`) and whether the run is gateless (`--no-codex-gate`, or the user's Step 0 proceed-without-gate) — Step 3a's dispatch template needs both too. Then print one closing line, `N` = `scope.txt`'s issue count, `R` an issue's reviewer count (`issue-N/reviewers`, default 2); write `issue-N/reviewers` per model-choices.md (`--plan` too), printing with `--reviewers` each `R`, its lenses and, for `auto`, the reason (why: How the agent-spend estimate is computed):
 
 ```
 Estimated agents: N issues × (1 implementer + 1 explore + R reviewers × 1–5 iterations) = <Σ(2+R)>–<Σ(2+5R)> Claude agents; Codex gate passes: <G>
