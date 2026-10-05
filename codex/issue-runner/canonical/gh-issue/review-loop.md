@@ -6,6 +6,7 @@ Step 8's liveness rules for both phases, and the standard Codex gate launch bloc
 
 - Liveness — never wait on a silent child (active waits, the reviewer bound, gate passes as files, restarts)
 - Security lens — extra reviewer prompt text
+- Cross-repository findings
 - Inline Phase 1 — no Agent tool
 - Reviewer choices — reviewer count, lenses C and D, reviewer and Codex model
 - Gate launch — the standard Phase 2 block
@@ -33,6 +34,10 @@ Both phases (why: Why Liveness never waits on a notification):
 ## Security lens
 
 If `git diff --name-only "$BASE_BRANCH"...HEAD` touches `auth/`, `security/`, `.env*`, `secrets*`, `credentials*`, or JWT/session/token handling, add to every reviewer prompt: "Also check: new input flows, auth bypass, token exposure, XSS sinks — report only high-confidence NEW findings."
+
+## Cross-repository findings
+
+A review finding that the work needs something another repository must provide and has not (an endpoint, event or schema; [contract-first.md](contract-first.md)), not covered by an `External dependency: override` line, is neither Apply, Surface nor Defer: Block per contract-first.md (items 1 to 3, and its Step 8 rules) before Step 9, never merging over it.
 
 ## Inline Phase 1 — no Agent tool
 

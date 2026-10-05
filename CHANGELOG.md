@@ -40,6 +40,18 @@ Fixes #82. A production run's implementer met a failing husky pre-commit hook (`
 **gh-issue:**
 - **Hooks are never bypassed** unless the dispatch authorizes it: `--no-verify`, `HUSKY=0` and other skip variables, `core.hooksPath` or `-c` overrides, editing the hooks. New `hooks.md` covers the routes, a hook failing for the environment (read `environment.md`, prepend the PATH directory, else return `failed` with `hook failed for the environment: …`), and what to do when a bypass happened anyway (`unauthorized` is a blocker). The result file gains `hook_bypass` (`none|authorized|unauthorized`) and Step 10 reports it.
 
+Cross-repository dependencies (#85). A run serves one repository, and the DAG only knew `#N` edges inside it, so work that needed an endpoint in another repository merged and deployed in a degraded mode before any backend issue existed.
+
+**issue-runner:**
+- **External edges** (dag.md). Step 2 recognizes `owner/repo#N` references and stated missing capabilities in other repositories, prints an `External:` line, and asks: run-elsewhere (a run in that repository), override, drop-issue, or contract-first. They never enter `dag.json`, `dag.txt` or `scope.txt`.
+- **One run serves one repository** is now a hard rule: no cross-repository worktree, branch or dispatch; the answer is a command for the user to run in the other repository.
+- Step 4 asks once per issue about a `contract-first:` blocker (wait, override, drop); the new `external` state file turns the user's answers into dispatch lines (`override`, `contract-first`, filing authorization).
+
+**gh-issue:**
+- **Contract-first outcome** (`contract-first.md`). An issue whose dependency is absent in another repository ends before any code: the implementer documents the proposed contract, files the dependency issue only where the dispatch authorized it, and returns an ordinary `blocker`.
+
+Expected behavior: rows 81 and 82 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
+
 ## [0.15.0] - 2026-10-04
 
 Fixes #83 and #84. #83: in a production run the orchestrator skipped a required read, paraphrased the Step 5 summary instead of building it, misreported a deliberately skipped checkpoint as refused, and left a wake timer armed past the lock release. The summary becomes a script, the skip gets its own value, and Step 5 ends its wakes. This is a minor bump because the `result.json` `checkpoint` enum gained a value.
