@@ -33,3 +33,7 @@ Modes: `check` (Step 3), `changed` (Step 9), `preflight`, `full`. Outcomes:
 - **`full` not declared** — Step 9 still runs `full` (it re-reads the base tip); nothing else runs there beyond the preflight re-run its base refresh may need.
 - **base unresolvable** (exit 2) — an environment failure, never a verdict or a fallback: fix the fetch and re-run. Interactive: report; orchestrated: the result file's `failed` class, `validation: cannot resolve the base branch`, not a blocker (Step 3 re-runs once first). (why: Why an unresolvable base is a failure, not a blocker)
 - **script not found** (exit 7, `validation: validation-contract.sh not found`) — a broken install, never "no contract" or a skipped validation: interactive, report; orchestrated, the `failed` class with that message. Exit 6 (`unknown MODE`): fix the call. Any other exit (e.g. 126): the same `failed` class. None of these is ever a pass or "no contract".
+
+## Relation to CI
+
+Validation never replaces the Step 9 checks gate: a red check blocks the merge whatever the preflight said, a green one never excuses a skipped or failing preflight. With `checks: none`, Step 10 says the contract's validation was the only automated verification. (why: Why preflight never replaces CI)

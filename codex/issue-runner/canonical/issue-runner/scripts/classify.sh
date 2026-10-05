@@ -51,6 +51,29 @@
 #     when there is no progress file (the relative-silence rule is the
 #     orchestrator's). It never writes.
 #
+#   classify.sh notification <N> <issue-dir>
+#     Step 3 item 5's first question: is the completion notification just
+#     received final or interim? The caller writes the notification's text to
+#     <issue-dir>/notification (a file, never a command line: untrusted text).
+#     Prints `final` when <issue-dir>/result.json is readable (one JSON object
+#     with an `outcome` of merged/blocker/failed/ready and a non-empty
+#     `worktree`, the state-files.md rule), or when the text carries no
+#     interim marker. Prints `interim` when result.json is not readable and
+#     the host's note `This agent stopped with background work of its own
+#     still running` is the file's first non-blank line (the caller writes it
+#     there, ahead of the message) or one of the last 5 non-blank lines starts
+#     `interim: waiting on <what>` (gh-issue's fixed form; the window tolerates
+#     host wrapper or trailer lines after it). A marker anywhere else is
+#     quoted text and stays `final`, and so does any message with a line
+#     starting `worktree: ` (a real exit; the interim form never has one). It
+#     reads only: it writes nothing (not `progress`, `status`,
+#     `outcome`, `blocker` or `error`), and on `interim` the caller leaves the
+#     issue `implementing` and classifies nothing. With no readable
+#     result.json, a missing, unreadable or text-less (empty or whitespace-only)
+#     notification file exits 1: the write failed, so there is no verdict. The
+#     caller rewrites the file and re-runs; it never reads the exit as `final`
+#     or classifies from prose.
+#
 #   classify.sh worktree <N> <issue-dir>
 #     Step 3 item 4's worktree for a stopped implementer. The first match wins:
 #     <issue-dir>/worktree, only while that directory still exists; else the
@@ -134,7 +157,7 @@ usage() { echo "classify.sh: $1" >&2; exit 2; }
 
 MODE=${1:-}
 N=${2:-}
-case $MODE in result|pr-shape|hang|worktree) ;; *) usage "unknown mode '$MODE' (expected result, pr-shape, hang or worktree)" ;; esac
+case $MODE in result|pr-shape|hang|notification|worktree) ;; *) usage "unknown mode '$MODE' (expected result, pr-shape, hang, notification or worktree)" ;; esac
 case $N in ''|*[!0-9]*|0*) usage "issue number must be a positive integer, got '${N}'" ;; esac
 
 # finish STATUS PR ERROR: rewrite the error file (through a temp file in the
@@ -311,6 +334,113 @@ classify_hang() {
   echo "implementer hung (no completion): progress unchanged for $(( ($(date +%s) - mtime + 59) / 60 ))m (--hang-minutes $1)"
 }
 
+# result_readable FILE: state-files.md's "readable" rule: the file is exactly one
+# well-formed JSON document (RFC 8259 grammar, a recursive-descent check in awk:
+# nothing may follow it, no trailing commas, matched delimiters) that is an
+# object whose top-level `outcome` is the string merged, blocker, failed or
+# ready and whose top-level `worktree` is a non-empty string. A nested
+# `outcome` never counts. Exit 0 = readable.
+result_readable() {
+  [ -s "$1" ] || return 1
+  LC_ALL=C awk '
+    function ws() { while (p <= n && index(" \t\r\n", substr(s, p, 1))) p++ }
+    function uni(h,   i, v) {
+      for (i = 1; i <= 4; i++) v = v * 16 + index("0123456789abcdef", tolower(substr(h, i, 1))) - 1
+      return (v > 0 && v < 128) ? sprintf("%c", v) : "\001"
+    }
+    function str(   c, e, k) {
+      p++; buf = ""
+      while (p <= n) {
+        c = substr(s, p, 1)
+        if (c == "\"") { p++; return 1 }
+        if (c == "\\") {
+          e = substr(s, p + 1, 1)
+          if (e != "" && (k = index("\"\\/bfnrt", e))) { buf = buf substr("\"\\/\b\f\n\r\t", k, 1); p += 2; continue }
+          if (e == "u" && substr(s, p + 2, 4) ~ /^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$/) { buf = buf uni(substr(s, p + 2, 4)); p += 6; continue }
+          return 0
+        }
+        if (c < " ") return 0
+        buf = buf c; p++
+      }
+      return 0
+    }
+    function value(depth,   r) {
+      ws(); c0 = substr(s, p, 1)
+      if (c0 == "{") return object(depth)
+      if (c0 == "[") return array(depth)
+      if (c0 == "\"") return str()
+      r = substr(s, p)
+      if (match(r, /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/)) { p += RLENGTH; return 1 }
+      if (match(r, /^(true|false|null)/)) { p += RLENGTH; return 1 }
+      return 0
+    }
+    function array(depth,   c) {
+      p++; ws()
+      if (substr(s, p, 1) == "]") { p++; return 1 }
+      while (1) {
+        if (!value(depth + 1)) return 0
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "]") { p++; return 1 }
+        return 0
+      }
+    }
+    function object(depth,   c, key, isstr) {
+      p++; ws()
+      if (substr(s, p, 1) == "}") { p++; return 1 }
+      while (1) {
+        ws()
+        if (substr(s, p, 1) != "\"" || !str()) return 0
+        key = buf; ws()
+        if (substr(s, p, 1) != ":") return 0
+        p++; ws(); isstr = (substr(s, p, 1) == "\"")
+        if (!value(depth + 1)) return 0
+        if (depth == 0) { if (isstr) val[key] = buf; else delete val[key] }
+        ws(); c = substr(s, p, 1)
+        if (c == ",") { p++; continue }
+        if (c == "}") { p++; return 1 }
+        return 0
+      }
+    }
+    { s = s $0 "\n" }
+    END {
+      n = length(s); p = 1; ws()
+      ok = (substr(s, p, 1) == "{") && object(0)
+      ws()
+      exit !(ok && p > n && val["outcome"] ~ /^(merged|blocker|failed|ready)$/ && length(val["worktree"]) > 0)
+    }' "$1"
+}
+
+# classify_notification: final or interim (see the header). Read-only.
+classify_notification() {
+  if result_readable "$DIR/result.json"; then
+    echo final; return 0
+  fi
+  # No readable result and no notification text: the orchestrator's write failed
+  # or never ran. That is an error, never a verdict (fail-open would be #80).
+  [ -r "$DIR/notification" ] && grep -aq '[^[:space:]]' "$DIR/notification" \
+    || die "notification: $DIR/notification is missing, unreadable or has no text"
+  # The markers are positional, so a final message that merely quotes one (a
+  # blocker report, the Step 10 text) stays final: the host's note is the first
+  # non-blank line, the implementer's fixed form one of the last 5 non-blank lines.
+  local first last
+  # A final message always carries a `worktree:` line (gh-issue's dispatch); the
+  # interim form never does. So even with the host's note leading, a message
+  # with that line is a real exit (a blocker whose result.json write failed).
+  if [ -s "$DIR/notification" ] && tr -d '\r' < "$DIR/notification" | grep -aq '^worktree: '; then
+    echo final; return 0
+  fi
+  # Host wrappers or trailer lines (usage stats, a closing tag) may surround the
+  # message: the host's note is the first non-blank line, the fixed form one of
+  # the last 5 non-blank lines.
+  first=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -av '^[[:space:]]*$' | head -n 1)
+  last=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -av '^[[:space:]]*$' | tail -n 5 | sed 's/[[:space:]]*$//')
+  case $first in
+    "This agent stopped with background work of its own still running"*) echo interim; return 0 ;;
+  esac
+  if printf '%s\n' "$last" | grep -aq '^interim: waiting on .'; then echo interim; else echo final; fi
+}
+
 # classify_worktree: Step 3 item 4's worktree resolution for a stopped implementer.
 classify_worktree() {
   local wt ag
@@ -341,6 +471,11 @@ case $MODE in
     case $4 in ''|*[!0-9]*|0*) usage "hang minutes must be a positive integer, got '$4'" ;; esac
     DIR=${3%/}
     classify_hang "$4" ;;
+  notification)
+    [ $# -ge 3 ] && [ -n "$3" ] || usage "notification needs <N> <issue-dir>"
+    DIR=${3%/}
+    [ -d "$DIR" ] || usage "not a directory: $DIR"
+    classify_notification ;;
   worktree)
     [ $# -ge 3 ] && [ -n "$3" ] || usage "worktree needs <N> <issue-dir>"
     DIR=${3%/}
