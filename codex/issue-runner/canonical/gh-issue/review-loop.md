@@ -36,7 +36,7 @@ If `git diff --name-only "$BASE_BRANCH"...HEAD` touches `auth/`, `security/`, `.
 
 ## Cross-repository findings
 
-A review finding that the work needs something another repository must provide and has not (an endpoint, event or schema; [contract-first.md](contract-first.md)), not covered by an `External dependency: override` line, is neither Apply, Surface nor Defer: Block per contract-first.md item 3 before Step 9, never merging over it.
+A review finding that the work needs something another repository must provide and has not (an endpoint, event or schema; [contract-first.md](contract-first.md)), not covered by an `External dependency: override` line, is neither Apply, Surface nor Defer: Block per contract-first.md (items 1 to 3, and its Step 8 rules) before Step 9, never merging over it.
 
 ## Inline Phase 1 — no Agent tool
 
