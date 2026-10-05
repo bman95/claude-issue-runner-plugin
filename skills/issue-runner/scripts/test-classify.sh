@@ -416,6 +416,12 @@ ncase "the fixed form after other text, as the last non-blank line -> interim" i
   $'Pass 1 launched.\ninterim: waiting on codex gate pass 1\n\n' ""
 ncase "the fixed form with CRLF line endings -> interim" interim \
   $'interim: waiting on codex gate pass 1\r' ""
+ncase "the fixed form followed by host trailer lines (within the last 5) -> interim" interim \
+  $'Pass 1 launched.\ninterim: waiting on codex gate pass 1\n\nagent_id: a1\n<usage>tokens: 5</usage>\n' ""
+ncase "the fixed form buried under more than 4 trailer lines -> final (outside the window)" final \
+  $'interim: waiting on x\na\nb\nc\nd\ne' ""
+ncase "the host's note after a blank or wrapper-free leading blank line -> interim" interim \
+  $'\n\n'"$HOST_NOTE" ""
 ncase "the fixed form with nothing after it is not a marker -> final" final \
   "interim: waiting on " ""
 ncase "the fixed form with only trailing spaces after it is not a marker -> final" final \

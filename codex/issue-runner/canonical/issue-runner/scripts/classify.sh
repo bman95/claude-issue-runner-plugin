@@ -60,9 +60,10 @@
 #     `worktree`, the state-files.md rule), or when the text carries no
 #     interim marker. Prints `interim` when result.json is not readable and
 #     the host's note `This agent stopped with background work of its own
-#     still running` is the file's first line (the caller writes it there,
-#     ahead of the message) or the last non-blank line starts `interim:
-#     waiting on <what>` (gh-issue's fixed form). A marker anywhere else is
+#     still running` is the file's first non-blank line (the caller writes it
+#     there, ahead of the message) or one of the last 5 non-blank lines starts
+#     `interim: waiting on <what>` (gh-issue's fixed form; the window tolerates
+#     host wrapper or trailer lines after it). A marker anywhere else is
 #     quoted text and stays `final`, and so does any message with a line
 #     starting `worktree: ` (a real exit; the interim form never has one). It
 #     reads only: it writes nothing (not `progress`, `status`,
@@ -421,7 +422,7 @@ classify_notification() {
     || die "notification: $DIR/notification is missing, unreadable or has no text"
   # The markers are positional, so a final message that merely quotes one (a
   # blocker report, the Step 10 text) stays final: the host's note is the first
-  # line, the implementer's fixed form the last non-blank line.
+  # non-blank line, the implementer's fixed form one of the last 5 non-blank lines.
   local first last
   # A final message always carries a `worktree:` line (gh-issue's dispatch); the
   # interim form never does. So even with the host's note leading, a message
@@ -429,16 +430,15 @@ classify_notification() {
   if [ -s "$DIR/notification" ] && tr -d '\r' < "$DIR/notification" | grep -aq '^worktree: '; then
     echo final; return 0
   fi
-  first=$(head -n 1 "$DIR/notification" 2>/dev/null | tr -d '\r')
-  last=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -av '^[[:space:]]*$' | tail -n 1)
+  # Host wrappers or trailer lines (usage stats, a closing tag) may surround the
+  # message: the host's note is the first non-blank line, the fixed form one of
+  # the last 5 non-blank lines.
+  first=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -av '^[[:space:]]*$' | head -n 1)
+  last=$(tr -d '\r' < "$DIR/notification" 2>/dev/null | grep -av '^[[:space:]]*$' | tail -n 5 | sed 's/[[:space:]]*$//')
   case $first in
     "This agent stopped with background work of its own still running"*) echo interim; return 0 ;;
   esac
-  last=$(printf '%s' "$last" | sed 's/[[:space:]]*$//')
-  case $last in
-    "interim: waiting on "?*) echo interim ;;
-    *) echo final ;;
-  esac
+  if printf '%s\n' "$last" | grep -aq '^interim: waiting on .'; then echo interim; else echo final; fi
 }
 
 # classify_worktree: Step 3 item 4's worktree resolution for a stopped implementer.
