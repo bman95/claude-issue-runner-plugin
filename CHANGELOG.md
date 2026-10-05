@@ -4,6 +4,12 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+**issue-runner:**
+- **An interim "Agent finished" is no longer read as a result** (fixes #80). The host reports it whenever an implementer stops with background work of its own (a Codex gate pass) still running, with no `result.json` yet. Step 3 item 5 would have classified that healthy implementer as blocked or failed and cascaded it to its dependents. A notification is now interim only when marked (the host note or the fixed form) and no `result.json` is readable; an interim one leaves the issue `implementing`, writes nothing and keeps the hang clock on `progress`. `classify.sh notification` makes the call (the first non-blank line or the last 5 carry the markers, so host trailer lines do not hide one; a notification counts only from the recorded `agent`; the interim hang bound is `max(2 * --hang-minutes, 60)`) and `test-classify.sh` and `test-scheduler.sh` pin it (docs/scenarios.md row 76; Expected behavior changed, so this is a minor bump at release).
+
+**gh-issue:**
+- An implementer that must end a turn while a gate pass or reviewer runs in the background says so in a fixed form, `interim: waiting on <what>`, with no `worktree:` line and no result file.
+
 ## [0.15.0] - 2026-10-04
 
 Fixes #83 and #84. #83: in a production run the orchestrator skipped a required read, paraphrased the Step 5 summary instead of building it, misreported a deliberately skipped checkpoint as refused, and left a wake timer armed past the lock release. The summary becomes a script, the skip gets its own value, and Step 5 ends its wakes. This is a minor bump because the `result.json` `checkpoint` enum gained a value.
