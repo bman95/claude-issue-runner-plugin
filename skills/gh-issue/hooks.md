@@ -18,7 +18,7 @@ Without the authorization below, never skip, disable or sidestep a hook, by any 
 
 1. Read the hook's output. This holds for every commit and merge the procedure makes, the Step 4 checkpoint commit and Step 9's base merge included: a hook failure there is never "record and continue" or a generic merge blocker. A real finding (lint, format, test, type error) is fixed in the code, and the commit retried.
 2. A failure caused by the environment (`command not found`, exit 127, a missing interpreter or toolchain, a missing install such as `node_modules`) is not a code finding. If the dispatch names `environment.md`, read it: a tool listed there as "not on PATH" is fixed by prepending the listed directory to `PATH` for that git call (`PATH="<dir>:$PATH" git commit …`), which is no bypass. A missing install is fixed by the project's own install command.
-3. Still failing for the environment: stop. Never reach for a bypass. Orchestrated: `failed` (environmental), blocker text `hook failed for the environment: <hook>: <first line of its error>`, with `hook_bypass` `none`. Interactive: report it and ask.
+3. Still failing for the environment: stop. Never reach for a bypass. Orchestrated: `failed` (environmental), blocker text `hook failed for the environment: <hook>: <first line of its error>`, with `hook_bypass` as it stands (`none` unless a hook was already bypassed earlier in the run: an environmental failure never erases that). Interactive: report it and ask.
 
 ## When a hook was bypassed anyway
 

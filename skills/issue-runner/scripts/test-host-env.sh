@@ -77,6 +77,12 @@ run "$TMP/state" "$TMP/repo2"
 has "a builtin is reported as such, not as not found" "- test: shell builtin or keyword"
 hasnt "a glob in the contract is not expanded against the repo" "canary"
 
+# A tool found through a relative PATH entry is neither a builtin nor a printed path.
+mkdir -p "$TMP/rel"; mk "$TMP/rel/reltool"
+printf 'preflight: reltool x\n' > "$TMP/repo2/.issue-runner/validation"
+( cd "$TMP" && PATH="rel:$BASE_PATH" "$BASH" "$SCRIPT" "$TMP/state" "$TMP/repo2" >/dev/null 2>&1 )
+has "a relative PATH entry is reported, not as a builtin" "- reltool: on PATH through a relative entry (path omitted)"
+
 # Other manifests map to their tools.
 mkdir -p "$TMP/repo3/.husky"; : > "$TMP/repo3/Cargo.toml"; : > "$TMP/repo3/uv.lock"; : > "$TMP/repo3/go.mod"; : > "$TMP/repo3/Makefile"; : > "$TMP/repo3/yarn.lock"; printf '{}\n' > "$TMP/repo3/package.json"
 run "$TMP/state" "$TMP/repo3"

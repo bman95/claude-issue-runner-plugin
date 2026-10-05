@@ -79,11 +79,14 @@ SEEN=" "
 for t in $TOOLS; do
   case $SEEN in *" $t "*) continue ;; esac
   SEEN="$SEEN$t "
-  p=$(command -v "$t" 2>/dev/null)
+  case $(type -t "$t" 2>/dev/null) in
+    builtin|keyword) LINES="$LINES- $t: shell builtin or keyword (nothing to install)"$'\n'; continue ;;
+    file) p=$(command -v "$t" 2>/dev/null) ;;
+    *) p="" ;;   # an alias or function is not a path; not found falls through to the candidate directories
+  esac
   case $p in
-    /*) ;;
-    ?*) LINES="$LINES- $t: shell builtin or keyword (nothing to install)"$'\n'; continue ;;   # an alias, function or builtin is not a path
-    *) p="" ;;
+    ''|/*) ;;
+    *) LINES="$LINES- $t: on PATH through a relative entry (path omitted)"$'\n'; continue ;;
   esac
   if [ -n "$p" ]; then
     if safe "$p"; then LINES="$LINES- $t: $p"$'\n'; else LINES="$LINES- $t: on PATH (path omitted: unusual characters)"$'\n'; fi
