@@ -9,4 +9,5 @@ Read at "Result file" (SKILL.md), before writing `result.json`: what each key me
 - `checks` — `pass`, `none`, `fail`, or after `gh pr ready` on a former draft: `none-after-ready`, `all-skipped`, `unchanged-after-ready` (these merge, never silently); `null` if Step 9's gate never ran.
 - `checkpoint` — `created` (by this run, orphan resume included), `refused` (reason in Step 10), `skipped` (Step 4), `n/a` (pre-existing PR, or exit before Step 4).
 - `security_lens` — Step 8 lens used. `review_profile` — at exit: `standard` (none, or gate waived), `prose`, `revoked` (Step 8 guard); before Step 8, as authorized (`standard` if gate waived). `gate_model` — the slug the gate passes ran on (`GATE_MODEL`, "Reviewer choices"); `null` if no pass launched. `reviewers` — Phase 1's reviewers per iteration (`REVIEWERS`, default 2).
+- `deferred` — every Surface and Defer finding (Step 8; prose design alternatives excluded), one `{"finding","reason"}` entry each, `[]` if none. Never leave them only in PR prose.
 - `blocker` — your final message's blocker/failure text verbatim; `null` when `merged`.

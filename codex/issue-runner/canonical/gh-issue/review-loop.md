@@ -5,6 +5,7 @@ Step 8's liveness rules for both phases, and the standard Codex gate launch bloc
 ## Contents
 
 - Liveness — never wait on a silent child (active waits, the reviewer bound, gate passes as files, restarts)
+- Security lens — extra reviewer prompt text
 - Inline Phase 1 — no Agent tool
 - Reviewer choices — reviewer count, lenses C and D, reviewer and Codex model
 - Gate launch — the standard Phase 2 block
@@ -13,7 +14,7 @@ Step 8's liveness rules for both phases, and the standard Codex gate launch bloc
 
 Both phases (why: Why Liveness never waits on a notification):
 
-- **Wait actively.** Run every reviewer and gate pass in the background (Claude Code: `run_in_background` on the `Agent` or Bash call); note each start time yourself. While a child is outstanding, never end your turn waiting only on a notification: arm a wake-up at least every 5 minutes (Claude Code: a `Monitor` until-loop with a timeout; any host: a bounded wait). On every wake (orchestrated), rewrite the progress marker's current line.
+- **Wait actively.** Run every reviewer and gate pass in the background (Claude Code: `run_in_background` on the `Agent` or Bash call); note each start time yourself. While a child is outstanding, never end your turn waiting only on a notification: arm a wake-up at least every 5 minutes (Claude Code: a `Monitor` until-loop with a timeout; any host: a bounded wait). On every wake (orchestrated), rewrite the progress marker's current line. If a turn ends anyway while a child is outstanding (the host reports "Agent finished" to the orchestrator for any agent that stops with background work still running), orchestrated, the message is exactly `interim: waiting on <what>` (e.g. `interim: waiting on codex gate pass 1`): no `worktree:` line, no result file, no blocker wording; the orchestrator reads it as "still running", never as a result (why: Why an interim notification is not a result).
 - **Reviewer bound: 20 minutes.** A Phase 1 reviewer not back 20 minutes after dispatch is silent: stop it (Claude Code: `TaskStop`) and re-dispatch once with the same prompt. Discard, never triage, a late result from a stopped or replaced dispatch. A re-dispatch also silent past 20 minutes: stop it; that pass falls back to inline review, if authorized — orchestrated, by the dispatch line `Silent-reviewer fallback: inline review authorized` (every gated run carries it) or the Agent-less inline-review authorization, never by a dispatch that waives the Codex gate; interactive, by the user's answer. Unauthorized → Block `Fresh-eyes reviewer <A|B|C|D> silent twice and inline review not authorized`. Authorized → run the pass yourself (its prompt, a full read of the touched files); add `Fresh-eyes reviewer <A|B|C|D> silent past 20 minutes twice (iteration K); its pass run inline by the implementing context.` under `## Review notes`, set `phase1_inline` to `true`, state it in the Step 10 report. Phase 2's inline-Phase-1 rule applies: never paired with a credit/quota degradation.
 - **Gate passes are files** (why: Why gate passes are files with attempt identities). In `GATE_DIR` pass K writes `codex-pass-K.log` (review), `.err` (CLI stderr), `.exit` (exit status), `.head` (reviewed commit), `.attempt` (launch identity) and, if the watchdog fired, `.timeout`. `GATE_DIR`: orchestrated, the dispatch's `<STATE_DIR>/issue-<number>/`; interactive, `$(git rev-parse --absolute-git-dir)/issue-runner/` (never staged). No gate output uses a fixed `/tmp` name. Launch each Phase 2 block in the background: its CLI subshell writes `.exit` under a 30-minute watchdog, and `.exit` and the watchdog marker only while `.attempt` names that launch. On every wake check `[ -s "$GATE_DIR/codex-pass-K.exit" ]`; its content is `CODEX_EXIT`. Before any Phase 2 branch, three outcomes are not a review:
   - **Timeout** — `.exit` is `124`: `errored`, Block `Codex gate pass K timed out after 30 minutes`; never a pass or a credit/quota degradation, whatever `.err` says.
@@ -28,6 +29,10 @@ Both phases (why: Why Liveness never waits on a notification):
   - No `.attempt` → never launched: launch as pass K (no loss, no extra pass).
 
   A new interactive invocation clears its `GATE_DIR` on entering Phase 2 (`rm -f "$GATE_DIR"/codex-pass-* "$GATE_DIR"/codex-prompt-*`); the runner's Step 3a clears the orchestrated one.
+
+## Security lens
+
+If `git diff --name-only "$BASE_BRANCH"...HEAD` touches `auth/`, `security/`, `.env*`, `secrets*`, `credentials*`, or JWT/session/token handling, add to every reviewer prompt: "Also check: new input flows, auth bypass, token exposure, XSS sinks — report only high-confidence NEW findings."
 
 ## Inline Phase 1 — no Agent tool
 
