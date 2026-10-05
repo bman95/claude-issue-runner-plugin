@@ -26,8 +26,8 @@
 # `details.json` (the title), `error`, `progress` (first line, shown for
 # failed issues), `outcome` (a hung implementer is `hung`), `retries` (absent or
 # not a number = 0), `reviewers` (the issue's configured reviewer count, 2, 3
-# or 4; absent or anything else = 2), `codex-model` (the requested --codex-model;
-# a result whose gate_model differs is flagged), `profile` and `result.json`. A result.json is readable only
+# or 4; absent or anything else = 2), `codex-model` (the requested --codex-model,
+# else gpt-6-sol; a result whose gate_model differs is flagged), `profile` and `result.json`. A result.json is readable only
 # when it is one JSON object on one line with an `outcome` of merged, blocker,
 # failed or ready and a non-empty `worktree`, whose blocker (if any) is a string
 # or null and whose syntax around it is intact; anything else is `no result
@@ -297,7 +297,8 @@ for n in $SCOPE; do
     [ "$inl" != true ] && [ -n "$rv" ] && [ "$rv" != "$rv_cfg" ] && TELE="$TELE  ! reviewers $rv != configured $rv_cfg (the review ran with a count other than the authorized one)$NL"
     cm=$(rd "$d/codex-model" | head -1 | tr -d ' \t\r')
     case $cm in ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) cm='' ;; esac
-    [ -n "$cm" ] && [ "$gs" != waived ] && [ "$gm" != none ] && [ "$gm" != "$cm" ] && TELE="$TELE  ! gate model ${gm:-?} != requested $cm$NL"
+    cm=${cm:-gpt-6-sol}
+    [ "$gs" != waived ] && [ "$gm" != none ] && [ "$gm" != "$cm" ] && TELE="$TELE  ! gate model ${gm:-?} != requested $cm$NL"
     [ "$inl" != true ] && [ -z "$rv" ] && [ "$rv_cfg" != 2 ] && TELE="$TELE  ! reviewers not recorded (configured $rv_cfg; an implementer that ignored the dispatch line records none)$NL"
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
     case $ckp in

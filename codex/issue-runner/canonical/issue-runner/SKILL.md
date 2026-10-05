@@ -30,7 +30,7 @@ You are the orchestrator. Implementers are `general-purpose` subagents in isolat
 - `/issue-runner --max-codex-iterations N` — Codex gate cap per implementer (default 3): at most N `codex review` passes, the gate review plus a verification pass after every fix round
 - `/issue-runner --max-retries N` — cap on Step 4 re-dispatches per issue, self-resolved and user-authorized alike (default 2); at the cap only the user can authorize more
 - `/issue-runner --no-codex-gate` — no Codex certification gate: implementers merge on local fresh-eyes convergence alone, recorded in each PR body like the credit/quota degradation
-- `/issue-runner --implementer-model M --reviewer-model M --reviewers 2|3|4|auto --codex-model S` — each optional, the only channel for model and reviewer choices; read [model-choices.md](model-choices.md) at Step 0 when any is passed
+- `/issue-runner --implementer-model M --reviewer-model M --reviewers 2|3|4|auto --codex-model S` — the only channel for model and reviewer choices; read [model-choices.md](model-choices.md) at Step 0 when any is passed
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass; conflict edges from `Files likely touched:` intersection are still computed (Step 2)
 - `/issue-runner --no-merge` — implementers stop at ready-to-merge (gh-issue Step 9's no-merge stop) and return `ready: PR #<P>` for a human to merge; the issue lands `ready`, terminal for the run, worktree and branch kept; dependents wait (Step 3 item 6). Forwarded only via the dispatch prompt (Step 3a).
 - `/issue-runner --prose-gate N,…` — authorize gh-issue's prose review profile (gh-issue Step 8, "Review profile") for these in-scope issues (`--prose-gate 43,45`); Step 1 checks it and writes the `profile` files per [prose-gate.md](prose-gate.md). Refusals: prose-gate.md.
@@ -75,7 +75,7 @@ bash "$RUN_STATE_SCRIPT" init "$PPID" <LOCK_TTL_MINUTES>   # append --merge-read
 - `session` — the orchestrator's `$CLAUDE_CODE_SESSION_ID` (empty if unset: every start rotates), written by `init`, removed only by a full release.
 - `paused` — `<reason>: <ISO-8601 UTC timestamp>`, written by Step 3a when an `Agent` dispatch fails with a credit/usage-limit error; while present, Step 3 item 2's ready set is empty for this invocation. `init` clears it right after the lock write (why: Why `paused` is cleared at every init).
 
-Per issue, `issue-N/`: `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`/`ready`, the last only under `--no-merge`), `details.json`, `result.json`, `progress`, `retries`, and the files [state-files.md](state-files.md) lists under "Per-issue files" (`error`, `guidance.md`, `worktree`, `branch`, `agent`, `pr`, `outcome`, `blocker`, `merge-oid`, `profile`, `reviewers`).
+Per issue, `issue-N/`: `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`/`ready`, the last only under `--no-merge`), `details.json`, `result.json`, `progress`, `retries`, and the files [state-files.md](state-files.md) lists under "Per-issue files" (`error`, `guidance.md`, `worktree`, `branch`, `agent`, `pr`, `outcome`, `blocker`, `merge-oid`, `profile`, `reviewers`, `codex-model`).
 
 `session` and `agent` are the only **resume pointers**, never status inputs. `result.json` carries exactly these keys (lint-checked against gh-issue's copy):
 
@@ -147,7 +147,7 @@ Then read [dag.md](dag.md) and follow it: **out-of-scope edges are never dropped
 
 Persist `dag.json`, and beside it `dag.txt` (the scheduler's input, Step 3): one `N: dep dep …` line per in-scope issue, the same edges as `dag.json`, empty after the colon when N has none. **Print the plan** as [dag.md](dag.md) lays out, then the estimate below.
 
-**Estimate the agent spend.** Resolve `MAX_CODEX_ITERATIONS` (default 3; `--max-codex-iterations`) and whether the run is gateless (`--no-codex-gate`, or the user's Step 0 proceed-without-gate) — Step 3a's dispatch template needs both too. Then print one closing line, `N` = `scope.txt`'s issue count, `R` an issue's reviewer count (`issue-N/reviewers`, default 2); write `issue-N/reviewers` per model-choices.md (`--plan` too), printing with `--reviewers` each `R`, its lenses and, for `auto`, the reason (why: How the agent-spend estimate is computed):
+**Estimate the agent spend.** Resolve `MAX_CODEX_ITERATIONS` (default 3; `--max-codex-iterations`) and whether the run is gateless (`--no-codex-gate`, or the user's Step 0 proceed-without-gate) — Step 3a's dispatch template needs both too. Then print one closing line, `N` = `scope.txt`'s issue count, `R` an issue's reviewer count (`issue-N/reviewers`, default 2); write `issue-N/reviewers` (`2` unless `--reviewers`), drop `codex-model` unless `--codex-model` (model-choices.md; `--plan` too), print each `R` with its lenses and, for `auto`, the reason (why: How the agent-spend estimate is computed):
 
 ```
 Estimated agents: N issues × (1 implementer + 1 explore + R reviewers × 1–5 iterations) = <Σ(2+R)>–<Σ(2+5R)> Claude agents; Codex gate passes: <G>

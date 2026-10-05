@@ -376,6 +376,14 @@ reset; scope 1 2
 issue 1 done; result_cfg 1 1 '"gpt-6-sol"' 2; printf 'gpt-6.1-sol\n' > "$S/issue-1/codex-model"
 issue 2 done; result_cfg 2 1 '"gpt-6.1-sol"' 2; printf 'gpt-6.1-sol\n' > "$S/issue-2/codex-model"
 run "$S" 3
+reset; scope 1
+issue 1 done; result_cfg 1 1 '"gpt-7"' 2
+run "$S" 3
+has "a gate model other than the default is flagged when none was requested" '  ! gate model gpt-7 != requested gpt-6-sol'
+reset; scope 1 2
+issue 1 done; result_cfg 1 1 '"gpt-6-sol"' 2; printf 'gpt-6.1-sol\n' > "$S/issue-1/codex-model"
+issue 2 done; result_cfg 2 1 '"gpt-6.1-sol"' 2; printf 'gpt-6.1-sol\n' > "$S/issue-2/codex-model"
+run "$S" 3
 has "a gate model other than the requested one is flagged" '  ! gate model gpt-6-sol != requested gpt-6.1-sol'
 hasnt "a matching gate model is not flagged" '! gate model gpt-6.1-sol'
 reset; scope 1 2
