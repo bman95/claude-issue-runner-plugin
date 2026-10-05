@@ -126,6 +126,15 @@ has "a single-quoted separator does not hide the tool either" "- sepool:"
 hasnt "a word after a quoted separator is not probed" "secretpart"
 hasnt "a word after a quoted && is not probed" "leakb"
 
+# Escapes: an escaped quote inside a double-quoted value, an escaped space outside quotes.
+printf 'preflight: TOKEN="prefix\\"; secretvalue ;suffix" pnpm lint && ESC=tok\\ en etool && escword\\ part x\n' > "$TMP/repo2/.issue-runner/validation"
+run "$TMP/state" "$TMP/repo2"
+has "an escaped quote does not close the value: the tool after it is probed" "- pnpm:"
+has "an escaped space keeps the assignment whole" "- etool:"
+hasnt "a fragment after an escaped quote is not probed" "secretvalue"
+hasnt "a fragment after an escaped space is not probed" "- en:"
+hasnt "an escaped-space command word is not split into a tool name" "- part:"
+
 # Each well-known toolchain directory is searched (a fixture tool in each).
 n=0; names=""
 for d in .local/bin .cargo/bin .volta/bin .local/share/pnpm .bun/bin go/bin; do n=$((n + 1)); mk "$HOME/$d/candtool$n"; names="$names candtool$n"; done

@@ -22,11 +22,12 @@
 # repository's manifests (a fixed mapping), and from the first word of each
 # command in `.issue-runner/validation` when that word is a plain program name
 # (letters, digits, `.`, `_`, `+`, `-`; never a path, never starting with `-`
-# or `.`, at most 31 characters); each `&&`, `||`, `;` and `|` segment
-# contributes its first command word (separators inside quotes do not split) (an `env`, `exec`, `time` or `VAR=value`
-# prefix skipped, a quoted value with spaces skipped whole, a `cd` segment
-# ignored; a backslash-escaped space in a value is not understood, which at
-# worst adds or misses a name). The
+# or `.`, at most 31 characters). The contract is tokenized like a shell would:
+# quotes and backslash escapes keep a token whole, so a quoted `VAR="a; b"`
+# value is never split or probed; each unquoted `&&`, `||`, `;` and `|` ends a
+# command, whose first word counts (an `env`, `exec`, `time` or `VAR=value`
+# prefix skipped, a `cd` command ignored; an unterminated quote swallows the
+# rest of its line). The
 # contract is read from the working tree, as a best-effort list of names only
 # (validation-contract.sh stays the trusted reader); the cost of a wrong name is
 # one extra `command -v`. Nothing is executed except `command -v`.
@@ -62,32 +63,30 @@ he_has go.mod && TOOLS="$TOOLS go"
 he_has Makefile && TOOLS="$TOOLS make"
 he_has .husky && TOOLS="$TOOLS sh npx"
 if [ -r "$REPO/.issue-runner/validation" ] && [ ! -L "$REPO/.issue-runner/validation" ]; then
-  # every command word of every line: split on unquoted && || ; |, skip env/VAR= prefixes and `cd` segments
+  # every command's first word: a small shell tokenizer (quotes and backslashes keep a token whole; unquoted && || ; | end a command), skipping env/exec/time/VAR= prefixes and `cd` commands
   for w in $(sed -e 's/#.*$//' -e 's/^[a-z]*:[[:space:]]*//' "$REPO/.issue-runner/validation" | tr -d '\r' | awk '
-      function segs(line, out,   n, i, c, q, cur) {   # split on unquoted && || ; | only
-        n = 0; q = ""; cur = ""
-        for (i = 1; i <= length(line); i++) {
-          c = substr(line, i, 1)
-          if (q != "") { cur = cur c; if (c == q) q = ""; continue }
-          if (c == "\\") { cur = cur c substr(line, i + 1, 1); i++; continue }
-          if (c == "\"" || c == "\047") { q = c; cur = cur c; continue }
-          if (c == ";" || c == "|") { if (c == "|" && substr(line, i + 1, 1) == "|") i++; out[++n] = cur; cur = ""; continue }
-          if (c == "&" && substr(line, i + 1, 1) == "&") { i++; out[++n] = cur; cur = ""; continue }
-          cur = cur c }
-        out[++n] = cur
-        return n }
-      { delete seg; nseg = segs($0, seg)
-        for (k = 1; k <= nseg; k++) {
-          nw = split(seg[k], f)
-          for (i = 1; i <= nw; i++) {
-            if (f[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {   # a quoted value may hold spaces: skip to its closing quote
-              v = f[i]; sub(/^[^=]*=/, "", v); q = substr(v, 1, 1)
-              if ((q == "\"" || q == "\047") && (length(v) < 2 || substr(v, length(v), 1) != q))
-                while (i < nw && substr(f[i], length(f[i]), 1) != q) i++
-              continue }
-            if (f[i] == "env" || f[i] == "exec" || f[i] == "time") continue
-            if (f[i] != "cd") print f[i]
-            break } } }'); do
+      function flush() { if (intok) tok[++ntok] = cur; cur = ""; intok = 0 }
+      function endcmd(   k, t) {
+        flush()
+        for (k = 1; k <= ntok; k++) {
+          t = tok[k]
+          if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || t == "env" || t == "exec" || t == "time") continue
+          if (t != "cd" && t ~ /^[A-Za-z0-9._+-]+$/) print t   # only a plain name is ever printed
+          break }
+        ntok = 0 }
+      { ntok = 0; cur = ""; intok = 0; q = ""; n = length($0)
+        for (i = 1; i <= n; i++) {
+          c = substr($0, i, 1)
+          if (q == "\047") { cur = cur c; if (c == q) q = ""; continue }
+          if (q == "\"") { if (c == "\\") { cur = cur c substr($0, i + 1, 1); i++; continue } cur = cur c; if (c == q) q = ""; continue }
+          if (c == "\\") { cur = cur c substr($0, i + 1, 1); intok = 1; i++; continue }
+          if (c == "\"" || c == "\047") { q = c; cur = cur c; intok = 1; continue }
+          if (c == " " || c == "\t") { flush(); continue }
+          if (c == ";") { endcmd(); continue }
+          if (c == "|") { if (substr($0, i + 1, 1) == "|") i++; endcmd(); continue }
+          if (c == "&" && substr($0, i + 1, 1) == "&") { i++; endcmd(); continue }
+          cur = cur c; intok = 1 }
+        endcmd() }'); do
     case $w in ''|-*|.*|*[!A-Za-z0-9._+-]*) ;; *) [ "${#w}" -le 31 ] && TOOLS="$TOOLS $w" ;; esac
   done
 fi
