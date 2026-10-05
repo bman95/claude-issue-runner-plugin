@@ -68,8 +68,8 @@
 #      one with a Codex counterpart under codex/issue-runner/canonical/ is
 #      byte-identical to it (cmp); a Codex script with no original fails, and
 #      so does a missing Codex copy of validation-contract.sh, classify.sh,
-#      resume-check.sh, merge-ready.sh, run-state.sh, scheduler.sh, integration.sh or
-#      plan-file.sh;
+#      resume-check.sh, merge-ready.sh, run-state.sh, scheduler.sh, integration.sh,
+#      plan-file.sh or summary.sh;
 #      gh-issue's "## Validation contract" section, every skills/gh-issue/*.md
 #      and every skills/issue-runner/*.md are byte-identical across
 #      editions
@@ -115,6 +115,9 @@
 #      `**User decisions:**` and `**Orchestrator suggestions (non-binding):**`
 #      labels appear in user-decisions.md and escalations.md (the first also
 #      in orchestrator-guidance.md)
+#  30. skills/issue-runner/scripts/test-summary.sh passes against both
+#      editions' summary.sh — the fixtures for Step 5's summary table,
+#      telemetry and actual-vs-estimate line
 #
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
@@ -699,7 +702,8 @@ done
 for required in gh-issue/scripts/validation-contract.sh issue-runner/scripts/classify.sh \
                 issue-runner/scripts/resume-check.sh issue-runner/scripts/merge-ready.sh \
                 issue-runner/scripts/run-state.sh issue-runner/scripts/scheduler.sh \
-                issue-runner/scripts/plan-file.sh issue-runner/scripts/integration.sh; do
+                issue-runner/scripts/plan-file.sh issue-runner/scripts/integration.sh \
+                issue-runner/scripts/summary.sh; do
   [ -f "$ROOT/codex/issue-runner/canonical/$required" ] \
     || { err "codex/issue-runner/canonical/$required missing (the Codex canonical procedure runs it)"; bundled_ok=0; }
 done
@@ -980,6 +984,22 @@ for ed in "$ROOT/skills" "$ROOT/codex/issue-runner/canonical"; do
     || { err "$rel/gh-issue/orchestrator-guidance.md lacks the label **User decisions:**"; ud_ok=0; }
 done
 [ "$ud_ok" -eq 1 ] && ok "user-decision contract present in both editions (user-decisions.md, orchestrator-guidance.md, labels)"
+
+# 30. Step 5 summary script fixtures ------------------------------------------------
+# summary.sh prints the table, telemetry and spend line the orchestrator relays;
+# the same fixtures run against both editions' copies of the script.
+TEST_SUMMARY="$ROOT/skills/issue-runner/scripts/test-summary.sh"
+if [ -f "$TEST_SUMMARY" ]; then
+  sum_ok=1
+  for sum in skills/issue-runner/scripts/summary.sh codex/issue-runner/canonical/issue-runner/scripts/summary.sh; do
+    if ! bash "$TEST_SUMMARY" "$ROOT/$sum" >"$TMP/test-summary.out" 2>&1; then
+      err "summary fixtures failed against $sum:"; cat "$TMP/test-summary.out" >&2; sum_ok=0
+    fi
+  done
+  [ "$sum_ok" -eq 1 ] && ok "summary fixtures pass against both editions' summary.sh (skills/issue-runner/scripts/test-summary.sh)"
+else
+  err "$TEST_SUMMARY not found"
+fi
 
 if [ "$fail" -ne 0 ]; then
   printf '\nlint: FAILED\n' >&2
