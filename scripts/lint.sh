@@ -477,7 +477,9 @@ done
 # A contract line starts with `{` and carries `"outcome":` — the shape line in
 # both SKILL files and gh-issue's write recipe; prose that mentions "outcome" is
 # not one. Compared per line (not unioned per file), so a key dropped from one
-# of a file's two lines cannot hide behind the other. Values are free.
+# of a file's two lines cannot hide behind the other. Values are free, but
+# keys nested in a value (deferred's finding/reason) count, so every contract
+# line carries the same example entry.
 result_key_lines() {   # prints "<line-no>:<sorted,keys>" for each contract line of $1
   grep -nE '^[[:space:]]*\{.*"outcome":' "$1" | while IFS=: read -r ln rest; do
     printf '%s:%s\n' "$ln" "$(printf '%s' "$rest" | grep -oE '"[A-Za-z0-9_]+":' | tr -d '":' | sort -u | paste -sd, -)"
