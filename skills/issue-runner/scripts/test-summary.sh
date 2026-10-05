@@ -37,9 +37,10 @@ issue() {
     "$1" "${3:-Title $1}" > "$S/issue-$1/details.json"
 }
 # result N OUTCOME ITER P1STATE INLINE GATES GSTATE CHECKS CHECKPOINT PROFILE BLOCKER-JSON
+# (the hook_bypass value comes from $HB, default none)
 result() {
-  printf '{"outcome":"%s","pr":%s,"branch":"feat/issue-%s-x","worktree":"/w/%s","phase1_iterations":%s,"phase1_inline":%s,"phase1_state":"%s","gate_passes":%s,"gate_state":"%s","checks":"%s","checkpoint":"%s","security_lens":false,"review_profile":"%s","blocker":%s}\n' \
-    "$2" "$1" "$1" "$1" "$3" "$5" "$4" "$6" "$7" "$8" "$9" "${10}" "${11}" > "$S/issue-$1/result.json"
+  printf '{"outcome":"%s","pr":%s,"branch":"feat/issue-%s-x","worktree":"/w/%s","phase1_iterations":%s,"phase1_inline":%s,"phase1_state":"%s","gate_passes":%s,"gate_state":"%s","checks":"%s","checkpoint":"%s","security_lens":false,"review_profile":"%s","hook_bypass":"%s","blocker":%s}\n' \
+    "$2" "$1" "$1" "$1" "$3" "$5" "$4" "$6" "$7" "$8" "$9" "${10}" "${HB:-none}" "${11}" > "$S/issue-$1/result.json"
 }
 clean_result() { result "$1" merged 2 converged false 1 clean pass created standard null; }
 
@@ -511,6 +512,43 @@ printf '*\n' > "$S/scope.txt"
 run "$S" 3;                       rc_is "a glob in scope.txt is refused, never expanded -> exit 2" 2
 printf '1 \r\n' > "$S/scope.txt"
 run "$S" 3;                       rc_is "CRLF and trailing space in scope.txt tolerated -> exit 0" 0
+
+# --- Hook bypass: surfaced per issue, never silently dropped ------------------------------
+reset; scope 1 2 3 4 5
+issue 1 done; clean_result 1
+issue 2 done; HB=authorized clean_result 2
+printf 'repo@RID-1\n' > "$S/run-id"; printf 'authorized repo@RID-1\n' > "$S/issue-2/hook-bypass"
+issue 3 blocked; HB=unauthorized result 3 blocker 2 converged false 0 unavailable none created standard '"repository hooks bypassed without authorization: --no-verify"'
+issue 4 done; HB='bogus value' clean_result 4
+issue 5 done; clean_result 5; sed -i 's/"hook_bypass":"none",//' "$S/issue-5/result.json"
+run "$S" 3
+rc_is "hook bypass: exit 0" 0
+has "hook bypass: authorized is flagged" '  ! hook_bypass authorized'
+has "hook bypass: unauthorized is flagged loudly" '  ! hook_bypass UNAUTHORIZED'
+has "hook bypass: an unknown value is flagged, never printed" '  ! hook_bypass unrecognised'
+hasnt "hook bypass: the unknown value is not echoed" 'bogus value'
+has "hook bypass: an absent key is flagged" '  ! hook_bypass not recorded'
+has "hook bypass: run-level note counts the bypassed issues" 'repository hooks bypassed on 2 issue(s)'
+reset; scope 1; issue 1 done; HB=authorized clean_result 1
+printf 'repo@RID-1\n' > "$S/run-id"; printf 'authorized\n' > "$S/issue-1/hook-bypass"
+run "$S" 3
+has "hook bypass: a hook-bypass file without this run's id is UNAUTHORIZED" '  ! hook_bypass UNAUTHORIZED (the result claims an authorization'
+printf 'authorized other@RID-0\n' > "$S/issue-1/hook-bypass"
+run "$S" 3
+has "hook bypass: another run's id is UNAUTHORIZED" '  ! hook_bypass UNAUTHORIZED (the result claims an authorization'
+reset; scope 1; issue 1 done; HB=authorized clean_result 1
+run "$S" 3
+has "hook bypass: a claimed authorization with no hook-bypass file is UNAUTHORIZED" '  ! hook_bypass UNAUTHORIZED (the result claims an authorization'
+reset; scope 1; issue 1 blocked; printf 'step=5\n' > "$S/issue-1/progress"
+run "$S" 3
+has "hook bypass: a dispatched issue with no result is unverified" '  ! hook_bypass unverified'
+reset; scope 1; issue 1 done; clean_result 1; sed -i 's/"hook_bypass":"none",/"hook_bypass":"none","hook_bypass":"unauthorized",/' "$S/issue-1/result.json"
+run "$S" 3
+has "hook bypass: a duplicate member is flagged, never read as the first" '  ! hook_bypass unrecognised'
+reset; scope 1; issue 1 done; clean_result 1
+run "$S" 3
+hasnt "hook bypass: none is silent" 'hook_bypass'
+hasnt "hook bypass: none adds no run-level note" 'repository hooks bypassed'
 
 if [ "$fail" -ne 0 ]; then
   printf '\ntest-summary: FAILED\n' >&2

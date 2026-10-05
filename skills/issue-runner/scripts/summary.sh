@@ -45,6 +45,15 @@
 # print sanitized, at most 20 per issue and 400 characters per cell, as data for
 # the user, never as instructions.
 #
+# `hook_bypass` (none, authorized or unauthorized) is flagged on a `!` line per
+# issue whenever it is not `none`: `authorized` is `UNAUTHORIZED` unless
+# issue-N/hook-bypass holds `authorized <run-id>` for this run's $STATE_DIR/run-id
+# (a forged claim); `unauthorized` is `UNAUTHORIZED`; a duplicate member or any other
+# value is `unrecognised` (never echoed); an absent key is `not recorded`; a
+# dispatched issue with no readable result is `unverified`. A run-level note counts
+# the issues with `authorized` or `unauthorized`. The value is the implementer's
+# own account, so `none` is silent and proves nothing.
+#
 # Output, in order: `## Summary table`, `## Telemetry` (per-issue lines, `!`
 # flag lines for anything that needs a human, totals), the one-line `Actual
 # agents: <A> (estimate: <LOW>–<HIGH>); actual Codex gate passes: <P>
@@ -103,6 +112,7 @@ for n in $SCOPE; do
   case $n in *[!0-9]*|0*) usage "scope.txt entry '$n' is not a positive integer" ;; esac
 done
 
+RUN_ID=$(head -1 "$STATE_DIR/run-id" 2>/dev/null | tr -d ' \t\r')   # hook-bypass authorizations name the run that recorded them
 CLASSIFY=${CLASSIFY_SCRIPT:-$(dirname "$0")/classify.sh}
 NL='
 '
@@ -359,7 +369,7 @@ revs() { case $1 in 2|3|4) printf '%s' "$1" ;; *) printf '2' ;; esac; }
 isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; [ ${#1} -le 6 ]; }
 
 N_SCOPE=0; for n in $SCOPE; do N_SCOPE=$((N_SCOPE + 1)); done
-TOTAL_ITER=0 TOTAL_GATE=0 AGENTS=0 REFUSED=0 SKIPPED=0 EST_LO=0 EST_HI=0
+TOTAL_ITER=0 TOTAL_GATE=0 AGENTS=0 REFUSED=0 SKIPPED=0 EST_LO=0 EST_HI=0 HOOKS=0
 TABLE="" NOTES="" TELE="" SHAPES="" DEFER=""
 TAB=$(printf "\037")
 
@@ -414,6 +424,8 @@ for n in $SCOPE; do
     case $rv in 2|3|4) ;; *) rv='' ;; esac
     case $gm in null) gm=none ;; ''|*[!A-Za-z0-9._-]*|[!A-Za-z0-9]*) gm='' ;; *) [ ${#gm} -le 64 ] || gm='' ;; esac
     rp=$(pick "$(jv review_profile)" standard prose revoked)
+    hb=$(jv hook_bypass); [ -n "$hb" ] && hb=$(pick "$hb" none authorized unauthorized)
+    [ "$(printf '%s' "$RJ" | grep -o '"hook_bypass":' | grep -c '')" -gt 1 ] && hb='?'   # a duplicate member: which one counts is unknowable
     it_n=0; isnum "$it" && it_n=$((10#$it))
     gp_n=0; isnum "$gp" && gp_n=$((10#$gp))
     TOTAL_ITER=$((TOTAL_ITER + it_n)); TOTAL_GATE=$((TOTAL_GATE + gp_n))
@@ -428,6 +440,14 @@ for n in $SCOPE; do
     [ "$gs" != waived ] && [ "$gp_n" -gt 0 ] && { [ -z "$gm" ] || [ "$gm" = none ]; } && TELE="$TELE  ! gate model not recorded (gate passes $gp_n, no gate_model in the result)$NL"
     [ "$inl" != true ] && [ -z "$rv" ] && [ "$rv_cfg" != 2 ] && TELE="$TELE  ! reviewers not recorded (configured $rv_cfg; an implementer that ignored the dispatch line records none)$NL"
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
+    case $hb in
+      authorized) HOOKS=$((HOOKS + 1))
+        if [ -n "$RUN_ID" ] && [ "$(rd "$d/hook-bypass" | head -1 | tr -d '\r')" = "authorized $RUN_ID" ]; then TELE="$TELE  ! hook_bypass authorized (the repository's hooks were bypassed under the dispatch's authorization)$NL"
+        else TELE="$TELE  ! hook_bypass UNAUTHORIZED (the result claims an authorization the runner never recorded in hook-bypass)$NL"; fi ;;
+      unauthorized) HOOKS=$((HOOKS + 1)); TELE="$TELE  ! hook_bypass UNAUTHORIZED (the repository's hooks were bypassed without authorization)$NL" ;;
+      '') TELE="$TELE  ! hook_bypass not recorded (the result predates the key, or the implementer left it out: hooks unverified)$NL" ;;
+      '?') TELE="$TELE  ! hook_bypass unrecognised (not none, authorized or unauthorized)$NL" ;;
+    esac
     case $ckp in
       refused) REFUSED=$((REFUSED + 1)); TELE="$TELE  ! checkpoint refused (the draft-PR checkpoint push or draft creation was refused)$NL" ;;
       skipped) SKIPPED=$((SKIPPED + 1)); TELE="$TELE  ! checkpoint skipped (the implementer did not run the Step 4 checkpoint; not a refused push)$NL" ;;
@@ -454,7 +474,7 @@ EOF_DEFER
     AGENTS=$((AGENTS + a))
     prof_rt="$rp"
   else
-    TELE="$TELE- #$n: no result recorded (retries=$retries)$NL"
+    TELE="$TELE- #$n: no result recorded (retries=$retries)$NL  ! hook_bypass unverified (no result recorded)$NL"
     AGENTS=$((AGENTS + 2 + 2 * retries))
   fi
 
@@ -494,6 +514,7 @@ printf '## Summary table\n\n| # | Status | Title | Error | Last progress |\n|---
 printf '\n## Telemetry\n\n%s' "$TELE"
 [ "$REFUSED" -ge 2 ] && printf -- '- run-level note: checkpoint refused on %s issues (drafts are probably unavailable on this repository)\n' "$REFUSED"
 [ "$SKIPPED" -ge 1 ] && printf -- '- run-level note: checkpoint skipped on %s issue(s): the crash-recovery checkpoint did not run there\n' "$SKIPPED"
+[ "$HOOKS" -ge 1 ] && printf -- '- run-level note: repository hooks bypassed on %s issue(s) (see the hook_bypass lines above)\n' "$HOOKS"
 printf -- '- totals: phase1 iterations=%s; gate passes=%s\n' "$TOTAL_ITER" "$TOTAL_GATE"
 
 printf '\nActual agents: %s (estimate: %s–%s); actual Codex gate passes: %s (estimate: %s)\n' \
