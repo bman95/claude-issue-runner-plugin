@@ -271,6 +271,22 @@ has "retries alone marks a dispatch" '- #1: no result recorded (retries=2)'
 has "retries=0 alone is not a dispatch" '- #2: not dispatched (blocked)'
 has "retried-but-cleared issue keeps its agents" 'Actual agents: 6 (estimate: 8–24)'
 
+# Dispatch evidence edge cases: a tab after the count, retries on pending/skipped, a junk count, empty marker files.
+reset; scope 1 2 3 4 5 6
+issue 1 failed; printf '3\t\n' > "$S/issue-1/retries"                    # tab-padded count still reads: 2 + 2*3 = 8
+issue 2 pending; printf '2\n' > "$S/issue-2/retries"                     # pending is never dispatched
+issue 3 skipped; printf '2\n' > "$S/issue-3/retries"                     # skipped is never dispatched
+issue 4 blocked; printf 'junk\n' > "$S/issue-4/retries"                  # junk reads as 0
+issue 5 blocked; : > "$S/issue-5/agent"; : > "$S/issue-5/progress"       # empty marker files are no evidence
+issue 6 done; result 6 merged 1 converged false 1 clean pass created standard null; printf '1\n' > "$S/issue-6/retries"   # 2 + 2 + 2*1 = 6
+run "$S" 3
+has "tab-padded retries is read" '- #1: no result recorded (retries=3)'
+has "pending with retries is not dispatched" '- #2: not dispatched (pending)'
+has "skipped with retries is not dispatched" '- #3: not dispatched (skipped)'
+has "junk retries alone is not a dispatch" '- #4: not dispatched (blocked)'
+has "empty agent and progress files are not a dispatch" '- #5: not dispatched (blocked)'
+has "result plus retries arithmetic" 'Actual agents: 14 (estimate: 24–72)'
+
 # --- pr-shape section (stub classify.sh) ------------------------------------------------------
 cat > "$TMP/classify-stub.sh" <<'EOF'
 #!/usr/bin/env bash

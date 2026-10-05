@@ -237,7 +237,7 @@ for n in $SCOPE; do
   ttl=$(title_of "$d/details.json")
   err=$(rd "$d/error")
   outcome=$(rd "$d/outcome" | head -1 | tr -d '\r')
-  retries=$(rd "$d/retries" | head -1 | tr -d ' \r')
+  retries=$(rd "$d/retries" | head -1 | tr -d ' \t\r')
   if isnum "$retries"; then retries=$((10#$retries)); else retries=0; fi
 
   prog=""
