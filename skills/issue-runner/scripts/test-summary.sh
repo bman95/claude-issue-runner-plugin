@@ -349,6 +349,84 @@ run "$S" 3 main
 has "pr-shape: a non-draft PR names a skipped checkpoint" 'non-draft: checkpoint=skipped; a refused checkpoint is expected, a skipped one is not'
 unset CLASSIFY_SCRIPT
 
+# --- Deferred findings --------------------------------------------------------------------------
+# dresult N DEFERRED-JSON: a result.json like clean_result's, carrying a deferred member.
+dresult() {
+  printf '{"outcome":"merged","pr":%s,"branch":"feat/issue-%s-x","worktree":"/w/%s","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged","gate_passes":1,"gate_state":"clean","checks":"pass","checkpoint":"created","security_lens":false,"review_profile":"standard","deferred":%s,"blocker":null}\n' \
+    "$1" "$1" "$1" "$2" > "$S/issue-$1/result.json"
+}
+reset; scope 1 2 3
+issue 1 done; dresult 1 '[{"finding":"withdraw does not refresh the counters","reason":"needs a product decision"},{"reason":"pre-existing | in `x`","finding":"name masking by \"path\" position"}]'
+issue 2 done; dresult 2 '[]'
+issue 3 done; clean_result 3
+run "$S" 3
+rc_is "deferred: exit 0" 0
+has "deferred: section header" '## Deferred findings'
+has "deferred: the issue's entry count heads its list" '- #1 (2):'
+has "deferred: an entry prints finding and reason as code spans" '  - `withdraw does not refresh the counters` — reason: `needs a product decision`'
+has "deferred: member order, escapes and sanitizing" '  - `name masking by "path" position` — reason: `pre-existing \| in '"'"'x'"'"'`'
+has "deferred: a flag line per issue with entries" '  ! deferred 2 finding(s)'
+has "deferred: telemetry survives the array" '- #1: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0'
+hasnt "deferred: an empty array prints nothing for its issue" '- #2 ('
+hasnt "deferred: no result key means no entries" '- #3 ('
+has "deferred: the section comes last, after the spend line" 'Caveat: best-effort; it can under- or overcount.
+
+## Deferred findings'
+reset; scope 1; issue 1 done; clean_result 1
+run "$S" 3
+hasnt "deferred: nothing deferred -> no section" 'Deferred findings'
+hasnt "deferred: nothing deferred -> no flag" 'deferred'
+reset; scope 1 2 3 4 5 6 7 8 9 10
+issue 1 done; dresult 1 '[{"finding":"a"}]'
+issue 2 done; dresult 2 '"just text"'
+issue 3 done; dresult 3 '[{"finding":"a","reason":"b","extra":"c"}]'
+issue 4 done; dresult 4 '[{"finding":"a","reason":5}]'
+issue 5 done; dresult 5 'null'
+issue 6 done; dresult 6 '[{"finding":"a","reason":"b"},]'
+issue 7 done; dresult 7 '[{"finding":"a","reason":"b",}]'
+issue 8 done; dresult 8 '[{"finding":"","reason":"b"}]'
+issue 9 done; dresult 9 '[{"finding":"a","reason":"b","finding":"c"}]'
+issue 10 done; dresult 10 '{"finding":"a","reason":"b"}'
+run "$S" 3
+for n in 1 2 3 4 6 7 8 9 10; do
+  has "deferred: issue $n's malformed value keeps its telemetry" "- #$n: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0"
+done
+has "deferred: a null value is no entries (telemetry kept)" '- #5: phase1 iterations=2; gate passes=1'
+[ "$(printf '%s\n' "$OUT" | grep -c '! deferred unreadable')" -eq 9 ] && ok "deferred: exactly the 9 malformed values are flagged unreadable (null is not)" || { err "deferred: unreadable flag count is not 9"; printf '%s\n' "$OUT" | sed 's/^/  > /' >&2; }
+hasnt "deferred: malformed values print no section" 'Deferred findings'
+reset; scope 1; issue 1 done
+printf '{"outcome":"merged","pr":1,"branch":"b","worktree":"/w/1","deferred":[{"finding":"x","reason":"y"}],"deferred":[],"blocker":null}\n' > "$S/issue-1/result.json"
+run "$S" 3
+has "deferred: a duplicate member is flagged, telemetry kept" '! deferred unreadable'
+reset; scope 1; issue 1 done
+dresult 1 '[{"finding":"A\u0041 \u00e9 \\ back \u001b x\nline","reason":"tab\there"}]'
+run "$S" 3
+has "deferred: escapes (u0041, non-ASCII, backslash, control, newline) are decoded and flattened" '  - `AA ? / back   x line` — reason: `tab here`'
+reset; scope 1; issue 1 done
+printf '{"outcome":"merged","pr":1,"branch":"b","worktree":"/w/1","deferred":[{"finding":"only member","reason":"r"}]}\n' > "$S/issue-1/result.json"
+run "$S" 3
+has "deferred: as the last member" '  - `only member` — reason: `r`'
+reset; scope 1; issue 1 done
+big='['; i=0; while [ $i -lt 23 ]; do big="$big{\"finding\":\"f$i\",\"reason\":\"r$i\"},"; i=$((i + 1)); done
+dresult 1 "${big%,}]"
+run "$S" 3
+has "deferred: the count is the real one" '- #1 (23):'
+has "deferred: the 20th entry prints" '`f19`'
+hasnt "deferred: the 21st entry is cut" '`f20`'
+has "deferred: the cut is announced" '(+3 more not shown; see issue-1/result.json)'
+reset; scope 1; issue 1 done
+long=$(printf 'x%.0s' $(seq 1 450))
+dresult 1 "[{\"finding\":\"$long\",\"reason\":\"r\"}]"
+run "$S" 3
+has "deferred: a long cell is cut at 400 characters" "$(printf 'x%.0s' $(seq 1 400))...\`"
+reset; scope 1; issue 1 done
+dresult 1 '[ { "finding" : "spaced" , "reason" : "form" } ]'
+run "$S" 3
+has "deferred: a spaced array reads like the compact one" '  - `spaced` — reason: `form`'
+printf '{"outcome":"blocker","pr":1,"branch":"b","worktree":"/w/1","deferred":[],"blocker":"x \\"deferred\\":[{\\"finding\\":\\"f\\",\\"reason\\":\\"r\\"}]"}\n' > "$S/issue-1/result.json"
+run "$S" 3
+hasnt "deferred: an entry quoted inside the blocker text is not an entry" 'Deferred findings'
+
 # --- Usage errors ---------------------------------------------------------------------------
 reset; scope 1; issue 1 done
 run;                              rc_is "no arguments -> exit 2" 2

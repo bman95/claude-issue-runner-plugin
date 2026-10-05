@@ -5,6 +5,7 @@ Step 8's liveness rules for both phases, and the standard Codex gate launch bloc
 ## Contents
 
 - Liveness — never wait on a silent child (active waits, the reviewer bound, gate passes as files, restarts)
+- Security lens — extra reviewer prompt text
 - Inline Phase 1 — no Agent tool
 - Gate launch — the standard Phase 2 block
 
@@ -27,6 +28,10 @@ Both phases (why: Why Liveness never waits on a notification):
   - No `.attempt` → never launched: launch as pass K (no loss, no extra pass).
 
   A new interactive invocation clears its `GATE_DIR` on entering Phase 2 (`rm -f "$GATE_DIR"/codex-pass-* "$GATE_DIR"/codex-prompt-*`); the runner's Step 3a clears the orchestrated one.
+
+## Security lens
+
+If `git diff --name-only "$BASE_BRANCH"...HEAD` touches `auth/`, `security/`, `.env*`, `secrets*`, `credentials*`, or JWT/session/token handling, add to every reviewer prompt: "Also check: new input flows, auth bypass, token exposure, XSS sinks — report only high-confidence NEW findings."
 
 ## Inline Phase 1 — no Agent tool
 
