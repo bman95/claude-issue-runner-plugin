@@ -4,6 +4,19 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+Fixes #81: model and reviewer choices had no supported channel, so an orchestrator improvised them through dispatch-prompt text, and its Codex preflight checked the pinned model rather than the one the gate used.
+
+**issue-runner:**
+- **New flags** `--implementer-model M`, `--reviewer-model M`, `--reviewers 2|3|4|auto` and `--codex-model S`, validated before the run lock and forwarded as the `Agent` call's `model` and three fixed dispatch lines (`Reviewers:`, `Reviewer model:`, `Codex model:`, each `(user-authorized)`). `auto` has the orchestrator choose 2-4 per issue from the issue's scope and print the choice and lenses in the plan. The Trust rule lists them. New `model-choices.md`.
+- **The Codex preflight checks the model the gate will run** (`--codex-model`, else `gpt-6-sol`).
+- **The estimate and the actual-spend line use the configured reviewer count**: `summary.sh` reads each issue's `reviewers` file and the result's `reviewers`, and the estimate is the sums of 2+R and 2+5R. Per-issue telemetry shows the reviewers and the gate model. Fixtures added to `test-summary.sh`.
+- The per-issue state-file list moved from SKILL.md to `state-files.md`, to stay under the word ceiling.
+
+**gh-issue:**
+- Phase 1 runs `REVIEWERS` reviewers: A and B as before, plus fixed lenses C (trust boundary) and D (consistency) in `review-loop.md`, "Reviewer choices". The Trust rule honors only the exact dispatch lines (interactive: `--reviewers`, `--reviewer-model`, `--codex-model`); a malformed line keeps the default.
+- The Codex availability check, both gate launch blocks and the pin text use `GATE_MODEL` (default `gpt-6-sol`).
+- `result.json` gains `gate_model` and `reviewers` (every copy, lint check 11); the key descriptions moved to the new `result-file.md`.
+
 ## [0.15.0] - 2026-10-04
 
 Fixes #83 and #84. #83: in a production run the orchestrator skipped a required read, paraphrased the Step 5 summary instead of building it, misreported a deliberately skipped checkpoint as refused, and left a wake timer armed past the lock release. The summary becomes a script, the skip gets its own value, and Step 5 ends its wakes. This is a minor bump because the `result.json` `checkpoint` enum gained a value.

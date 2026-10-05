@@ -4,7 +4,14 @@ Read at Step 0 (SKILL.md) before running any preflight: the Codex preflight in e
 
 ## Codex preflight
 
-**Codex preflight** (not `--flush`): `command -v codex >/dev/null`, then `codex debug models 2>/dev/null | grep -Eq '"slug": *"gpt-6-sol"'` (gh-issue Step 8 Phase 2's pinned model). Either failing without `--no-codex-gate` → tell the user codex is absent or does not list `gpt-6-sol` (upgrade to 0.155 or later, or check `codex login` and network; include `codex --version`) and ask via `AskUserQuestion`: abort *(recommended)* or proceed without the gate (≡ `--no-codex-gate`).
+**Codex preflight** (not `--flush`): `GATE_MODEL` is `--codex-model` (validated, [model-choices.md](model-choices.md)), else `gpt-6-sol`, gh-issue Step 8 Phase 2's pinned model; the check names that model, the one the gate will run. `command -v codex >/dev/null`, then:
+
+```bash
+GATE_MODEL="gpt-6-sol"   # or the validated --codex-model slug
+codex debug models 2>/dev/null | grep -Eq "\"slug\": *\"$(printf '%s' "$GATE_MODEL" | sed 's/[.]/\\./g')\""
+```
+
+Either failing without `--no-codex-gate` → tell the user codex is absent or does not list `<GATE_MODEL>` (upgrade to 0.155 or later, or check `codex login` and network; include `codex --version`) and ask via `AskUserQuestion`: abort *(recommended)* or proceed without the gate (≡ `--no-codex-gate`).
 
 ## Validation-contract preflight
 

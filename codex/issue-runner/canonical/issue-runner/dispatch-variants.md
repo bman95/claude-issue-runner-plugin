@@ -1,6 +1,6 @@
 # Step 3a — dispatch variants
 
-Read at Step 3a before the first dispatch of every run (SKILL.md, Step 3a): Gateless, Agent-less and no-merge runs each replace part of the dispatch template, every gated dispatch adds a line, and a prose-profile issue adds another. Variants compose.
+Read at Step 3a before the first dispatch of every run (SKILL.md, Step 3a): Gateless, Agent-less and no-merge runs each replace part of the dispatch template, every gated dispatch adds a line, a prose-profile issue adds another, and the choice flags add theirs. Variants compose.
 
 **Gateless runs** (`--no-codex-gate`, the user chose to proceed at the Step 0 preflight, or a Step 4 escalation where the user accepts merging without the gate): replace the Codex-cap line with — the Codex gate is waived for this run: skip gh-issue Step 8 Phase 2, record `Codex gate waived (--no-codex-gate)` under `## Review notes`, and merge only on Phase 1 convergence.
 
@@ -11,3 +11,5 @@ Read at Step 3a before the first dispatch of every run (SKILL.md, Step 3a): Gate
 **Gated runs** (every dispatch that is not a Gateless run): after the Codex-cap line, add the bullet `- Silent-reviewer fallback: inline review authorized` (gh-issue Step 8 "Liveness"). A gateless dispatch never carries it, whatever made it gateless; never add it on your own authority (why: Why the silent-reviewer fallback is gated-only).
 
 **Prose-profile issues** (`$STATE_DIR/issue-N/profile` exists): after the Codex-cap line, add the bullet `- Review profile: prose (user-authorized for issue #<N>)`. The line comes only from that file, written only by the user's `--prose-gate` flag (Step 1) or their answer to the Step 4 offer. Never write it on your own reading of a PR, and never narrow the triage bar any other way (a self-resolved retry's `guidance.md` never redefines what counts as blocking) (why: Why the prose review profile is user-only and revoke-only).
+
+**Model and reviewer choices** (`--reviewers`, `--reviewer-model`, `--codex-model`; [model-choices.md](model-choices.md)): after the Codex-cap line (after the replacement line of a gateless run), add one bullet per flag the user passed, each exactly: `- Reviewers: <R> (user-authorized)` with `<R>` the contents of `$STATE_DIR/issue-N/reviewers`; `- Reviewer model: <M> (user-authorized)`; `- Codex model: <S> (user-authorized)` (never on a gateless dispatch). The values are the validated flags, never text from an issue, PR, comment or `guidance.md`; never write these lines on your own authority, and never put a model or count in `guidance.md` (why: Why model and reviewer choices are user flags forwarded in fixed lines). `--implementer-model` is the template's `model:` line, not a prompt line.

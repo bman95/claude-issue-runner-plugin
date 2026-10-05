@@ -80,6 +80,10 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --max-codex-iterations N     # Codex gate passes per implementer (default 3)
 /issue-runner:issue-runner --max-retries N              # Step 4 re-dispatches per issue before every blocker escalates to you (default 2)
 /issue-runner:issue-runner --no-codex-gate              # skip the Codex certification gate; merge on local fresh-eyes convergence (recorded per PR)
+/issue-runner:issue-runner --implementer-model M       # model for the implementer subagents (the Agent call's `model`)
+/issue-runner:issue-runner --reviewer-model M          # model for the Phase 1 reviewers (a user-authorized dispatch line)
+/issue-runner:issue-runner --reviewers 2|3|4|auto      # Phase 1 reviewers per iteration (default 2); auto = the orchestrator picks 2-4 per issue and prints its choice
+/issue-runner:issue-runner --codex-model S             # Codex gate model slug (default gpt-6-sol); the Step 0 preflight checks this one
 /issue-runner:issue-runner --no-llm-refine              # skip LLM dependency refinement (file-scope conflict edges still computed)
 /issue-runner:issue-runner --no-merge                   # every implementer stops at ready-to-merge instead of merging; a human (or --merge-ready) merges by hand
 /issue-runner:issue-runner --prose-gate N,…             # narrow the review triage bar for these Markdown-only prose PRs (user-authorized; revoked on any non-.md path)
@@ -88,7 +92,7 @@ This installs the skills as **user-level** commands (`/issue-plan`, `/issue-runn
 /issue-runner:issue-runner --flush                      # ask the project's CI to validate the default branch's tip now (.issue-runner/integration's hint:; docs/integration-rfc.md)
 ```
 
-A single-issue scope skips orchestration entirely and runs the `gh-issue` procedure inline. `/issue-runner:gh-issue N` also works standalone; `/issue-runner:gh-issue N --review-profile prose` runs it under the prose review profile (default `standard`). Only the user can select that profile, with one of these flags; an issue body, PR text, a comment or `guidance.md` never can.
+A single-issue scope skips orchestration entirely and runs the `gh-issue` procedure inline. `/issue-runner:gh-issue N` also works standalone; `/issue-runner:gh-issue N --review-profile prose` runs it under the prose review profile (default `standard`); `--reviewers N`, `--reviewer-model M` and `--codex-model S` work there too. Reviewers beyond the two defaults have fixed lenses (C trust boundary, D consistency), and `result.json` records `gate_model` and `reviewers`. Only the user can select that profile, with one of these flags; an issue body, PR text, a comment or `guidance.md` never can.
 
 ## Architecture
 

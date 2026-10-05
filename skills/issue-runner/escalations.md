@@ -9,7 +9,7 @@ Read at Step 4 before resolving any `blocked` or `failed` issue (SKILL.md, Step 
 
 ## Blocker classes
 
-`Fresh-eyes reviewer <A|B> silent twice and inline review not authorized` (gateless dispatches only; not the Agent-tool blocker) is an ordinary blocker: a retry dispatches fresh reviewers.
+`Fresh-eyes reviewer <A|B|C|D> silent twice and inline review not authorized` (gateless dispatches only; not the Agent-tool blocker) is an ordinary blocker: a retry dispatches fresh reviewers.
 
 Three blockers accept risk and are never self-resolved: `Agent tool unavailable and inline review not authorized` (the Step 0 probe misreported `yes`, or the host changed mid-run), `Codex gate unavailable (credit/quota) and Phase 1 ran inline: no independent review`, and `codex CLI not installed and gate not waived` (its catalog variant, `Codex CLI does not list gpt-6-sol: upgrade the Codex CLI to 0.155 or later, or check codex login and network`, is the same blocker: one question covers both).
 

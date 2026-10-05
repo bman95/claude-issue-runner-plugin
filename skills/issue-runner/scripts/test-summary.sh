@@ -349,6 +349,35 @@ run "$S" 3 main
 has "pr-shape: a non-draft PR names a skipped checkpoint" 'non-draft: checkpoint=skipped; a refused checkpoint is expected, a skipped one is not'
 unset CLASSIFY_SCRIPT
 
+# --- Configured reviewers and the gate model (issue #81) ------------------------------------
+# result_cfg N ITER GATE-MODEL-JSON REVIEWERS: a readable result carrying the two new keys.
+result_cfg() {
+  printf '{"outcome":"merged","pr":%s,"branch":"feat/issue-%s-x","worktree":"/w/%s","phase1_iterations":%s,"phase1_inline":false,"phase1_state":"converged","gate_passes":1,"gate_state":"clean","checks":"pass","checkpoint":"created","security_lens":false,"review_profile":"standard","gate_model":%s,"reviewers":%s,"blocker":null}\n' \
+    "$1" "$1" "$1" "$2" "$3" "$4" > "$S/issue-$1/result.json"
+}
+reset; scope 1 2 3 4
+issue 1 done; result_cfg 1 2 '"gpt-6.1-sol"' 4        # 2 + 4*2 = 10 agents; configured 4
+issue 2 done; result_cfg 2 1 '"gpt-6-sol"' 3          # 2 + 3*1 = 5; configured 3
+issue 3 done; clean_result 3                          # old result without the keys: file absent -> 2 + 2*2 = 6
+issue 4 pending
+printf '4\n' > "$S/issue-1/reviewers"; printf '3\n' > "$S/issue-2/reviewers"; printf '2\n' > "$S/issue-4/reviewers"
+run "$S" 3
+# estimate: (2+4)+(2+3)+(2+2)+(2+2) = 19 low; (2+20)+(2+15)+(2+10)+(2+10) = 63 high
+has "estimate and actual use the configured reviewer counts" 'Actual agents: 21 (estimate: 19–63);'
+has "telemetry shows the reviewer count and the gate model" '- #1: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0; reviewers=4; gate model=gpt-6.1-sol'
+has "a result without the new keys prints ?" 'checkpoint=created; retries=0; reviewers=?; gate model=?'
+reset; scope 1 2
+issue 1 done; result_cfg 1 1 'null' 4; printf '3\n' > "$S/issue-1/reviewers"
+issue 2 done; result_cfg 2 1 '"[x](http://e)"' 9; printf '9\n' > "$S/issue-2/reviewers"
+run "$S" 3
+has "a null gate model prints none" 'reviewers=4; gate model=none'
+has "an out-of-range reviewers count or free-form model prints ?" 'reviewers=?; gate model=?'
+hasnt "an injected gate model never reaches the output" 'http://e'
+has "a reviewers file outside 2-4 counts as 2" '(estimate: 9–29);'
+has "a result's reviewers wins over the file for the actual" 'Actual agents: 10 '
+run "$S" 3 --gateless
+has "the reviewer estimate leaves the gateless gate estimate at 0" '(estimate: 0)'
+
 # --- Usage errors ---------------------------------------------------------------------------
 reset; scope 1; issue 1 done
 run;                              rc_is "no arguments -> exit 2" 2
