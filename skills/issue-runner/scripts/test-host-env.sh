@@ -107,6 +107,25 @@ printf 'preflight: -x\nfull: $(evil) y\n' > "$TMP/repo2/.issue-runner/validation
 run "$TMP/state" "$TMP/repo2"
 hasnt "a command substitution is not probed" "evil"
 
+# A quoted VAR="a b" value is skipped whole, never probed word by word; names are capped at 31 characters.
+long31=$(printf 'a%.0s' $(seq 1 31)); long32=${long31}a
+printf 'preflight: API_KEY="s3cr3t pass word" qtool && time timed-tool && exec exec-tool && %s && %s\n' "$long31" "$long32" > "$TMP/repo2/.issue-runner/validation"
+run "$TMP/state" "$TMP/repo2"
+has "a quoted assignment value is skipped: the tool after it is probed" "- qtool:"
+hasnt "a word inside a quoted value is not probed" "- pass:"
+has "time and exec prefixes are skipped" "- timed-tool:"
+has "exec prefix skipped" "- exec-tool:"
+has "a 31-character name is probed" "- $long31:"
+hasnt "a 32-character name is skipped" "- $long32:"
+
+# Each well-known toolchain directory is searched (a fixture tool in each).
+n=0; names=""
+for d in .local/bin .cargo/bin .volta/bin .local/share/pnpm .bun/bin go/bin; do n=$((n + 1)); mk "$HOME/$d/candtool$n"; names="$names candtool$n"; done
+printf 'preflight: %s\n' "$(printf '%s && ' $names | sed 's/ && $//')" > "$TMP/repo2/.issue-runner/validation"
+run "$TMP/state" "$TMP/repo2"
+n=0; for d in .local/bin .cargo/bin .volta/bin .local/share/pnpm .bun/bin go/bin; do n=$((n + 1)); has "candidate directory $d" "- candtool$n: $HOME/$d/candtool$n (not on PATH"; done
+has "the footer says any listed path may be off the implementer's PATH" "Any listed path may be off your own PATH"
+
 # A rerun never leaves an earlier invocation's content standing.
 printf 'stale-marker\n' > "$OUT"
 run "$TMP/state" "$TMP/repo2"

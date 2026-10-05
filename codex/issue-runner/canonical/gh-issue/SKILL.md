@@ -147,7 +147,7 @@ git ls-remote --exit-code --heads origin '*/issue-<number>-*'; [ $? -eq 2 ] || e
 { git log -1 --format=%s | grep -qxF "chore: checkpoint plan for #<number>" \
   || git commit --allow-empty -m "chore: checkpoint plan for #<number>"; } \
   && git push -u origin HEAD \
-  && gh pr create --draft --title "<title under 70 chars>" --body "<body>"   # idempotent on a retry; either refused → record the reason and continue (below)
+  && gh pr create --draft --title "<title under 70 chars>" --body "<body>"   # idempotent on a retry; either refused → see below
 ```
 
 Title: the final PR's. Body: `## Summary` (one line: draft checkpoint, implementation pending), `Closes #<number>`, `## Plan` (the Step 3 plan verbatim). Only Step 9 marks it ready; Step 7 treats this PR as existing.
@@ -157,7 +157,7 @@ Title: the final PR's. Body: `## Summary` (one line: draft checkpoint, implement
   - merged but moved on, no PR, or only closed → blocker naming that branch; never push a second one.
 
   A branch your dispatch said to continue on is not a hit.
-- Otherwise best-effort (hook failures: hooks.md): a refused push or `gh pr create --draft` → record the reason for Step 10's `checkpoint:` line and continue. Never retry without `--draft`. A checkpoint deliberately not run is `skipped`, never `refused`; Step 7 drafts the PR.
+- Otherwise best-effort, a hook failure aside (hooks.md, never `refused`): a refused push or `gh pr create --draft` → record the reason for Step 10's `checkpoint:` line and continue. Never retry without `--draft`. A checkpoint deliberately not run is `skipped`, never `refused`; Step 7 drafts the PR.
 
 **Interactive:** run the in-flight check in [interactive.md](interactive.md) before the Step 3 plan, then create and enter the dedicated worktree by its recipe; every later step runs from there, never the main checkout.
 

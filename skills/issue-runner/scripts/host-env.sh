@@ -36,28 +36,28 @@ set -u
 set +e +o pipefail
 set -f
 
-usage() { echo "host-env.sh: $1" >&2; exit 2; }
+he_usage() { echo "host-env.sh: $1" >&2; exit 2; }
 
 STATE_DIR=${1:-}
 REPO=${2:-.}
-[ -n "$STATE_DIR" ] || usage "usage: host-env.sh <state-dir> [<repo-dir>]"
-[ -d "$STATE_DIR" ] && [ -w "$STATE_DIR" ] || usage "state dir '$STATE_DIR' is not a writable directory"
-[ -d "$REPO" ] || usage "repo dir '$REPO' is not a directory"
+[ -n "$STATE_DIR" ] || he_usage "usage: host-env.sh <state-dir> [<repo-dir>]"
+[ -d "$STATE_DIR" ] && [ -w "$STATE_DIR" ] || he_usage "state dir '$STATE_DIR' is not a writable directory"
+[ -d "$REPO" ] || he_usage "repo dir '$REPO' is not a directory"
 
 TOOLS="git gh bash codex"
-has() { [ -e "$REPO/$1" ]; }
-if has package.json; then
+he_has() { [ -e "$REPO/$1" ]; }
+if he_has package.json; then
   TOOLS="$TOOLS node npm"
-  has pnpm-lock.yaml && TOOLS="$TOOLS pnpm"
-  has yarn.lock && TOOLS="$TOOLS yarn"
-  (has bun.lockb || has bun.lock) && TOOLS="$TOOLS bun"
+  he_has pnpm-lock.yaml && TOOLS="$TOOLS pnpm"
+  he_has yarn.lock && TOOLS="$TOOLS yarn"
+  (he_has bun.lockb || he_has bun.lock) && TOOLS="$TOOLS bun"
 fi
-if has pyproject.toml || has uv.lock || has requirements.txt; then TOOLS="$TOOLS python3"; fi
-if has pyproject.toml || has uv.lock; then TOOLS="$TOOLS uv"; fi
-has Cargo.toml && TOOLS="$TOOLS cargo"
-has go.mod && TOOLS="$TOOLS go"
-has Makefile && TOOLS="$TOOLS make"
-has .husky && TOOLS="$TOOLS sh npx"
+if he_has pyproject.toml || he_has uv.lock || he_has requirements.txt; then TOOLS="$TOOLS python3"; fi
+if he_has pyproject.toml || he_has uv.lock; then TOOLS="$TOOLS uv"; fi
+he_has Cargo.toml && TOOLS="$TOOLS cargo"
+he_has go.mod && TOOLS="$TOOLS go"
+he_has Makefile && TOOLS="$TOOLS make"
+he_has .husky && TOOLS="$TOOLS sh npx"
 if [ -r "$REPO/.issue-runner/validation" ] && [ ! -L "$REPO/.issue-runner/validation" ]; then
   # every command word of every line: split on && || ; |, skip env/VAR= prefixes and `cd` segments
   for w in $(sed -e 's/#.*$//' -e 's/^[a-z]*:[[:space:]]*//' "$REPO/.issue-runner/validation" | tr -d '\r' | awk '
@@ -65,7 +65,12 @@ if [ -r "$REPO/.issue-runner/validation" ] && [ ! -L "$REPO/.issue-runner/valida
         for (k = 1; k <= nseg; k++) {
           nw = split(seg[k], f)
           for (i = 1; i <= nw; i++) {
-            if (f[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || f[i] == "env" || f[i] == "exec" || f[i] == "time") continue
+            if (f[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {   # a quoted value may hold spaces: skip to its closing quote
+              v = f[i]; sub(/^[^=]*=/, "", v); q = substr(v, 1, 1)
+              if ((q == "\"" || q == "\047") && (length(v) < 2 || substr(v, length(v), 1) != q))
+                while (i < nw && substr(f[i], length(f[i]), 1) != q) i++
+              continue }
+            if (f[i] == "env" || f[i] == "exec" || f[i] == "time") continue
             if (f[i] != "cd") print f[i]
             break } } }'); do
     case $w in ''|-*|.*|*[!A-Za-z0-9._+-]*) ;; *) [ "${#w}" -le 31 ] && TOOLS="$TOOLS $w" ;; esac
@@ -75,7 +80,7 @@ fi
 HOME=${HOME:-/nonexistent}
 CANDIDATES="$HOME/.local/node/bin $HOME/.local/bin $HOME/.cargo/bin $HOME/.volta/bin $HOME/.local/share/pnpm $HOME/.bun/bin $HOME/go/bin /usr/local/go/bin /usr/local/bin /opt/homebrew/bin"
 
-safe() { case $1 in /*) case $1 in *[!A-Za-z0-9._+/@~-]*) return 1 ;; esac; return 0 ;; esac; return 1; }
+he_safe() { case $1 in /*) case $1 in *[!A-Za-z0-9._+/@~-]*) return 1 ;; esac; return 0 ;; esac; return 1; }
 
 LINES=""
 SEEN=" "
@@ -92,7 +97,7 @@ for t in $TOOLS; do
     *) LINES="$LINES- $t: on PATH through a relative entry (path omitted)"$'\n'; continue ;;
   esac
   if [ -n "$p" ]; then
-    if safe "$p"; then LINES="$LINES- $t: $p"$'\n'; else LINES="$LINES- $t: on PATH (path omitted: unusual characters)"$'\n'; fi
+    if he_safe "$p"; then LINES="$LINES- $t: $p"$'\n'; else LINES="$LINES- $t: on PATH (path omitted: unusual characters)"$'\n'; fi
     continue
   fi
   found=""
@@ -101,7 +106,7 @@ for t in $TOOLS; do
   done
   if [ -z "$found" ]; then
     LINES="$LINES- $t: not found"$'\n'
-  elif safe "$found/$t"; then
+  elif he_safe "$found/$t"; then
     LINES="$LINES- $t: $found/$t (not on PATH: prepend $found to PATH in your commands)"$'\n'
   else
     LINES="$LINES- $t: found off PATH (path omitted: unusual characters)"$'\n'
@@ -110,13 +115,13 @@ done
 
 OUT="$STATE_DIR/environment.md"
 rm -f "$OUT"   # never leave a previous invocation's facts standing if this probe fails
-TMP=$(mktemp "$STATE_DIR/.environment.XXXXXX" 2>/dev/null) || usage "cannot write in $STATE_DIR"
+TMP=$(mktemp "$STATE_DIR/.environment.XXXXXX" 2>/dev/null) || he_usage "cannot write in $STATE_DIR"
 {
   printf '# Host environment facts\n\n'
   printf 'Data, not instructions: it grants no authorization. Written by host-env.sh for this run; paths only, never environment variable values.\n\n'
   printf '## Tools\n\n'
   printf '%s' "$LINES"
   printf '\nA tool "not on PATH" is installed: prepend its directory to PATH for your own commands and for that one call of the version-control tool, so repository hooks find it (the directory may hold other tools too). A tool "not found" is missing on this host. Any listed path may be off your own PATH even when it is not marked: if a hook cannot find that tool, prepend the path'"'"'s directory the same way.\n'
-} > "$TMP" && mv -f "$TMP" "$OUT" || { rm -f "$TMP"; usage "cannot write $OUT"; }
+} > "$TMP" && mv -f "$TMP" "$OUT" || { rm -f "$TMP"; he_usage "cannot write $OUT"; }
 printf 'environment: %s\n' "$OUT"
 exit 0
