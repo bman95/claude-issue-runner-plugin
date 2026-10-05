@@ -118,6 +118,14 @@ has "exec prefix skipped" "- exec-tool:"
 has "a 31-character name is probed" "- $long31:"
 hasnt "a 32-character name is skipped" "- $long32:"
 
+# Separators inside a quoted value neither split the segment nor leak its contents.
+printf 'preflight: TOKEN="prefix; secretpart ;suffix" pnpm lint && FOO='"'"'a && leakb | c'"'"' sepool x\n' > "$TMP/repo2/.issue-runner/validation"
+run "$TMP/state" "$TMP/repo2"
+has "a quoted separator does not hide the tool after the assignment" "- pnpm:"
+has "a single-quoted separator does not hide the tool either" "- sepool:"
+hasnt "a word after a quoted separator is not probed" "secretpart"
+hasnt "a word after a quoted && is not probed" "leakb"
+
 # Each well-known toolchain directory is searched (a fixture tool in each).
 n=0; names=""
 for d in .local/bin .cargo/bin .volta/bin .local/share/pnpm .bun/bin go/bin; do n=$((n + 1)); mk "$HOME/$d/candtool$n"; names="$names candtool$n"; done

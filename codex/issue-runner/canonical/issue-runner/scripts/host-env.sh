@@ -23,7 +23,7 @@
 # command in `.issue-runner/validation` when that word is a plain program name
 # (letters, digits, `.`, `_`, `+`, `-`; never a path, never starting with `-`
 # or `.`, at most 31 characters); each `&&`, `||`, `;` and `|` segment
-# contributes its first command word (an `env`, `exec`, `time` or `VAR=value`
+# contributes its first command word (separators inside quotes do not split) (an `env`, `exec`, `time` or `VAR=value`
 # prefix skipped, a quoted value with spaces skipped whole, a `cd` segment
 # ignored; a backslash-escaped space in a value is not understood, which at
 # worst adds or misses a name). The
@@ -62,9 +62,21 @@ he_has go.mod && TOOLS="$TOOLS go"
 he_has Makefile && TOOLS="$TOOLS make"
 he_has .husky && TOOLS="$TOOLS sh npx"
 if [ -r "$REPO/.issue-runner/validation" ] && [ ! -L "$REPO/.issue-runner/validation" ]; then
-  # every command word of every line: split on && || ; |, skip env/VAR= prefixes and `cd` segments
+  # every command word of every line: split on unquoted && || ; |, skip env/VAR= prefixes and `cd` segments
   for w in $(sed -e 's/#.*$//' -e 's/^[a-z]*:[[:space:]]*//' "$REPO/.issue-runner/validation" | tr -d '\r' | awk '
-      { gsub(/&&|\|\||;|\|/, "\n"); nseg = split($0, seg, "\n")   # awk splits the segments: BSD sed has no \n in a replacement
+      function segs(line, out,   n, i, c, q, cur) {   # split on unquoted && || ; | only
+        n = 0; q = ""; cur = ""
+        for (i = 1; i <= length(line); i++) {
+          c = substr(line, i, 1)
+          if (q != "") { cur = cur c; if (c == q) q = ""; continue }
+          if (c == "\\") { cur = cur c substr(line, i + 1, 1); i++; continue }
+          if (c == "\"" || c == "\047") { q = c; cur = cur c; continue }
+          if (c == ";" || c == "|") { if (c == "|" && substr(line, i + 1, 1) == "|") i++; out[++n] = cur; cur = ""; continue }
+          if (c == "&" && substr(line, i + 1, 1) == "&") { i++; out[++n] = cur; cur = ""; continue }
+          cur = cur c }
+        out[++n] = cur
+        return n }
+      { delete seg; nseg = segs($0, seg)
         for (k = 1; k <= nseg; k++) {
           nw = split(seg[k], f)
           for (i = 1; i <= nw; i++) {
