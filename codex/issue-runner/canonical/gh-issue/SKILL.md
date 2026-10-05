@@ -53,7 +53,7 @@ With a state path, write `<STATE_DIR>/issue-<number>/result.json` **once, immedi
 - `checks` — `pass`, `none`, `fail`, or after `gh pr ready` on a former draft: `none-after-ready`, `all-skipped`, `unchanged-after-ready` (these merge, never silently); `null` if Step 9's gate never ran.
 - `checkpoint` — `created` (by this run, orphan resume included), `refused` (reason in Step 10), `skipped` (Step 4), `n/a` (pre-existing PR, or exit before Step 4).
 - `security_lens` — Step 8 lens used. `review_profile` — at exit: `standard` (none, or gate waived), `prose`, `revoked` (Step 8 guard); before Step 8, as authorized (`standard` if gate waived).
-- `deferred` — every finding you kept unfixed (Step 8's Surface and Defer classes), one `{"finding","reason"}` entry each, `[]` if none. The orchestrator lists them for the user; never leave them only in PR prose.
+- `deferred` — every Surface and Defer finding (Step 8; prose design alternatives excluded), one `{"finding","reason"}` entry each, `[]` if none. The orchestrator lists them for the user; never leave them only in PR prose.
 - `blocker` — your final message's blocker/failure text verbatim; `null` when `merged`.
 
 ```bash
@@ -236,7 +236,7 @@ Pin the tier id `gpt-6-sol`, never an alias like `gpt-6` (why: Why the gate pins
 
 - **Apply** — a real bug *this PR* introduced: an edge case in new code, a broken invariant, a security issue, a missing test for a new branch, at any size. Also a small in-diff finding: in code this PR added or changed, about ten changed lines at most plus a test, no product decision. A P-label never defers it. A misleading comment in new code is Apply.
 - **Surface, don't auto-apply** — a pre-existing issue (verify with `git blame` or `git log -S` against `$BASE_BRANCH`): record it as Defer does; don't fix it.
-- **Defer** — an in-diff finding that is no such bug and needs a product decision or exceeds that size: a `Deferred: <finding> — <reason>` line under `## Review notes` and a `deferred` entry (why: Why small in-diff findings are fixed).
+- **Defer** — an in-diff finding that is no such bug and needs a product decision or exceeds that size: a one-line `Deferred: <finding> — <reason>` under `## Review notes` and a `deferred` entry (why: Why small in-diff findings are fixed).
 - **Skip and document** — the reviewer misread the code: a 1–2-sentence rebuttal in the PR body; never drop silently.
 - **Stop and ask** — convergence failure: a finding contradicts a prior iteration's fix, or re-appears after being applied. Stop the loop and Block; do not merge.
 - Nits (changing no behavior, test or documented claim) and style preferences: skip silently.

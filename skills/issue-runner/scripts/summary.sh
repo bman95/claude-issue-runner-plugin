@@ -35,7 +35,7 @@
 # `\|`, and a non-empty cell is wrapped in a code span.
 #
 # `deferred` (the findings an implementer kept unfixed: an array of {finding,
-# reason} non-empty string objects; null or absent = none) is read apart from the
+# reason} objects of exactly those two non-empty string members; null or absent = none) is read apart from the
 # flat keys: it is dropped before the object is checked, so a well-formed JSON
 # value of the wrong shape (a non-array other than null, a bad entry, a trailing
 # comma, a duplicate member) flags `deferred unreadable` and never costs the issue
@@ -284,7 +284,7 @@ deferred_of() {
             if (h ~ /^00[0-7][0-9a-f]$/) {
               v = (index("0123456789abcdef", substr(h, 3, 1)) - 1) * 16 + index("0123456789abcdef", substr(h, 4, 1)) - 1
               c = (v < 32 || v == 127) ? " " : sprintf("%c", v); i += 4
-            } else c = "?"
+            } else { c = "?"; i += 4 }
           }
         }
         out = out c

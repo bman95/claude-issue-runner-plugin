@@ -399,6 +399,10 @@ printf '{"outcome":"merged","pr":1,"branch":"b","worktree":"/w/1","deferred":[{"
 run "$S" 3
 has "deferred: a duplicate member is flagged, telemetry kept" '! deferred unreadable'
 reset; scope 1; issue 1 done
+dresult 1 '[{"finding":"A\u0041 \u00e9 \\ back \u001b x\nline","reason":"tab\there"}]'
+run "$S" 3
+has "deferred: escapes (u0041, non-ASCII, backslash, control, newline) are decoded and flattened" '  - `AA ? / back   x line` — reason: `tab here`'
+reset; scope 1; issue 1 done
 printf '{"outcome":"merged","pr":1,"branch":"b","worktree":"/w/1","deferred":[{"finding":"only member","reason":"r"}]}\n' > "$S/issue-1/result.json"
 run "$S" 3
 has "deferred: as the last member" '  - `only member` — reason: `r`'
