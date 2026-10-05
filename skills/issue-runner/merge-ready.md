@@ -12,7 +12,7 @@ Only when `--merge-ready` was passed; runs once, after Step 3 resolves its scrip
 
 - **Confirm the precondition, never assume it**: every `dag.txt` dependency reads `done`, else leave it `ready` silently (a later pass retries).
 - **Check the PR's own state first**, `bash "$MERGE_READY_SCRIPT" state "$P"`: **`merged`** → write `done` (then `hint … merged <N> --pr <P>`, State), no re-merge; **`closed`** → write `failed`, error `"PR #P was closed without merging (declined)"` (item 1 cascades); **`open`** → refresh; **exit 1** → leave it (query failed) — never read an unreadable state as open.
-- **Refresh against the base before checks** (issue #15): dispatch a `general-purpose` subagent, without `isolation: worktree`, to run one command and report its stdout line (tell it never to bypass or disable a repository's hooks: a hook failure is reported, not worked around):
+- **Refresh against the base before checks** (issue #15): dispatch a `general-purpose` subagent, without `isolation: worktree`, to run one command and report its stdout line (tell it never to bypass or disable a repository's hooks: a hook failure is reported, not worked around; point it at `$STATE_DIR/environment.md` if that file exists):
 
   ```bash
   bash "<MERGE_READY_SCRIPT>" refresh "<the path in $STATE_DIR/issue-N/worktree>" <P> "<VALIDATION_CONTRACT_SCRIPT>"

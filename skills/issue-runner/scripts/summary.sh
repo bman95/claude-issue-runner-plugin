@@ -85,6 +85,7 @@ for n in $SCOPE; do
   case $n in *[!0-9]*|0*) usage "scope.txt entry '$n' is not a positive integer" ;; esac
 done
 
+RUN_ID=$(head -1 "$STATE_DIR/run-id" 2>/dev/null | tr -d ' \t\r')   # hook-bypass authorizations name the run that recorded them
 CLASSIFY=${CLASSIFY_SCRIPT:-$(dirname "$0")/classify.sh}
 NL='
 '
@@ -284,7 +285,7 @@ for n in $SCOPE; do
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
     case $hb in
       authorized) HOOKS=$((HOOKS + 1))
-        if [ -s "$d/hook-bypass" ]; then TELE="$TELE  ! hook_bypass authorized (the repository's hooks were bypassed under the dispatch's authorization)$NL"
+        if [ -n "$RUN_ID" ] && [ "$(rd "$d/hook-bypass" | head -1 | tr -d '\r')" = "authorized $RUN_ID" ]; then TELE="$TELE  ! hook_bypass authorized (the repository's hooks were bypassed under the dispatch's authorization)$NL"
         else TELE="$TELE  ! hook_bypass UNAUTHORIZED (the result claims an authorization the runner never recorded in hook-bypass)$NL"; fi ;;
       unauthorized) HOOKS=$((HOOKS + 1)); TELE="$TELE  ! hook_bypass UNAUTHORIZED (the repository's hooks were bypassed without authorization)$NL" ;;
       '') TELE="$TELE  ! hook_bypass not recorded (the result predates the key, or the implementer left it out: hooks unverified)$NL" ;;

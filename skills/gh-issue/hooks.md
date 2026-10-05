@@ -22,7 +22,7 @@ Without the authorization below, never skip, disable or sidestep a hook, by any 
 
 ## When a hook was bypassed anyway
 
-- **Unauthorized** (yours, or one you find on a resumed branch): set `hook_bypass` to `unauthorized`, do not merge, and Block `repository hooks bypassed without authorization: <how>`; the PR returns to draft by Step 9's recipe. Re-committing the same work with the hooks running (an amend or a fresh commit on the branch) repairs the head, but the finding stays in the result file and the report.
+- **Unauthorized** (yours, or one you find on a resumed branch): set `hook_bypass` to `unauthorized`, do not merge, and Block `repository hooks bypassed without authorization: <how>`; the PR returns to draft by Step 9's recipe. Re-committing the same work with the hooks running (an amend or a fresh commit on the branch) repairs the head, but the finding stays in the result file and the report. Exception: a bypass the user already decided on, quoted under `**User decisions:**` in `guidance.md` as a redo, is not found anew: re-commit that work with the hooks running, record `Inherited hook bypass (<how>) redone with hooks, per the user's decision.` under `## Review notes`, and `hook_bypass` describes only your own commits.
 - **Authorized**: use the narrowest route, set `hook_bypass` to `authorized`, and record `Repository hooks bypassed (<route>) under dispatch authorization.` under `## Review notes`. Step 10 reports it prominently.
 
 ## Evidence

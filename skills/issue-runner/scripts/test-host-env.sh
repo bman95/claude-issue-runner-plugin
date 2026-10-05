@@ -62,15 +62,25 @@ run "$TMP/state" "$TMP/repo2"
 hasnt "no package.json: node is not probed" "- node:"
 hasnt "no lockfile: pnpm is not probed" "- pnpm:"
 
+# Wrapped commands: every segment's first word, env/VAR= prefixes and cd skipped.
+printf 'preflight: cd web && CI=1 pnpm lint | tee out; env FOO=1 wrapped-tool x\n' > "$TMP/repo2/.issue-runner/validation"
+run "$TMP/state" "$TMP/repo2"
+has "wrapped command: the tool after cd and a VAR= prefix" "- pnpm:"
+has "wrapped command: the piped tool" "- tee:"
+has "wrapped command: the tool after env" "- wrapped-tool:"
+hasnt "wrapped command: cd itself is not probed" "- cd:"
+
 # Other manifests map to their tools.
 mkdir -p "$TMP/repo3/.husky"; : > "$TMP/repo3/Cargo.toml"; : > "$TMP/repo3/uv.lock"; : > "$TMP/repo3/go.mod"; : > "$TMP/repo3/Makefile"; : > "$TMP/repo3/yarn.lock"; printf '{}\n' > "$TMP/repo3/package.json"
 run "$TMP/state" "$TMP/repo3"
 for t in cargo uv go make yarn sh python3; do has "manifest maps to $t" "- $t:"; done
 
 # An unwritable state dir is the documented exit 2.
-mkdir -p "$TMP/ro"; chmod a-w "$TMP/ro"
-run "$TMP/ro" "$TMP/repo2"; [ "$RC" -eq 2 ] && ok "unwritable state dir -> exit 2" || err "unwritable state dir: exit $RC"
-chmod u+w "$TMP/ro"
+if [ "$(id -u)" -ne 0 ]; then   # root writes anywhere
+  mkdir -p "$TMP/ro"; chmod a-w "$TMP/ro"
+  run "$TMP/ro" "$TMP/repo2"; [ "$RC" -eq 2 ] && ok "unwritable state dir -> exit 2" || err "unwritable state dir: exit $RC"
+  chmod u+w "$TMP/ro"
+fi
 
 # An unusual path is omitted, never printed.
 mkdir -p "$TMP/odd bin"; mk "$TMP/odd bin/oddtool"

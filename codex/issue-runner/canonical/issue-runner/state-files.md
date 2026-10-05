@@ -18,7 +18,7 @@ It is **advisory for status, authoritative for telemetry** (why: Why `result.jso
 
 ## `hook-bypass`
 
-`hook-bypass` (the line `authorized`) is written only by the orchestrator, after the user's explicit yes to bypassing that issue's repository hooks (host-environment.md). Step 3a reads it alone to add the dispatch line, and `summary.sh` reads it to flag a result that claims `authorized` without it. It survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.
+`hook-bypass` (the line `authorized <run-id>`, the run's `run-id`) is written only by the orchestrator, after the user's explicit yes to bypassing that issue's repository hooks (host-environment.md). Step 3a reads it alone to add the dispatch line, and `summary.sh` reads it to flag a result that claims `authorized` without it. It survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.
 
 ## `profile`
 

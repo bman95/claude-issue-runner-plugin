@@ -22,7 +22,11 @@
 # repository's manifests (a fixed mapping), and from the first word of each
 # command in `.issue-runner/validation` when that word is a plain program name
 # (letters, digits, `.`, `_`, `+`, `-`; never a path, never starting with `-`
-# or `.`). Nothing is executed except `command -v`.
+# or `.`); each `&&`, `||`, `;` and `|` segment contributes its first command
+# word (an `env` or `VAR=value` prefix skipped, a `cd` segment ignored). The
+# contract is read from the working tree, as a best-effort list of names only
+# (validation-contract.sh stays the trusted reader); the cost of a wrong name is
+# one extra `command -v`. Nothing is executed except `command -v`.
 #
 # Exit status: 0 on success; 2 a usage error or an unwritable state dir.
 #
@@ -55,7 +59,12 @@ has go.mod && TOOLS="$TOOLS go"
 has Makefile && TOOLS="$TOOLS make"
 has .husky && TOOLS="$TOOLS sh"
 if [ -r "$REPO/.issue-runner/validation" ]; then
-  for w in $(sed -e 's/#.*$//' -e 's/^[^:]*://' "$REPO/.issue-runner/validation" | tr -d '\r' | awk 'NF { print $1 }'); do
+  # every command word of every line: split on && || ; |, skip env/VAR= prefixes and `cd` segments
+  for w in $(sed -e 's/#.*$//' -e 's/^[^:]*://' -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/;/\n/g' -e 's/|/\n/g' "$REPO/.issue-runner/validation" | tr -d '\r' | awk '
+      { for (i = 1; i <= NF; i++) {
+          if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || $i == "env" || $i == "exec" || $i == "time") continue
+          if ($i != "cd") print $i
+          break } }'); do
     case $w in ''|-*|.*|*[!A-Za-z0-9._+-]*) ;; *) TOOLS="$TOOLS $w" ;; esac
   done
 fi
