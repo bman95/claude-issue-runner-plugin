@@ -15,7 +15,7 @@ It applies to every dispatch (fresh, resume, Step 4 retry, Step 4's `/codex:resc
 
 ## Step 4 — while paused
 
-**While `$RUN_ROOT/paused` exists, Step 4 dispatches nothing** — no retry, no `/codex:rescue`. Resolutions without an `Agent` call proceed: the fourth blocker is still asked promptly and marked `done`; `Mark failed`; the risk-blocker question (abort defers: Step 4's risk-blocker rules, escalations.md); the `contract-first:` question's **wait** and **drop** answers (its **override** answer is a dispatch and waits). Dispatching escalations wait for a fresh invocation (Recovery), which clears the file at the State block.
+**While `$RUN_ROOT/paused` exists, Step 4 dispatches nothing** — no retry, no `/codex:rescue`. Resolutions without an `Agent` call proceed: the fourth blocker is still asked promptly and marked `done`; `Mark failed`; the risk-blocker question (abort defers: Step 4's risk-blocker rules, escalations.md); the `contract-first:` question's **wait** and **drop** answers (its **override** answer is a dispatch: it is not asked while paused, so the resumed run asks it). Dispatching escalations wait for a fresh invocation (Recovery), which clears the file at the State block.
 
 ## Step 5 — the paused closing message
 
