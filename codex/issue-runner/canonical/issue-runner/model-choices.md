@@ -35,7 +35,7 @@ Step 2 writes `issue-N/reviewers` (`2`, `3` or `4`) for every in-scope issue on 
 
 ## Forwarding
 
-Step 3a's template takes `model: M` for `--implementer-model`; [dispatch-variants.md](dispatch-variants.md) lists the lines. An `Agent` error that rejects a model is not a credit error: mark the issue `blocked` with the error `implementer model rejected: <error>` and dispatch nothing more with that model, never retry on another one (escalations.md: never retried).
+Step 3a's template takes `model: M` for `--implementer-model`; [dispatch-variants.md](dispatch-variants.md) lists the lines. An `Agent` error that rejects a model is not a credit error: mark the issue `blocked` with the error `implementer model rejected: <error>` and stop the run as escalations.md's Abort does (undispatched `pending` issues become `skipped` with error `aborted: implementer model rejected`, in-flight agents drain, then Step 5); never retry on another model (escalations.md: never retried).
 
 ## The single-issue fast path
 
