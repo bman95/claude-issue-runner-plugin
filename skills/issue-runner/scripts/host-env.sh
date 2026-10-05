@@ -22,8 +22,11 @@
 # repository's manifests (a fixed mapping), and from the first word of each
 # command in `.issue-runner/validation` when that word is a plain program name
 # (letters, digits, `.`, `_`, `+`, `-`; never a path, never starting with `-`
-# or `.`, at most 31 characters); each `&&`, `||`, `;` and `|` segment contributes its first command
-# word (an `env` or `VAR=value` prefix skipped, a `cd` segment ignored). The
+# or `.`, at most 31 characters); each `&&`, `||`, `;` and `|` segment
+# contributes its first command word (an `env`, `exec`, `time` or `VAR=value`
+# prefix skipped, a quoted value with spaces skipped whole, a `cd` segment
+# ignored; a backslash-escaped space in a value is not understood, which at
+# worst adds or misses a name). The
 # contract is read from the working tree, as a best-effort list of names only
 # (validation-contract.sh stays the trusted reader); the cost of a wrong name is
 # one extra `command -v`. Nothing is executed except `command -v`.
