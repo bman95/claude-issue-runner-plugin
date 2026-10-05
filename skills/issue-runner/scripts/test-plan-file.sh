@@ -294,7 +294,7 @@ bash "$SCRIPT" "$TMP/does-not-exist" >/dev/null 2>&1; rc=$?
 # bodies, and where the lines are printed, is the prose's (Step 2).
 SCENARIOS="$ROOT/docs/scenarios.md"
 IN_SCOPE_ROWS="63 64 65 66"
-EXPECTED_ROW_COUNT=82
+EXPECTED_ROW_COUNT=87
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then

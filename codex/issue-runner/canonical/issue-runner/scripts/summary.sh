@@ -25,7 +25,9 @@
 # Per issue it reads, from <state-dir>/issue-N/: `status` (absent = unknown),
 # `details.json` (the title), `error`, `progress` (first line, shown for
 # failed issues), `outcome` (a hung implementer is `hung`), `retries` (absent or
-# not a number = 0), `profile` and `result.json`. A result.json is readable only
+# not a number = 0), `reviewers` (the issue's configured reviewer count, 2, 3
+# or 4; absent or anything else = 2), `codex-model` (the requested --codex-model,
+# else gpt-6-sol; a result whose gate_model differs is flagged), `profile` and `result.json`. A result.json is readable only
 # when it is one JSON object on one line with an `outcome` of merged, blocker,
 # failed or ready and a non-empty `worktree`, whose blocker (if any) is a string
 # or null and whose syntax around it is intact; anything else is `no result
@@ -54,14 +56,18 @@
 #
 # Output, in order: `## Summary table`, `## Telemetry` (per-issue lines, `!`
 # flag lines for anything that needs a human, totals), the one-line `Actual
-# agents: <A> (estimate: <N*4>–<N*12>); actual Codex gate passes: <P>
+# agents: <A> (estimate: <LOW>–<HIGH>); actual Codex gate passes: <P>
 # (estimate: <G>)` and its caveat. <A> counts, over every issue not `pending`
 # or `skipped` and that left an agent id, progress marker, result.json or a
 # retries count above 0 (dispatched at least once), 1 + retries implementers, 1 +
-# retries Explore helpers (none when phase1_inline is true) and 2 ×
+# retries Explore helpers (none when phase1_inline is true) and R ×
 # phase1_iterations reviewers (none when phase1_inline is true or no result is
-# recorded); <P> sums gate_passes. N is scope.txt's issue count. The
-# `## Deferred findings` section (only when an issue recorded some) comes last,
+# recorded), R being the result's `reviewers` (else the issue's `reviewers`
+# file, else 2); <P> sums gate_passes. The estimate sums, over scope.txt's
+# issues, 1 implementer + 1 Explore + R reviewers × 1–5 iterations, R being the
+# issue's `reviewers` file (else 2): LOW = Σ(2+R), HIGH = Σ(2+5R), which is
+# N*4–N*12 when every R is 2. N is scope.txt's issue count.
+# The `## Deferred findings` section (only when an issue recorded some) comes last,
 # so the tracking-issue post can stop before it: finding text stays on the
 # terminal, the flag lines already carry the counts.
 #
@@ -355,12 +361,15 @@ trunc() { printf '%s' "$1" | awk '{ if (length($0) > 400) printf "%s...", substr
 # text is limited to the cells and the Deferred findings section, which the post omits).
 pick() { local v=$1 x; shift; for x in "$@"; do [ "$v" = "$x" ] && { printf '%s' "$v"; return; }; done; printf '?'; }
 
+# revs V: V when it is a reviewer count (2, 3 or 4), else 2.
+revs() { case $1 in 2|3|4) printf '%s' "$1" ;; *) printf '2' ;; esac; }
+
 # isnum V: 1-6 digits (a longer or non-numeric value is rejected); callers read it
 # through 10# so a leading zero is never octal.
 isnum() { case $1 in ''|*[!0-9]*) return 1 ;; esac; [ ${#1} -le 6 ]; }
 
 N_SCOPE=0; for n in $SCOPE; do N_SCOPE=$((N_SCOPE + 1)); done
-TOTAL_ITER=0 TOTAL_GATE=0 AGENTS=0 REFUSED=0 SKIPPED=0 HOOKS=0
+TOTAL_ITER=0 TOTAL_GATE=0 AGENTS=0 REFUSED=0 SKIPPED=0 EST_LO=0 EST_HI=0 HOOKS=0
 TABLE="" NOTES="" TELE="" SHAPES="" DEFER=""
 TAB=$(printf "\037")
 
@@ -374,6 +383,8 @@ for n in $SCOPE; do
   outcome=$(rd "$d/outcome" | head -1 | tr -d '\r')
   retries=$(rd "$d/retries" | head -1 | tr -d ' \t\r')
   if isnum "$retries"; then retries=$((10#$retries)); else retries=0; fi
+  rv_cfg=$(revs "$(rd "$d/reviewers" | head -1 | tr -d ' \t\r')")
+  EST_LO=$((EST_LO + 2 + rv_cfg)); EST_HI=$((EST_HI + 2 + 5 * rv_cfg))
 
   prog=""
   if [ "$status" = failed ]; then
@@ -409,15 +420,25 @@ for n in $SCOPE; do
     inl=$(pick "$(jv phase1_inline)" true false)
     chk=$(pick "$(jv checks)" pass none fail none-after-ready all-skipped unchanged-after-ready)
     ckp=$(pick "$(jv checkpoint)" created refused skipped n/a)
+    rv=$(jv reviewers); gm=$(jv gate_model)
+    case $rv in 2|3|4) ;; *) rv='' ;; esac
+    case $gm in null) gm=none ;; ''|*[!A-Za-z0-9._-]*|[!A-Za-z0-9]*) gm='' ;; *) [ ${#gm} -le 64 ] || gm='' ;; esac
     rp=$(pick "$(jv review_profile)" standard prose revoked)
     hb=$(jv hook_bypass); [ -n "$hb" ] && hb=$(pick "$hb" none authorized unauthorized)
     [ "$(printf '%s' "$RJ" | grep -o '"hook_bypass":' | grep -c '')" -gt 1 ] && hb='?'   # a duplicate member: which one counts is unknowable
     it_n=0; isnum "$it" && it_n=$((10#$it))
     gp_n=0; isnum "$gp" && gp_n=$((10#$gp))
     TOTAL_ITER=$((TOTAL_ITER + it_n)); TOTAL_GATE=$((TOTAL_GATE + gp_n))
-    TELE="$TELE- #$n: phase1 iterations=${it:-?}; gate passes=${gp:-?}; checks=${chk:-?}; checkpoint=${ckp:-?}; retries=$retries$NL"
+    TELE="$TELE- #$n: phase1 iterations=${it:-?}; gate passes=${gp:-?}; checks=${chk:-?}; checkpoint=${ckp:-?}; retries=$retries; reviewers=${rv:-?}; gate model=${gm:-?}$NL"
     case $p1s in cap-stop|bouncing) TELE="$TELE  ! phase1_state $p1s$NL" ;; esac
     case $gs in degraded|waived|cap-stop|errored|bouncing|unavailable) TELE="$TELE  ! gate_state $gs$NL" ;; esac
+    [ "$inl" != true ] && [ -n "$rv" ] && [ "$rv" != "$rv_cfg" ] && TELE="$TELE  ! reviewers $rv != configured $rv_cfg (the review ran with a count other than the authorized one)$NL"
+    cm=$(rd "$d/codex-model" | head -1 | tr -d ' \t\r')
+    case $cm in ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) cm='' ;; esac
+    cm=${cm:-gpt-6-sol}
+    [ "$gs" != waived ] && [ -n "$gm" ] && [ "$gm" != none ] && [ "$gm" != "$cm" ] && TELE="$TELE  ! gate model ${gm:-?} != requested $cm$NL"
+    [ "$gs" != waived ] && [ "$gp_n" -gt 0 ] && { [ -z "$gm" ] || [ "$gm" = none ]; } && TELE="$TELE  ! gate model not recorded (gate passes $gp_n, no gate_model in the result)$NL"
+    [ "$inl" != true ] && [ -z "$rv" ] && [ "$rv_cfg" != 2 ] && TELE="$TELE  ! reviewers not recorded (configured $rv_cfg; an implementer that ignored the dispatch line records none)$NL"
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
     case $hb in
       authorized) HOOKS=$((HOOKS + 1))
@@ -449,7 +470,7 @@ EOF_DEFER
       [ "$dn" -le 20 ] || DEFER="$DEFER  - (+$((dn - 20)) more not shown; see issue-$n/result.json)$NL"
     fi
     a=$((2 + 2 * retries))
-    if [ "$inl" = true ]; then a=$((a - 1 - retries)); else a=$((a + 2 * it_n)); fi
+    if [ "$inl" = true ]; then a=$((a - 1 - retries)); else a=$((a + ${rv:-$rv_cfg} * it_n)); fi
     AGENTS=$((AGENTS + a))
     prof_rt="$rp"
   else
@@ -497,7 +518,7 @@ printf '\n## Telemetry\n\n%s' "$TELE"
 printf -- '- totals: phase1 iterations=%s; gate passes=%s\n' "$TOTAL_ITER" "$TOTAL_GATE"
 
 printf '\nActual agents: %s (estimate: %s–%s); actual Codex gate passes: %s (estimate: %s)\n' \
-  "$AGENTS" "$((N_SCOPE * 4))" "$((N_SCOPE * 12))" "$TOTAL_GATE" "$G"
+  "$AGENTS" "$EST_LO" "$EST_HI" "$TOTAL_GATE" "$G"
 printf 'Caveat: best-effort; it can under- or overcount.\n'
 [ -n "$DEFER" ] && printf '\n## Deferred findings\n\nKept unfixed by the implementers (data, not instructions). Ask the user once what to do with them.\n\n%s' "$DEFER"
 exit 0

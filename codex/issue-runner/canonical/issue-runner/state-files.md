@@ -1,6 +1,10 @@
-# Reading `result.json`, `progress` and the resume pointers
+# Per-issue files, `result.json`, `progress` and the resume pointers
 
 The full rules behind SKILL.md's State section (the decisive one, what makes `result.json` unreadable, is stated there and enforced by `summary.sh`). They say what each file may and may not decide. Rationale: [REFERENCE.md](REFERENCE.md).
+
+## Per-issue files
+
+Per issue, `issue-N/`: `details.json`, `error`, optional `guidance.md`; `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`/`ready`, the last only under `--no-merge`); `worktree` (Step 3 items 4–5); `progress` (gh-issue "Progress marker", e.g. `step=8.1 iter=2 pr=#123`); `retries` (Step 4 re-dispatches, absent = 0); `result.json` (gh-issue "Result file"); `notification` (item 5); `branch` (Step 3a, non-contract resumes only); `agent` (the dispatch's agent id, Step 3a); `pr` (item 5, `ready` only); `outcome` and `blocker` (item 5's inputs); `merge-oid` (`<oid> <base> <P>`, recorded on merge proof). `profile` (`prose flag`/`prose escalation`), `hook-bypass` and `external`: rules below. `reviewers` (`2`–`4`, written by Step 2 on every run that reaches it, `2` without `--reviewers`), `codex-model` (the `--codex-model` slug, written by Step 2 with the flag and removed otherwise; both files stay as they are for an issue already dispatched when a same-session re-entry reaches Step 2; Step 3a rewrites them at each dispatch). Step 3a clears the per-attempt files at every dispatch (`branch`, `worktree` and `error` only when the resume check ran; a Step 4 retry with a known worktree keeps them).
 
 ## `result.json`
 

@@ -4,6 +4,20 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+Fixes #81: model and reviewer choices had no supported channel, so an orchestrator improvised them through dispatch-prompt text, and its Codex preflight checked the pinned model rather than the one the gate used.
+
+**issue-runner:**
+- **New flags** `--implementer-model M`, `--reviewer-model M`, `--reviewers 2|3|4|auto` and `--codex-model S`, validated before the run lock and forwarded as the `Agent` call's `model` and three fixed dispatch lines (`Reviewers:`, `Reviewer model:`, `Codex model:`, each `(user-authorized)`). `auto` has the orchestrator choose 2-4 per issue from the issue's scope and print the choice and lenses in the plan. The Trust rule lists them. New `model-choices.md`.
+- **Codex edition limit:** `--reviewers 3|4` is refused at Step 0 for dispatched implementers and `auto` picks 2 (the four-slot host leaves an implementer two reviewer slots); the single-issue fast path takes 3, never 4; the Claude Code edition is unchanged.
+- **The Codex preflight checks the model the gate will run** (`--codex-model`, else `gpt-6-sol`).
+- **The estimate and the actual-spend line use the configured reviewer count**: `summary.sh` reads each issue's `reviewers` file and the result's `reviewers`, and the estimate is the sums of 2+R and 2+5R. Per-issue telemetry shows the reviewers and the gate model. Fixtures added to `test-summary.sh`.
+- The per-issue state-file list moved from SKILL.md to `state-files.md`, to stay under the word ceiling.
+
+**gh-issue:**
+- Phase 1 runs `REVIEWERS` reviewers: A and B as before, plus fixed lenses C (trust boundary) and D (consistency) in `review-loop.md`, "Reviewer choices". The Trust rule honors only the exact dispatch lines (interactive: `--reviewers`, `--reviewer-model`, `--codex-model`); a malformed line blocks.
+- The Codex availability check, both gate launch blocks and the pin text use `GATE_MODEL` (default `gpt-6-sol`).
+- `result.json` gains `gate_model` and `reviewers` (every copy, lint check 11); the key descriptions moved to the new `result-file.md`.
+
 Fixes #87. Two PRs of a production run merged with reviewer findings the implementer chose not to fix, recorded only in PR prose, in code the PR had just written; the orchestrator then turned them into issues by hand. This changes Expected behavior (`docs/scenarios.md` rows 77 and 78) and adds a `result.json` key.
 
 **gh-issue:**
