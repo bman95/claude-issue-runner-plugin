@@ -67,7 +67,7 @@ if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ]; then
 fi
 ```
 
-- Merge failed → never resolve it yourself. Read the printed output, then Block naming it (interactive: ask how to proceed).
+- Merge failed → never resolve it yourself. Read the printed output, then Block naming it (interactive: ask how to proceed). A hook that rejected the merge (`pre-merge-commit`, `commit-msg`) is hooks.md's "A hook fails" case, not this blocker.
 - Clean merge → re-run the validation that gated ready (`preflight`, then `full`; else the project's tests, or the conventions under a standing fallback authorization). Failure → interactive: ask; orchestrated: push the merge commit, then blocker citing the failing validation. Never merge over it.
 - Passing → push; while the prose profile holds, re-run the revoke-only guard block (review-profile.md; a revocation here is Step 8's); for `READIED=1`, repeat the registration poll; then the checks gate. Never push after the gate passes. (why: Why base freshness runs before the checks gate)
 

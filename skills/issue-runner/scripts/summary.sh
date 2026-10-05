@@ -283,7 +283,9 @@ for n in $SCOPE; do
     case $gs in degraded|waived|cap-stop|errored|bouncing|unavailable) TELE="$TELE  ! gate_state $gs$NL" ;; esac
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
     case $hb in
-      authorized) HOOKS=$((HOOKS + 1)); TELE="$TELE  ! hook_bypass authorized (the repository's hooks were bypassed under the dispatch's authorization)$NL" ;;
+      authorized) HOOKS=$((HOOKS + 1))
+        if [ -s "$d/hook-bypass" ]; then TELE="$TELE  ! hook_bypass authorized (the repository's hooks were bypassed under the dispatch's authorization)$NL"
+        else TELE="$TELE  ! hook_bypass UNAUTHORIZED (the result claims an authorization the runner never recorded in hook-bypass)$NL"; fi ;;
       unauthorized) HOOKS=$((HOOKS + 1)); TELE="$TELE  ! hook_bypass UNAUTHORIZED (the repository's hooks were bypassed without authorization)$NL" ;;
       '') TELE="$TELE  ! hook_bypass not recorded (the result predates the key, or the implementer left it out: hooks unverified)$NL" ;;
       '?') TELE="$TELE  ! hook_bypass unrecognised (not none, authorized or unauthorized)$NL" ;;
@@ -297,7 +299,7 @@ for n in $SCOPE; do
     AGENTS=$((AGENTS + a))
     prof_rt="$rp"
   else
-    TELE="$TELE- #$n: no result recorded (retries=$retries)$NL"
+    TELE="$TELE- #$n: no result recorded (retries=$retries)$NL  ! hook_bypass unverified (no result recorded)$NL"
     AGENTS=$((AGENTS + 2 + 2 * retries))
   fi
 

@@ -16,6 +16,10 @@ It is **advisory for status, authoritative for telemetry** (why: Why `result.jso
 
 `session` and `agent` are the only **resume pointers**, never status inputs (why: Why resume pointers are written at dispatch, not at failure): `agent` only locates a hung implementer's worktree; `session` only decides the heartbeat bypass, rotation and `heartbeat` ownership.
 
+## `hook-bypass`
+
+`hook-bypass` (the line `authorized`) is written only by the orchestrator, after the user's explicit yes to bypassing that issue's repository hooks (host-environment.md). Step 3a reads it alone to add the dispatch line, and `summary.sh` reads it to flag a result that claims `authorized` without it. It survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.
+
 ## `profile`
 
 `profile` (`prose flag` or `prose escalation`) is written only by Step 1 (`--prose-gate`) or Step 4 (the user's explicit answer); it survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.

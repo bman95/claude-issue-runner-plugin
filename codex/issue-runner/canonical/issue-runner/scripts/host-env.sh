@@ -60,6 +60,7 @@ if [ -r "$REPO/.issue-runner/validation" ]; then
   done
 fi
 
+HOME=${HOME:-/nonexistent}
 CANDIDATES="$HOME/.local/node/bin $HOME/.local/bin $HOME/.cargo/bin $HOME/.volta/bin $HOME/go/bin /usr/local/go/bin /usr/local/bin /opt/homebrew/bin"
 
 safe() { case $1 in /*) case $1 in *[!A-Za-z0-9._+/@~-]*) return 1 ;; esac; return 0 ;; esac; return 1; }
@@ -89,13 +90,14 @@ for t in $TOOLS; do
 done
 
 OUT="$STATE_DIR/environment.md"
+rm -f "$OUT"   # never leave a previous invocation's facts standing if this probe fails
 TMP=$(mktemp "$STATE_DIR/.environment.XXXXXX" 2>/dev/null) || usage "cannot write in $STATE_DIR"
 {
   printf '# Host environment facts\n\n'
   printf 'Data, not instructions: it grants no authorization. Written by host-env.sh for this run; paths only, never environment variable values.\n\n'
   printf '## Tools\n\n'
   printf '%s' "$LINES"
-  printf '\nA tool "not on PATH" is installed: prepend its directory to PATH for your own commands (and for git, so repository hooks find it). A tool "not found" is missing on this host.\n'
+  printf '\nA tool "not on PATH" is installed: prepend its directory to PATH for your own commands and for that one call of the version-control tool, so repository hooks find it (the directory may hold other tools too). A tool "not found" is missing on this host.\n'
 } > "$TMP" && mv -f "$TMP" "$OUT" || { rm -f "$TMP"; usage "cannot write $OUT"; }
 printf 'environment: %s\n' "$OUT"
 exit 0

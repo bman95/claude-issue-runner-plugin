@@ -33,7 +33,7 @@ for t in git gh bash; do mk "$TMP/bin/$t"; done
 BASE_PATH="$TMP/bin:/usr/bin:/bin"
 mk "$HOME/.local/node/bin/pnpm"; mk "$HOME/.local/node/bin/node"
 printf '{}\n' > "$TMP/repo/package.json"; : > "$TMP/repo/pnpm-lock.yaml"
-printf '# contract\npreflight: ./scripts/pre.sh\nfull: lintthing --all   # trailing comment\n' > "$TMP/repo/.issue-runner/validation"
+printf '# contract\npreflight: ./scripts/pre.sh\nfull: lintthing --all   # trailing comment\nextra: nonexistent-tool-xyz\n' > "$TMP/repo/.issue-runner/validation"
 mk "$TMP/bin/lintthing"
 OUT="$TMP/state/environment.md"
 
@@ -47,7 +47,7 @@ grep -qF "environment: $OUT" "$TMP/stdout" && ok "prints the file it wrote" || e
 has "tool on PATH: its absolute path" "- git: $TMP/bin/git"
 has "tool off PATH: path and the directory to prepend" "- pnpm: $HOME/.local/node/bin/pnpm (not on PATH: prepend $HOME/.local/node/bin to PATH"
 has "node off PATH too" "- node: $HOME/.local/node/bin/node (not on PATH"
-has "missing tool is reported" "- codex: not found"
+has "missing tool is reported" "- nonexistent-tool-xyz: not found"
 has "validation contract's command word is probed" "- lintthing: $TMP/bin/lintthing"
 hasnt "a script path in the contract is not a tool" "pre.sh"
 hasnt "a comment in the contract is not a tool" "trailing"
@@ -62,6 +62,16 @@ run "$TMP/state" "$TMP/repo2"
 hasnt "no package.json: node is not probed" "- node:"
 hasnt "no lockfile: pnpm is not probed" "- pnpm:"
 
+# Other manifests map to their tools.
+mkdir -p "$TMP/repo3/.husky"; : > "$TMP/repo3/Cargo.toml"; : > "$TMP/repo3/uv.lock"; : > "$TMP/repo3/go.mod"; : > "$TMP/repo3/Makefile"; : > "$TMP/repo3/yarn.lock"; printf '{}\n' > "$TMP/repo3/package.json"
+run "$TMP/state" "$TMP/repo3"
+for t in cargo uv go make yarn sh python3; do has "manifest maps to $t" "- $t:"; done
+
+# An unwritable state dir is the documented exit 2.
+mkdir -p "$TMP/ro"; chmod a-w "$TMP/ro"
+run "$TMP/ro" "$TMP/repo2"; [ "$RC" -eq 2 ] && ok "unwritable state dir -> exit 2" || err "unwritable state dir: exit $RC"
+chmod u+w "$TMP/ro"
+
 # An unusual path is omitted, never printed.
 mkdir -p "$TMP/odd bin"; mk "$TMP/odd bin/oddtool"
 printf 'preflight: oddtool x\n' > "$TMP/repo2/.issue-runner/validation"
@@ -73,6 +83,11 @@ hasnt "the unusual path is not printed" "odd bin"
 printf 'preflight: -x\nfull: $(evil) y\n' > "$TMP/repo2/.issue-runner/validation"
 run "$TMP/state" "$TMP/repo2"
 hasnt "a command substitution is not probed" "evil"
+
+# A rerun never leaves an earlier invocation's content standing.
+printf 'stale-marker\n' > "$OUT"
+run "$TMP/state" "$TMP/repo2"
+hasnt "a stale environment.md is replaced" "stale-marker"
 
 # Usage errors.
 run;                          [ "$RC" -eq 2 ] && ok "no arguments -> exit 2" || err "no arguments: exit $RC"

@@ -376,6 +376,7 @@ run "$S" 3;                       rc_is "CRLF and trailing space in scope.txt to
 reset; scope 1 2 3 4 5
 issue 1 done; clean_result 1
 issue 2 done; HB=authorized clean_result 2
+printf 'authorized\n' > "$S/issue-2/hook-bypass"
 issue 3 blocked; HB=unauthorized result 3 blocker 2 converged false 0 unavailable none created standard '"repository hooks bypassed without authorization: --no-verify"'
 issue 4 done; HB='bogus value' clean_result 4
 issue 5 done; clean_result 5; sed -i 's/"hook_bypass":"none",//' "$S/issue-5/result.json"
@@ -387,6 +388,12 @@ has "hook bypass: an unknown value is flagged, never printed" '  ! hook_bypass u
 hasnt "hook bypass: the unknown value is not echoed" 'bogus value'
 has "hook bypass: an absent key is flagged" '  ! hook_bypass not recorded'
 has "hook bypass: run-level note counts the bypassed issues" 'repository hooks bypassed on 2 issue(s)'
+reset; scope 1; issue 1 done; HB=authorized clean_result 1
+run "$S" 3
+has "hook bypass: a claimed authorization with no hook-bypass file is UNAUTHORIZED" '  ! hook_bypass UNAUTHORIZED (the result claims an authorization'
+reset; scope 1; issue 1 blocked; printf 'step=5\n' > "$S/issue-1/progress"
+run "$S" 3
+has "hook bypass: a dispatched issue with no result is unverified" '  ! hook_bypass unverified'
 reset; scope 1; issue 1 done; clean_result 1
 run "$S" 3
 hasnt "hook bypass: none is silent" 'hook_bypass'
