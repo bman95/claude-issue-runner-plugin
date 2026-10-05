@@ -298,7 +298,7 @@ for n in $SCOPE; do
     cm=$(rd "$d/codex-model" | head -1 | tr -d ' \t\r')
     case $cm in ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) cm='' ;; esac
     cm=${cm:-gpt-6-sol}
-    [ "$gs" != waived ] && [ "$gm" != none ] && [ "$gm" != "$cm" ] && TELE="$TELE  ! gate model ${gm:-?} != requested $cm$NL"
+    [ "$gs" != waived ] && [ -n "$gm" ] && [ "$gm" != none ] && [ "$gm" != "$cm" ] && TELE="$TELE  ! gate model ${gm:-?} != requested $cm$NL"
     [ "$inl" != true ] && [ -z "$rv" ] && [ "$rv_cfg" != 2 ] && TELE="$TELE  ! reviewers not recorded (configured $rv_cfg; an implementer that ignored the dispatch line records none)$NL"
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
     case $ckp in

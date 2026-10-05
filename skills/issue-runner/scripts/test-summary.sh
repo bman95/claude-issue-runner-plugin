@@ -365,6 +365,17 @@ run "$S" 3
 # estimate: (2+4)+(2+3)+(2+2)+(2+2) = 19 low; (2+20)+(2+15)+(2+10)+(2+10) = 63 high
 has "estimate and actual use the configured reviewer counts" 'Actual agents: 21 (estimate: 19–63);'
 has "telemetry shows the reviewer count and the gate model" '- #1: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0; reviewers=4; gate model=gpt-6.1-sol'
+reset; scope 1
+issue 1 done; clean_result 1
+run "$S" 3
+hasnt "a result without gate_model is not flagged as a gate-model mismatch" '! gate model'
+reset; scope 1 2 3 4
+issue 1 done; result_cfg 1 2 '"gpt-6.1-sol"' 4        # 2 + 4*2 = 10 agents; configured 4
+issue 2 done; result_cfg 2 1 '"gpt-6-sol"' 3          # 2 + 3*1 = 5; configured 3
+issue 3 done; clean_result 3
+issue 4 pending
+printf '4\n' > "$S/issue-1/reviewers"; printf '3\n' > "$S/issue-2/reviewers"; printf '2\n' > "$S/issue-4/reviewers"
+run "$S" 3
 has "a result without the new keys prints ?" 'checkpoint=created; retries=0; reviewers=?; gate model=?'
 printf '3\n' > "$S/issue-3/reviewers"; run "$S" 3
 has "a missing reviewers key under a configured 3 is flagged" '  ! reviewers not recorded (configured 3'
