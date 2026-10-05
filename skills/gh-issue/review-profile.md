@@ -70,7 +70,7 @@ Under the prose profile run this block instead of the standard gate launch block
 
 ```bash
 PASS=1   # K, as in the standard launch
-GATE_MODEL="gpt-6-sol"   # as in the standard launch
+GATE_MODEL="gpt-6-sol"   # or the dispatch's validated `Codex model:` slug, as in the standard launch
 GATE_DIR="<STATE_DIR>/issue-<number>"   # orchestrated; interactive: GATE_DIR="$(git rev-parse --absolute-git-dir)/issue-runner"
 PR_NUM=$(gh pr view --json number -q .number 2>/dev/null); BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null)   # resolved here, like the guard
 G="$GATE_DIR/codex-pass-$PASS"; A="$(date +%s).$$"   # A, as in the standard launch

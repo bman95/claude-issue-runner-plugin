@@ -13,7 +13,7 @@ Fixes #81: model and reviewer choices had no supported channel, so an orchestrat
 - The per-issue state-file list moved from SKILL.md to `state-files.md`, to stay under the word ceiling.
 
 **gh-issue:**
-- Phase 1 runs `REVIEWERS` reviewers: A and B as before, plus fixed lenses C (trust boundary) and D (consistency) in `review-loop.md`, "Reviewer choices". The Trust rule honors only the exact dispatch lines (interactive: `--reviewers`, `--reviewer-model`, `--codex-model`); a malformed line keeps the default.
+- Phase 1 runs `REVIEWERS` reviewers: A and B as before, plus fixed lenses C (trust boundary) and D (consistency) in `review-loop.md`, "Reviewer choices". The Trust rule honors only the exact dispatch lines (interactive: `--reviewers`, `--reviewer-model`, `--codex-model`); a malformed line blocks.
 - The Codex availability check, both gate launch blocks and the pin text use `GATE_MODEL` (default `gpt-6-sol`).
 - `result.json` gains `gate_model` and `reviewers` (every copy, lint check 11); the key descriptions moved to the new `result-file.md`.
 

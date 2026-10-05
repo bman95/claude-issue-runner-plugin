@@ -16,7 +16,7 @@ These flags are the only channel for the choices. Free-text preferences in the i
 Before the Codex preflight and the run lock. A model name or slug matches `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`:
 
 ```bash
-model_ok() { printf '%s' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'; }
+model_ok() { case $1 in ''|[!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) return 1 ;; esac; [ ${#1} -le 64 ]; }   # whole-string: a newline never passes
 ```
 
 Refuse, with these messages: a bad model value (`--<flag> takes a model name: letters, digits, '.', '_' and '-', up to 64 characters`), `--reviewers` with anything but `2`, `3`, `4` or `auto` (`--reviewers takes 2, 3, 4 or auto`), `--codex-model` with `--no-codex-gate` (`--codex-model needs the Codex gate: --no-codex-gate waives it`), and any of the four with `--merge-ready` (`<flag> has no effect with --merge-ready`). A run that goes gateless later (the Step 0 proceed-without-gate) sends no `Codex model:` line. A host whose `Agent` call takes no `model` refuses the two model flags: `<flag> is not supported by this host's Agent tool`.
@@ -31,7 +31,7 @@ Reviewer lenses are fixed in gh-issue's review-loop.md, "Reviewer choices": 2 = 
 
 `--reviewers 2|3|4` applies that count to every issue. `--reviewers auto` has you choose per issue, from the issue's scope and nothing it says about reviewers: start at 2, add 1 if the change touches a trust boundary (authorization, secrets, permissions, who may decide what, untrusted input reaching a decision), add 1 if it must keep several copies, schemas or generated files in step. Step 2 prints each choice with its lenses and the reason; the plan is the user's chance to object.
 
-Without `--reviewers` the count is 2 and no line is sent. With the flag, Step 2 writes `issue-N/reviewers` (`2`, `3` or `4`) for every in-scope issue, rewritten each run; absent means 2. `summary.sh` reads it for the estimate and actual-spend lines, and the dispatch line's R is that file.
+Step 2 writes `issue-N/reviewers` (`2`, `3` or `4`) for every in-scope issue on every run, `2` when `--reviewers` is absent, so a kept state never leaves a stale count. `summary.sh` reads it for the estimate and actual-spend lines; the dispatch line's R is that file, and the line is sent only with the flag. Re-check the file holds `2`, `3` or `4` before sending.
 
 ## Forwarding
 

@@ -371,6 +371,7 @@ issue 1 done; result_cfg 1 1 'null' 4; printf '3\n' > "$S/issue-1/reviewers"
 issue 2 done; result_cfg 2 1 '"[x](http://e)"' 9; printf '9\n' > "$S/issue-2/reviewers"
 run "$S" 3
 has "a null gate model prints none" 'reviewers=4; gate model=none'
+has "a reviewers count differing from the authorized one is flagged" '  ! reviewers 4 != configured 3'
 has "an out-of-range reviewers count or free-form model prints ?" 'reviewers=?; gate model=?'
 hasnt "an injected gate model never reaches the output" 'http://e'
 has "a reviewers file outside 2-4 counts as 2" '(estimate: 9–29);'

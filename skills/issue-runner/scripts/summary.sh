@@ -293,6 +293,7 @@ for n in $SCOPE; do
     TELE="$TELE- #$n: phase1 iterations=${it:-?}; gate passes=${gp:-?}; checks=${chk:-?}; checkpoint=${ckp:-?}; retries=$retries; reviewers=${rv:-?}; gate model=${gm:-?}$NL"
     case $p1s in cap-stop|bouncing) TELE="$TELE  ! phase1_state $p1s$NL" ;; esac
     case $gs in degraded|waived|cap-stop|errored|bouncing|unavailable) TELE="$TELE  ! gate_state $gs$NL" ;; esac
+    [ -n "$rv" ] && [ "$rv" != "$rv_cfg" ] && TELE="$TELE  ! reviewers $rv != configured $rv_cfg (the review ran with a count other than the authorized one)$NL"
     [ "$inl" = true ] && TELE="$TELE  ! phase1_inline true (review ran inline, not by fresh-eyes subagents)$NL"
     case $ckp in
       refused) REFUSED=$((REFUSED + 1)); TELE="$TELE  ! checkpoint refused (the draft-PR checkpoint push or draft creation was refused)$NL" ;;
