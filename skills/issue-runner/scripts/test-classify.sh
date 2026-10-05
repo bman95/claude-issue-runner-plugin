@@ -382,6 +382,148 @@ case $out in "implementer hung (no completion): progress unchanged for 18"[0-9]"
 check "an empty progress file is no progress file -> nothing" 0 "" -- hang 8 "$HD" 30
 check "hang minutes must be a positive integer -> exit 2" 2 "" -- hang 8 "$HD" 0
 
+# --- notification: Step 3 item 5's final-or-interim question (row 76) --------------------
+# An interim "Agent finished" (the implementer stopped with a gate pass of its own
+# running in the background) with no result.json and a fresh progress marker must
+# change nothing: no status, no outcome, no blocker, no error, no progress write.
+# Every case below writes its own notification text and result.json state.
+ND="$TMP/state/issue-9"; rm -rf "$ND"; mkdir -p "$ND"
+printf 'implementing\n' > "$ND/status"
+printf 'step=8.2 pass=1 pr=#12\n' > "$ND/progress"
+touch -t "$(date -d '-2 minutes' +%Y%m%d%H%M 2>/dev/null || date -v-2M +%Y%m%d%H%M)" "$ND/progress"
+nd_snapshot() { ( cd "$ND" && for f in *; do printf '%s %s %s\n' "$f" "$(cat "$f")" "$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f")"; done ); }
+HOST_NOTE='This agent stopped with background work of its own still running. It may resume on its own when that work completes.'
+# ncase NAME WANT NOTIFICATION RESULT_JSON ("" = no file / no notification file)
+ncase() {
+  rm -f "$ND/notification" "$ND/result.json"
+  [ -z "$3" ] || printf '%s\n' "$3" > "$ND/notification"
+  [ -z "$4" ] || printf '%s\n' "$4" > "$ND/result.json"
+  check "$1" 0 "$2" -- notification 9 "$ND"
+}
+GOOD_RESULT='{"outcome":"blocker","pr":12,"worktree":"/w","blocker":"x"}'
+# Snapshot BEFORE the first call: the call itself must change nothing.
+rm -f "$ND/notification" "$ND/result.json"
+printf '%s\n' "$HOST_NOTE"$'\nGate pass 1 is running with gpt-6.1-sol; I will check the results when it finishes.' > "$ND/notification"
+nd_before=$(nd_snapshot)
+check "row 76: the host's note as the first line, no result.json -> interim" 0 "interim" -- notification 9 "$ND"
+check "row 76: the same state leaves a fresh progress marker un-hung" 0 "" -- hang 9 "$ND" 30
+check "row 76: ... and re-running the call is idempotent" 0 "interim" -- notification 9 "$ND"
+[ "$(nd_snapshot)" = "$nd_before" ] && ok "row 76: an interim notification changes no state file (status stays implementing, progress mtime untouched)" \
+  || err "row 76: the notification mode modified the issue directory"
+ncase "row 76: the fixed form 'interim: waiting on <what>' as the only line -> interim" interim \
+  "interim: waiting on codex gate pass 1" ""
+ncase "the fixed form after other text, as the last non-blank line -> interim" interim \
+  $'Pass 1 launched.\ninterim: waiting on codex gate pass 1\n\n' ""
+ncase "the fixed form with CRLF line endings -> interim" interim \
+  $'interim: waiting on codex gate pass 1\r' ""
+ncase "the fixed form followed by host trailer lines (within the last 5) -> interim" interim \
+  $'Pass 1 launched.\ninterim: waiting on codex gate pass 1\n\nagent_id: a1\n<usage>tokens: 5</usage>\n' ""
+ncase "the fixed form buried under more than 4 trailer lines -> final (outside the window)" final \
+  $'interim: waiting on x\na\nb\nc\nd\ne' ""
+ncase "the host's note after a blank or wrapper-free leading blank line -> interim" interim \
+  $'\n\n'"$HOST_NOTE" ""
+ncase "the fixed form with nothing after it is not a marker -> final" final \
+  "interim: waiting on " ""
+ncase "the fixed form with only trailing spaces after it is not a marker -> final" final \
+  "interim: waiting on   " ""
+ncase "the fixed form quoted mid-message, not last -> final" final \
+  $'interim: waiting on codex gate pass 1\nBlocker: spec ambiguity.\nworktree: /w' ""
+ncase "the fixed form indented -> final" final \
+  "  interim: waiting on x" ""
+ncase "the host's phrase quoted on a later line of a final message -> final" final \
+  $'Blocker: the agent stopped with background work of its own still running\nworktree: /w' ""
+ncase "the host's phrase not at the start of the first line -> final" final \
+  "Blocker: This agent stopped with background work of its own still running" ""
+ncase "row 76: the host's note leading a final blocker message with a worktree: line -> final" final \
+  "$HOST_NOTE"$'\nBlocker: spec ambiguity.\nworktree: /w' ""
+ncase "a worktree: line beats the fixed form too -> final" final \
+  $'Blocker: x\nworktree: /w\ninterim: waiting on y' ""
+ncase "'worktree:' must start a line to count -> the host's note still wins" interim \
+  "$HOST_NOTE"$'\nsee worktree: /w' ""
+ncase "the host's note leading a crash message with no worktree: line stays interim (fail safe: hung.md's bound ends it)" interim \
+  "$HOST_NOTE"$'\nError: connection reset' ""
+ncase "row 76: a final message with no marker, no result.json -> final (prose classification)" final \
+  $'Blocker: spec ambiguity.\nworktree: /w' ""
+rm -f "$ND/notification" "$ND/result.json"
+check "no notification file and no result.json is an error, never a verdict" 1 "" -- notification 9 "$ND"
+: > "$ND/notification"
+check "an empty notification file and no result.json is an error too" 1 "" -- notification 9 "$ND"
+printf ' \n\n' > "$ND/notification"
+check "a whitespace-only notification file and no result.json is an error too" 1 "" -- notification 9 "$ND"
+printf '%s\n' "$GOOD_RESULT" > "$ND/result.json"
+check "an empty notification file does not matter once result.json is readable -> final" 0 "final" -- notification 9 "$ND"
+rm -f "$ND/result.json"
+ncase "row 76: a readable result.json wins over the host's note -> final" final \
+  "$HOST_NOTE" "$GOOD_RESULT"
+ncase "row 76: a readable result.json wins over the fixed form -> final" final \
+  "interim: waiting on codex gate pass 1" "$GOOD_RESULT"
+ncase "row 76: result.json with an empty worktree is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":12,"worktree":"","blocker":"x"}'
+ncase "result.json with an unknown outcome is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"weird","pr":12,"worktree":"/w"}'
+ncase "a truncated result.json is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":12,'
+ncase "a valid result.json with a \\u-escaped outcome is readable -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"\u0072eady","pr":12,"worktree":"/w"}'
+ncase "a valid result.json with escapes in the worktree string is readable -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","pr":12,"worktree":"C:\\w\"x\/\n"}'
+ncase "an escaped outcome that decodes to an unknown word is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"m\u0065rged!","pr":12,"worktree":"/w"}'
+ncase "an escaped worktree that decodes to nothing printable still counts as non-empty -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"failed","pr":12,"worktree":"\u00e9"}'
+ncase "a duplicate top-level outcome with a non-string value is unreadable (last key wins) -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","outcome":5,"worktree":"/w"}'
+ncase "a duplicate top-level worktree with a non-string value is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","worktree":"/w","worktree":5}'
+ncase "a raw DEL byte inside a string is legal JSON -> final" final \
+  "interim: waiting on codex gate pass 1" "$(printf '{"outcome":"merged","pr":1,"worktree":"/w\177x"}')"
+ncase "an invalid escape in a string is unreadable -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"ready","pr":12,"worktree":"\x"}'
+ncase "a second object after the first is not one JSON object -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w"}{}'
+ncase "a second object on the next line is not one JSON object -> interim" interim \
+  "interim: waiting on codex gate pass 1" $'{"outcome":"blocker","pr":12,"worktree":"/w"}\n{}'
+ncase "trailing text after the object -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w"} x'
+ncase "a nested outcome and worktree are not top-level fields -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"extra":{"outcome":"blocker","worktree":"/w"}}'
+ncase "a top-level outcome but a nested worktree -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","extra":{"worktree":"/w"}}'
+ncase "a missing comma between fields -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker" "worktree":"/w"}'
+ncase "not an object (an array) -> interim" interim \
+  "interim: waiting on codex gate pass 1" '[{"outcome":"blocker","worktree":"/w"}]'
+ncase "a trailing comma is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w",}'
+ncase "mismatched delimiters are invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w"]'
+ncase "a missing value is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr":,"worktree":"/w"}'
+ncase "a missing colon is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","pr" 12,"worktree":"/w"}'
+ncase "an unterminated string is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w}'
+ncase "an array with a trailing comma inside is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w","a":[1,2,]}'
+ncase "a bad escape is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w\x","a":1}'
+ncase "a leading-zero number is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w","pr":01}'
+ncase "a truncated nested object is invalid JSON -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":"blocker","worktree":"/w","a":{"b":1}'
+ncase "an outcome that is not a string -> interim" interim \
+  "interim: waiting on codex gate pass 1" '{"outcome":12,"worktree":"/w"}'
+ncase "numbers, literals, unicode escapes and empty containers are valid -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","worktree":"/wé","n":-1.5e+3,"t":true,"f":false,"z":null,"o":{},"a":[]}'
+ncase "a readable result with a nested object and braces inside a string -> final" final \
+  "interim: waiting on codex gate pass 1" '{"outcome":"merged","pr":12,"extra":{"a":[1,{"b":"}"}]},"worktree":"/w {x}","blocker":null}'
+ncase "a pretty-printed single object is still one JSON object -> final" final \
+  "interim: waiting on codex gate pass 1" $'{\n  "outcome": "failed",\n  "pr": null,\n  "worktree": "/w"\n}'
+ncase "an escaped quote in a string does not end it -> final" final \
+  "interim: waiting on codex gate pass 1" '{"blocker":"say \"hi\", {x}","outcome":"ready","worktree":"/w"}'
+check "notification: missing issue dir -> exit 2" 2 "" -- notification 9 "$TMP/no-such-dir"
+check "notification: missing issue-dir argument -> exit 2" 2 "" -- notification 9
+
 # --- worktree: Step 3 item 4's worktree for a stopped implementer ----------------------
 WD="$TMP/state/issue-7"; rm -rf "$WD"; mkdir -p "$WD"
 printf '%s\n' "$W_OTHER" > "$WD/worktree"
@@ -484,8 +626,8 @@ unset CWD
 # case; rows 23-25 only for the Step 5 label (the resume, the revert to draft
 # and the crash are Step 3a's and the implementer's). Every other row is outside these two
 # classifications: see test-scheduler.sh for the state machine's rows.
-IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35"
-EXPECTED_ROW_COUNT=77
+IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35 76"
+EXPECTED_ROW_COUNT=78
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then

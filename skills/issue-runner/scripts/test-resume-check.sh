@@ -244,7 +244,7 @@ check "non-numeric issue -> exit 2" 2 "" 7a
 # Rows exercised above, for the probes and their classification only: what the
 # orchestrator then does (resume, ask, delete a stale branch) is the prose's.
 IN_SCOPE_ROWS="7 8 22 23"
-EXPECTED_ROW_COUNT=77
+EXPECTED_ROW_COUNT=78
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then

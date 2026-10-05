@@ -4,14 +4,16 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
-Fixes #87. Two PRs of a production run merged with reviewer findings the implementer chose not to fix, recorded only in PR prose, in code the PR had just written; the orchestrator then turned them into issues by hand. This changes Expected behavior (`docs/scenarios.md` rows 76 and 77) and adds a `result.json` key.
+Fixes #87. Two PRs of a production run merged with reviewer findings the implementer chose not to fix, recorded only in PR prose, in code the PR had just written; the orchestrator then turned them into issues by hand. This changes Expected behavior (`docs/scenarios.md` rows 77 and 78) and adds a `result.json` key.
 
 **gh-issue:**
 - **Small in-diff findings are Apply-class.** A finding in code the PR added or changed, needing about ten changed lines at most plus a test and no product decision, is fixed in the worktree whatever its severity label (cosmetic nits are still skipped). The prose profile's Apply class is not widened by it, and its design alternatives are not deferrals.
 - **New Defer class and `deferred` in `result.json`.** An in-diff finding that is no bug of the PR's and needs a decision or is large is deferred, as is a pre-existing one (Surface); a bug the PR introduced stays Apply at any size. Every deferral goes into `"deferred":[{"finding","reason"}]` and a `Deferred: <finding> — <reason>` line under `## Review notes` (a resumed run rebuilds the array from those lines). Converged tolerates Defer- and Surface-class findings in every profile (Surface was named only under prose).
 - To stay within the 5,000-word body ceiling, the Security lens text and the "Relation to CI" paragraph moved to `review-loop.md` and `validation.md`, verbatim.
+- (Fixes #80.) An implementer that must end a turn while a gate pass or reviewer runs in the background says so in a fixed form, `interim: waiting on <what>`, with no `worktree:` line and no result file.
 
 **issue-runner:**
+- **An interim "Agent finished" is no longer read as a result** (fixes #80). The host reports it whenever an implementer stops with background work of its own (a Codex gate pass) still running, with no `result.json` yet. Step 3 item 5 would have classified that healthy implementer as blocked or failed and cascaded it to its dependents. A notification is now interim only when marked (the host note or the fixed form) and no `result.json` is readable; an interim one leaves the issue `implementing`, writes nothing and keeps the hang clock on `progress`. `classify.sh notification` makes the call (the first non-blank line or the last 5 carry the markers, so host trailer lines do not hide one; a notification counts only from the recorded `agent`; the interim hang bound is `max(2 * --hang-minutes, 60)`) and `test-classify.sh` and `test-scheduler.sh` pin it (docs/scenarios.md row 76; Expected behavior changed, so this is a minor bump at release).
 - **Step 5 lists deferrals and asks the user once** whether to file them, fix them in a follow-up PR, or drop them; it never files, dispatches or drops on its own judgment. `summary.sh` prints a `!` flag line per issue and, last, a `## Deferred findings` section; a well-formed `deferred` value of the wrong shape prints `deferred unreadable` and keeps the telemetry (`null` means none). The tracking-issue post omits that section, so finding text stays on the terminal.
 - The Codex canonical copies carry every change byte-identically.
 
