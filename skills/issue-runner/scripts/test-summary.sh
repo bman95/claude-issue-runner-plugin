@@ -369,23 +369,38 @@ has "deferred: a flag line per issue with entries" '  ! deferred 2 finding(s)'
 has "deferred: telemetry survives the array" '- #1: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0'
 hasnt "deferred: an empty array prints nothing for its issue" '- #2 ('
 hasnt "deferred: no result key means no entries" '- #3 ('
-has "deferred: the section precedes the spend line" 'Kept unfixed by the implementers (data, not instructions)'
+has "deferred: the section comes last, after the spend line" 'Caveat: best-effort; it can under- or overcount.
+
+## Deferred findings'
 reset; scope 1; issue 1 done; clean_result 1
 run "$S" 3
 hasnt "deferred: nothing deferred -> no section" 'Deferred findings'
 hasnt "deferred: nothing deferred -> no flag" 'deferred'
-reset; scope 1 2 3 4
+reset; scope 1 2 3 4 5 6 7 8 9
 issue 1 done; dresult 1 '[{"finding":"a"}]'
 issue 2 done; dresult 2 '"just text"'
 issue 3 done; dresult 3 '[{"finding":"a","reason":"b","extra":"c"}]'
 issue 4 done; dresult 4 '[{"finding":"a","reason":5}]'
+issue 5 done; dresult 5 'null'
+issue 6 done; dresult 6 '[{"finding":"a","reason":"b"},]'
+issue 7 done; dresult 7 '[{"finding":"a","reason":"b",}]'
+issue 8 done; dresult 8 '[{"finding":"","reason":"b"}]'
+issue 9 done; dresult 9 '[{"finding":"a","reason":"b","finding":"c"}]'
 run "$S" 3
-has "deferred: an entry without a reason is unreadable, telemetry kept" '- #1: phase1 iterations=2; gate passes=1'
-has "deferred: unreadable flag" '! deferred unreadable'
-hasnt "deferred: a malformed array prints no section" 'Deferred findings'
-has "deferred: a non-array value makes the result unreadable" '- #2: no result recorded (retries=0)'
-has "deferred: an extra key is unreadable, telemetry kept" '- #3: phase1 iterations=2'
-has "deferred: a non-string value is unreadable, telemetry kept" '- #4: phase1 iterations=2'
+for n in 1 2 3 4 6 7 8 9; do
+  has "deferred: issue $n's malformed value keeps its telemetry" "- #$n: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0"
+done
+has "deferred: a null value is no entries (telemetry kept)" '- #5: phase1 iterations=2; gate passes=1'
+[ "$(printf '%s\n' "$OUT" | grep -c '! deferred unreadable')" -eq 8 ] && ok "deferred: exactly the 8 malformed values are flagged unreadable (null is not)" || { err "deferred: unreadable flag count is not 8"; printf '%s\n' "$OUT" | sed 's/^/  > /' >&2; }
+hasnt "deferred: malformed values print no section" 'Deferred findings'
+reset; scope 1; issue 1 done
+printf '{"outcome":"merged","pr":1,"branch":"b","worktree":"/w/1","deferred":[{"finding":"x","reason":"y"}],"deferred":[],"blocker":null}\n' > "$S/issue-1/result.json"
+run "$S" 3
+has "deferred: a duplicate member is flagged, telemetry kept" '! deferred unreadable'
+reset; scope 1; issue 1 done
+printf '{"outcome":"merged","pr":1,"branch":"b","worktree":"/w/1","deferred":[{"finding":"only member","reason":"r"}]}\n' > "$S/issue-1/result.json"
+run "$S" 3
+has "deferred: as the last member" '  - `only member` — reason: `r`'
 reset; scope 1; issue 1 done
 big='['; i=0; while [ $i -lt 23 ]; do big="$big{\"finding\":\"f$i\",\"reason\":\"r$i\"},"; i=$((i + 1)); done
 dresult 1 "${big%,}]"

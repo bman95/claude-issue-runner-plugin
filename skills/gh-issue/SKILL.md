@@ -36,7 +36,7 @@ When the dispatch prompt gave a state path (`<STATE_DIR>/issue-<number>/details.
 printf '%s\n' 'step=8.1 iter=2 pr=#123' 2>/dev/null > "<STATE_DIR>/issue-<number>/progress" || true
 ```
 
-Only `step=<id>` (`1`–`10`; `8.1 iter=K` per Phase 1 iteration, `8.2 pass=K` per gate pass, `9.2` awaiting checks) and, once the PR exists, `pr=#P`. Never mention it in the PR, `## Review notes` or a commit; it is never evidence of merge or convergence. Its mtime is the runner's `--hang-minutes` signal: refresh it per commit in a long Step 5 and on every wake while a reviewer or gate pass is outstanding (Step 8, "Liveness"). Interactive runs write nothing. (why: Why the progress marker is a locator)
+Only `step=<id>` (`1`–`10`; `8.1 iter=K` per Phase 1 iteration, `8.2 pass=K` per gate pass, `9.2` awaiting checks) and, once the PR exists, `pr=#P`. Never mention it in the PR, `## Review notes` or a commit; it is never evidence of merge or convergence. Its mtime is the runner's `--hang-minutes` signal: refresh it per commit in a long Step 5 and on every wake while a child is outstanding (Step 8, "Liveness"). Interactive runs write nothing. (why: Why the progress marker is a locator)
 
 ## Result file (orchestrated only)
 
@@ -53,7 +53,7 @@ With a state path, write `<STATE_DIR>/issue-<number>/result.json` **once, immedi
 - `checks` — `pass`, `none`, `fail`, or after `gh pr ready` on a former draft: `none-after-ready`, `all-skipped`, `unchanged-after-ready` (these merge, never silently); `null` if Step 9's gate never ran.
 - `checkpoint` — `created` (by this run, orphan resume included), `refused` (reason in Step 10), `skipped` (Step 4), `n/a` (pre-existing PR, or exit before Step 4).
 - `security_lens` — Step 8 lens used. `review_profile` — at exit: `standard` (none, or gate waived), `prose`, `revoked` (Step 8 guard); before Step 8, as authorized (`standard` if gate waived).
-- `deferred` — every finding you kept unfixed (Step 8's Surface and Defer classes), one `{"finding","reason"}` entry each, `[]` if none. The orchestrator lists them for the user in its Step 5, so they never live only in PR prose.
+- `deferred` — every finding you kept unfixed (Step 8's Surface and Defer classes), one `{"finding","reason"}` entry each, `[]` if none. The orchestrator lists them for the user; never leave them only in PR prose.
 - `blocker` — your final message's blocker/failure text verbatim; `null` when `merged`.
 
 ```bash
@@ -223,7 +223,7 @@ Degradation keys off the CLI's **own** exit status and stderr, never the review 
 
 Pin the tier id `gpt-6-sol`, never an alias like `gpt-6` (why: Why the gate pins gpt-6-sol). The log is text, not JSON. `CODEX_EXIT` is the `.exit` content, after "Liveness" rules out a timeout or kill. Branch on it **first**, then the findings:
 
-- **`CODEX_EXIT` == 0, no Apply-class finding** (none at all, or only skip-and-documented, surfaced or P3-cosmetic ones) → converged; go to Step 9.
+- **`CODEX_EXIT` == 0, no Apply-class finding** (none at all, or only skip-and-documented, surfaced, deferred or P3-cosmetic ones) → converged; go to Step 9.
 - **`CODEX_EXIT` == 0, Apply-class findings on pass K:**
   - **K < `MAX_CODEX_ITERATIONS`** → fix round: apply, preflight validation (validation script `preflight`; conventions under a standing fallback authorization), commit `fix: address codex gate findings`, push, refresh the PR body, run pass K+1 on the fixed head, branch the same way.
   - **K = `MAX_CODEX_ITERATIONS`** → cap-stop: apply nothing, record `Codex gate cap-stop (pass N of N), unfixed: …` under `## Review notes` (open work, never skip-and-documented); Block naming the cap and findings (why: Why the last Codex pass never starts a fix round). Interactive under `standard`, if the revoke-only guard block in [review-profile.md](review-profile.md) (read it for this check) would pass and the findings are design-level, you may offer "retry under the prose profile"; a yes authorizes `/gh-issue <number> --review-profile prose` (resumes this PR, passes count from 1). Orchestrated: never offer or assume it.
@@ -234,12 +234,12 @@ Pin the tier id `gpt-6-sol`, never an alias like `gpt-6` (why: Why the gate pins
 
 #### Triage model (both phases)
 
-- **Apply** — a real bug *this PR* introduced: an edge case in new code, a broken invariant, a security issue, a missing test for a new branch. Also a small in-diff finding: in code this PR added or changed, fixable in a few lines plus a test, needing no product decision. Its P-label never defers it; a cosmetic nit is still a nit.
+- **Apply** — a real bug *this PR* introduced: an edge case in new code, a broken invariant, a security issue, a missing test for a new branch, at any size. Also a small in-diff finding: in code this PR added or changed, about ten changed lines at most plus a test, no product decision. A P-label never defers it. A misleading comment in new code is Apply, not a nit.
 - **Surface, don't auto-apply** — a pre-existing issue (verify with `git blame` or `git log -S` against `$BASE_BRANCH`): note it in the PR body and in `deferred`; don't fix it.
-- **Defer** — an in-diff finding that needs a product decision or is large (more than a few lines plus a test): PR body and `deferred`, with the reason (why: Why small in-diff findings are fixed).
+- **Defer** — an in-diff finding that is no such bug and needs a product decision or is large: PR body and `deferred`, with the reason (why: Why small in-diff findings are fixed).
 - **Skip and document** — the reviewer misread the code: a 1–2-sentence rebuttal in the PR body; never drop silently.
 - **Stop and ask** — convergence failure: a finding contradicts a prior iteration's fix, or re-appears after being applied. Stop the loop and Block; do not merge.
-- Nits and style preferences: skip silently.
+- Nits (changing no behavior, test or documented claim) and style preferences: skip silently.
 
 #### Converged vs bouncing (merge authority — issue-runner defers to this)
 

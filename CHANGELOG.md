@@ -8,11 +8,11 @@ Fixes #87. Two PRs of a production run merged with reviewer findings the impleme
 
 **gh-issue:**
 - **Small in-diff findings are Apply-class.** A finding in code the PR added or changed, fixable in a few lines plus a test and needing no product decision, is fixed in the worktree whatever its severity label (cosmetic nits are still skipped). The prose profile's Apply class is not widened by it.
-- **New Defer class and `deferred` in `result.json`.** A finding that needs a decision or is large is deferred, as is a pre-existing one (Surface). Every deferral goes into `"deferred":[{"finding","reason"}]`, as well as the PR body. Converged tolerates Defer- and Surface-class findings in every profile (Surface was named only under prose).
+- **New Defer class and `deferred` in `result.json`.** An in-diff finding that is no bug of the PR's and needs a decision or is large is deferred, as is a pre-existing one (Surface); a bug the PR introduced stays Apply at any size. Every deferral goes into `"deferred":[{"finding","reason"}]`, as well as the PR body. Converged tolerates Defer- and Surface-class findings in every profile (Surface was named only under prose).
 - To stay within the 5,000-word body ceiling, the Security lens text and the "Relation to CI" paragraph moved to `review-loop.md` and `validation.md`, verbatim.
 
 **issue-runner:**
-- **Step 5 lists deferrals and asks the user once** whether to file them, fix them in a follow-up PR, or drop them; it never files, dispatches or drops on its own judgment. `summary.sh` prints a `## Deferred findings` section and a `!` flag line per issue; a malformed `deferred` array prints `deferred unreadable` and keeps the telemetry.
+- **Step 5 lists deferrals and asks the user once** whether to file them, fix them in a follow-up PR, or drop them; it never files, dispatches or drops on its own judgment. `summary.sh` prints a `!` flag line per issue and, last, a `## Deferred findings` section; any malformed `deferred` value prints `deferred unreadable` and keeps the telemetry (`null` means none). The tracking-issue post omits that section, so finding text stays on the terminal.
 - The Codex canonical copies carry every change byte-identically.
 
 ## [0.15.0] - 2026-10-04
