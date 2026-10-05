@@ -12,7 +12,7 @@ The commits decide:
 - Only the lone `chore: checkpoint plan for #<number>` commit, clean tree → start from the `## Plan` in the PR body (`gh pr view <PR> --json isDraft,body`), verified against the acceptance criteria and current code; drop anything the issue does not ask for.
 - More than the checkpoint (commits or uncommitted changes) → continue where it stopped; never re-execute. If Step 7 already replaced `## Plan`, reconstruct the intent from `## Changes`, `## Review notes` and the branch diff.
 - No checkpoint commit → derive your own plan.
-- Either way, rebuild `deferred` from the deferral records in `## Review notes` and the PR body (result.json is cleared per dispatch), dropping any since fixed.
+- Either way, rebuild `deferred` from the PR body's `Deferred:` lines (result.json is cleared per dispatch), one entry per finding, dropping any since fixed.
 - A branch with no PR (orphan) → derive your own plan, stay on that branch, and open its draft in Step 4 (only the `gh pr create --draft` line).
 
 ## Step 4 — the existing branch or worktree (orchestrated)

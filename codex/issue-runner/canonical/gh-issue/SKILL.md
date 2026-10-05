@@ -234,9 +234,9 @@ Pin the tier id `gpt-6-sol`, never an alias like `gpt-6` (why: Why the gate pins
 
 #### Triage model (both phases)
 
-- **Apply** — a real bug *this PR* introduced: an edge case in new code, a broken invariant, a security issue, a missing test for a new branch, at any size. Also a small in-diff finding: in code this PR added or changed, about ten changed lines at most plus a test, no product decision. A P-label never defers it. A misleading comment in new code is Apply, not a nit.
-- **Surface, don't auto-apply** — a pre-existing issue (verify with `git blame` or `git log -S` against `$BASE_BRANCH`): note it in the PR body and in `deferred`; don't fix it.
-- **Defer** — an in-diff finding that is no such bug and needs a product decision or is large: PR body and `deferred`, with the reason (why: Why small in-diff findings are fixed).
+- **Apply** — a real bug *this PR* introduced: an edge case in new code, a broken invariant, a security issue, a missing test for a new branch, at any size. Also a small in-diff finding: in code this PR added or changed, about ten changed lines at most plus a test, no product decision. A P-label never defers it. A misleading comment in new code is Apply.
+- **Surface, don't auto-apply** — a pre-existing issue (verify with `git blame` or `git log -S` against `$BASE_BRANCH`): record it as Defer does; don't fix it.
+- **Defer** — an in-diff finding that is no such bug and needs a product decision or exceeds that size: a `Deferred: <finding> — <reason>` line under `## Review notes` and a `deferred` entry (why: Why small in-diff findings are fixed).
 - **Skip and document** — the reviewer misread the code: a 1–2-sentence rebuttal in the PR body; never drop silently.
 - **Stop and ask** — convergence failure: a finding contradicts a prior iteration's fix, or re-appears after being applied. Stop the loop and Block; do not merge.
 - Nits (changing no behavior, test or documented claim) and style preferences: skip silently.

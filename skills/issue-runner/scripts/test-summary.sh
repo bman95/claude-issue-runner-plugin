@@ -376,7 +376,7 @@ reset; scope 1; issue 1 done; clean_result 1
 run "$S" 3
 hasnt "deferred: nothing deferred -> no section" 'Deferred findings'
 hasnt "deferred: nothing deferred -> no flag" 'deferred'
-reset; scope 1 2 3 4 5 6 7 8 9
+reset; scope 1 2 3 4 5 6 7 8 9 10
 issue 1 done; dresult 1 '[{"finding":"a"}]'
 issue 2 done; dresult 2 '"just text"'
 issue 3 done; dresult 3 '[{"finding":"a","reason":"b","extra":"c"}]'
@@ -386,12 +386,13 @@ issue 6 done; dresult 6 '[{"finding":"a","reason":"b"},]'
 issue 7 done; dresult 7 '[{"finding":"a","reason":"b",}]'
 issue 8 done; dresult 8 '[{"finding":"","reason":"b"}]'
 issue 9 done; dresult 9 '[{"finding":"a","reason":"b","finding":"c"}]'
+issue 10 done; dresult 10 '{"finding":"a","reason":"b"}'
 run "$S" 3
-for n in 1 2 3 4 6 7 8 9; do
+for n in 1 2 3 4 6 7 8 9 10; do
   has "deferred: issue $n's malformed value keeps its telemetry" "- #$n: phase1 iterations=2; gate passes=1; checks=pass; checkpoint=created; retries=0"
 done
 has "deferred: a null value is no entries (telemetry kept)" '- #5: phase1 iterations=2; gate passes=1'
-[ "$(printf '%s\n' "$OUT" | grep -c '! deferred unreadable')" -eq 8 ] && ok "deferred: exactly the 8 malformed values are flagged unreadable (null is not)" || { err "deferred: unreadable flag count is not 8"; printf '%s\n' "$OUT" | sed 's/^/  > /' >&2; }
+[ "$(printf '%s\n' "$OUT" | grep -c '! deferred unreadable')" -eq 9 ] && ok "deferred: exactly the 9 malformed values are flagged unreadable (null is not)" || { err "deferred: unreadable flag count is not 9"; printf '%s\n' "$OUT" | sed 's/^/  > /' >&2; }
 hasnt "deferred: malformed values print no section" 'Deferred findings'
 reset; scope 1; issue 1 done
 printf '{"outcome":"merged","pr":1,"branch":"b","worktree":"/w/1","deferred":[{"finding":"x","reason":"y"}],"deferred":[],"blocker":null}\n' > "$S/issue-1/result.json"

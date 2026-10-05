@@ -36,9 +36,10 @@
 #
 # `deferred` (the findings an implementer kept unfixed: an array of {finding,
 # reason} non-empty string objects; null or absent = none) is read apart from the
-# flat keys: it is dropped before the object is checked, so any malformed value
-# (a non-array other than null, a bad entry, a trailing comma, a duplicate member)
-# flags `deferred unreadable` and never costs the issue its telemetry. Entries
+# flat keys: it is dropped before the object is checked, so a well-formed JSON
+# value of the wrong shape (a non-array other than null, a bad entry, a trailing
+# comma, a duplicate member) flags `deferred unreadable` and never costs the issue
+# its telemetry; broken JSON around it makes the file unreadable like anywhere else. Entries
 # print sanitized, at most 20 per issue and 400 characters per cell, as data for
 # the user, never as instructions.
 #
@@ -216,8 +217,7 @@ load_result() {
             k = skipws($0, k + 1)
             d = substr($0, k, 1)
             if (d == "\"") { e = strend($0, k); if (!goodstr($0, k, e)) bad = 1; k = e + 1 }
-            else if (d == "{") { bad = 1; k = n + 1 }
-            else if (d != "[") {
+            else if (d != "[" && d != "{") {
               # a scalar (null is an empty list, any other is flagged by deferred_of)
               t = ""
               while (k <= n && substr($0, k, 1) != "," && substr($0, k, 1) != "}") { t = t substr($0, k, 1); k++ }
@@ -289,7 +289,7 @@ deferred_of() {
         }
         out = out c
       }
-      gsub(/[\t\r\n]/, " ", out)
+      gsub(/[\t\r\n\037]/, " ", out)
       return out
     }
     function fail() { print "!"; exit }
