@@ -479,6 +479,9 @@ has "hook bypass: a claimed authorization with no hook-bypass file is UNAUTHORIZ
 reset; scope 1; issue 1 blocked; printf 'step=5\n' > "$S/issue-1/progress"
 run "$S" 3
 has "hook bypass: a dispatched issue with no result is unverified" '  ! hook_bypass unverified'
+reset; scope 1; issue 1 done; clean_result 1; sed -i 's/"hook_bypass":"none",/"hook_bypass":"none","hook_bypass":"unauthorized",/' "$S/issue-1/result.json"
+run "$S" 3
+has "hook bypass: a duplicate member is flagged, never read as the first" '  ! hook_bypass unrecognised'
 reset; scope 1; issue 1 done; clean_result 1
 run "$S" 3
 hasnt "hook bypass: none is silent" 'hook_bypass'

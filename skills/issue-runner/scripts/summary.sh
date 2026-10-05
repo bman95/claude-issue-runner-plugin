@@ -43,6 +43,15 @@
 # print sanitized, at most 20 per issue and 400 characters per cell, as data for
 # the user, never as instructions.
 #
+# `hook_bypass` (none, authorized or unauthorized) is flagged on a `!` line per
+# issue whenever it is not `none`: `authorized` is `UNAUTHORIZED` unless
+# issue-N/hook-bypass holds `authorized <run-id>` for this run's $STATE_DIR/run-id
+# (a forged claim); `unauthorized` is `UNAUTHORIZED`; a duplicate member or any other
+# value is `unrecognised` (never echoed); an absent key is `not recorded`; a
+# dispatched issue with no readable result is `unverified`. A run-level note counts
+# the issues with `authorized` or `unauthorized`. The value is the implementer's
+# own account, so `none` is silent and proves nothing.
+#
 # Output, in order: `## Summary table`, `## Telemetry` (per-issue lines, `!`
 # flag lines for anything that needs a human, totals), the one-line `Actual
 # agents: <A> (estimate: <N*4>–<N*12>); actual Codex gate passes: <P>
@@ -402,6 +411,7 @@ for n in $SCOPE; do
     ckp=$(pick "$(jv checkpoint)" created refused skipped n/a)
     rp=$(pick "$(jv review_profile)" standard prose revoked)
     hb=$(jv hook_bypass); [ -n "$hb" ] && hb=$(pick "$hb" none authorized unauthorized)
+    [ "$(printf '%s' "$RJ" | grep -o '"hook_bypass":' | grep -c '')" -gt 1 ] && hb='?'   # a duplicate member: which one counts is unknowable
     it_n=0; isnum "$it" && it_n=$((10#$it))
     gp_n=0; isnum "$gp" && gp_n=$((10#$gp))
     TOTAL_ITER=$((TOTAL_ITER + it_n)); TOTAL_GATE=$((TOTAL_GATE + gp_n))

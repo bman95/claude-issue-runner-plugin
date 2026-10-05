@@ -282,7 +282,7 @@ prompt: |
 
 **Record the agent id** the moment the `Agent` call returns, before anything else: `printf '%s\n' '<agent id>' > "$STATE_DIR/issue-N/agent"`, verbatim (`agent-…` or bare; item 4 accepts both). Every dispatch overwrites it, resumes and retries included. A resume pointer, never a status input (why: Why resume pointers are written at dispatch, not at failure).
 
-**Host environment.** First dispatch of an invocation: read [host-environment.md](host-environment.md). **Dispatch variants.** Before the first dispatch, read [dispatch-variants.md](dispatch-variants.md): Gateless, Agent-less and `--no-merge` runs each replace part of this template; every gated dispatch adds `- Silent-reviewer fallback: inline review authorized`; an issue with a `profile` file adds `- Review profile: prose (user-authorized for issue #<N>)`.
+**Host environment.** First dispatch of an invocation: run [host-environment.md](host-environment.md)'s probe. **Dispatch variants.** Before the first dispatch, read [dispatch-variants.md](dispatch-variants.md): Gateless, Agent-less and `--no-merge` runs each replace part of this template; every gated dispatch adds `- Silent-reviewer fallback: inline review authorized`; an issue with a `profile` file adds `- Review profile: prose (user-authorized for issue #<N>)`.
 
 **Credit/usage-limit dispatch failure.** When the `Agent` call itself errors (never a normal result, blocker or PR that mentions such words), read [pause.md](pause.md) before anything else: an error text matching `credit|quota|billing|insufficient|429|rate.?limit|usage.?limit` marks the issue `blocked`, never `failed`, writes `$RUN_ROOT/paused`, and dispatches nothing more while the file exists.
 

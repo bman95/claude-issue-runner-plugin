@@ -8,8 +8,8 @@ Read at Step 3a before the first dispatch of every invocation (SKILL.md, Step 3a
 
 ```bash
 HOST_ENV_SCRIPT="$(dirname "<SCHEDULER_SCRIPT>")/host-env.sh"   # the same install as Step 3's scripts
-[ -f "$HOST_ENV_SCRIPT" ] || { echo "host-env.sh not found" >&2; exit 1; }
-bash "$HOST_ENV_SCRIPT" "<STATE_DIR>" "$(git rev-parse --show-toplevel)"
+if [ -f "$HOST_ENV_SCRIPT" ]; then bash "$HOST_ENV_SCRIPT" "<STATE_DIR>" "$(git rev-parse --show-toplevel)"
+else echo "host-env.sh not found" >&2; rm -f "<STATE_DIR>/environment.md"; fi
 ```
 
 It writes `$STATE_DIR/environment.md`: each tool's absolute path, or its directory to prepend to PATH when it is installed off PATH, or `not found`. Exit 0 prints `environment: <path>`; exit 2 (a usage error or unwritable state dir) or a missing script: `rm -f "$STATE_DIR/environment.md"` (an earlier invocation's file must not stand), dispatch without the `environment.md` input line, and say so in the closing message (the run is not blocked).
