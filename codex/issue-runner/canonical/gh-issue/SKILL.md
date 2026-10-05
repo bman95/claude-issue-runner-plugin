@@ -1,6 +1,6 @@
 ---
 name: gh-issue
-version: 0.11.0
+version: 0.12.0
 description: Implements a GitHub issue end-to-end — explore, code, PR, layered review (fresh-eyes subagents, then a Codex gate), merge.
 disable-model-invocation: true
 ---
@@ -43,7 +43,7 @@ Only `step=<id>` (`1`–`10`; `8.1 iter=K` per Phase 1 iteration, `8.2 pass=K` p
 With a state path, write `<STATE_DIR>/issue-<number>/result.json` **once, immediately before your final message**, on every orchestrated exit: one JSON object on one line, exactly these keys (lint-checked):
 
 ```json
-{"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|n/a","security_lens":true,"review_profile":"standard|prose|revoked","blocker":null}
+{"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|skipped|n/a","security_lens":true,"review_profile":"standard|prose|revoked","blocker":null}
 ```
 
 - `outcome` — `merged` only after Step 9 verified `MERGED` (`gh pr view --json state`); `ready` only after Step 9 verified its `Merge mode: no-merge` stop (`gh pr merge` never called); `blocker` — spec ambiguity, bouncing loop, cap-stop, failing checks, unavailable gate, unauthorized inline review, a failing, invalid, not-runnable or changed validation (or integration) contract ("Validation contract", Step 9), Step 9's base-freshness conflict or post-merge validation failure; `failed` — environmental: credentials, the validation script's exit 2 or missing script ("Validation contract"), an irresolvable merge conflict outside Step 9's recipe, Step 6's refused push. A refused Step 4 checkpoint push is only `checkpoint: refused`.
@@ -51,7 +51,7 @@ With a state path, write `<STATE_DIR>/issue-<number>/result.json` **once, immedi
 - `phase1_iterations` (`0` if never entered; the verification iteration counts, so at most 5 per Phase 1 run, which a prose revocation restarts); `phase1_inline` — `true` if Phase 1 or any reviewer pass ran inline ("Liveness"); `phase1_state` — `converged` (the verification iteration included), `cap-stop` (the verification iteration after the capped iteration's fixes still found Apply-class findings), `bouncing`; `null` if never entered.
 - `gate_passes` (0–`MAX_CODEX_ITERATIONS`); `gate_state` — `clean`; `degraded` (credit/quota); `waived` (`--no-codex-gate`); `cap-stop` (pass `MAX_CODEX_ITERATIONS` still had Apply-class findings, or a prose revocation left no pass); `errored` (any other non-zero exit; any on a verification pass; credit/quota on pass 1 under prose; timeout; a pass lost twice); `bouncing`; `unavailable` (CLI or pinned model missing, not waived); `null` if Phase 2 never entered.
 - `checks` — `pass`, `none`, `fail`, or after `gh pr ready` on a former draft: `none-after-ready`, `all-skipped`, `unchanged-after-ready` (these merge, never silently); `null` if Step 9's gate never ran.
-- `checkpoint` — `created` (by this run, orphan resume included), `refused` (reason in Step 10), `n/a` (pre-existing PR, or exit before Step 4).
+- `checkpoint` — `created` (by this run, orphan resume included), `refused` (reason in Step 10), `skipped` (Step 4), `n/a` (pre-existing PR, or exit before Step 4).
 - `security_lens` — Step 8 lens used. `review_profile` — at exit: `standard` (none, or gate waived), `prose`, `revoked` (Step 8 guard); before Step 8, as authorized (`standard` if gate waived).
 - `blocker` — your final message's blocker/failure text verbatim; `null` when `merged`.
 
@@ -61,7 +61,7 @@ cat 2>/dev/null > "<STATE_DIR>/issue-<number>/result.json" <<'EOF' || true
 EOF
 ```
 
-JSON-escape `"`, `\` and control characters in every string value. Order: `step=10` marker, this file, final message (with the `worktree:` line and Step 10 report). No key for Step 10's `validation:` line. An interim turn end writes no result file. The progress marker's rules apply. (why: Why the result file is advisory)
+JSON-escape `"`, `\` and control characters in every string value. Order: `step=10` marker, this file, final message (with the `worktree:` line and Step 10 report). No key for Step 10's `validation:` line. The progress marker's rules apply. (why: Why the result file is advisory)
 
 ## Validation contract
 
@@ -157,7 +157,7 @@ Title: the final PR's. Body: `## Summary` (one line: draft checkpoint, implement
   - merged but moved on, no PR, or only closed → blocker naming that branch; never push a second one.
 
   A branch your dispatch said to continue on is not a hit.
-- Otherwise best-effort: a refused push or `gh pr create --draft` → record the reason for Step 10's `checkpoint:` line and continue (Step 6 pushes, Step 7 creates the PR). Never retry without `--draft` here.
+- Otherwise best-effort: a refused push or `gh pr create --draft` → record the reason for Step 10's `checkpoint:` line and continue. Never retry without `--draft`. A checkpoint deliberately not run is `skipped`, never `refused`; Step 7 drafts the PR.
 
 **Interactive:** run the in-flight check in [interactive.md](interactive.md) before the Step 3 plan, then create and enter the dedicated worktree by its recipe; every later step runs from there, never the main checkout.
 
@@ -278,7 +278,7 @@ Report the PR URL plus:
 - Gate passes spent (0–`MAX_CODEX_ITERATIONS`).
 - Final state: clean / degraded on credit-quota / gate-waived / cap-stop / errored / **ready — no-merge mode, Step 9's no-merge stop**.
 - Checks gate: pass / no CI configured / a Step 9 draft-filtered wording.
-- `checkpoint: created | refused (<reason>) | n/a` — `n/a` for interactive runs, resumes of a PR predating this invocation, and exits before Step 4; an orphan resume that opened the draft at Step 4 reports `created`.
+- `checkpoint: created | refused (<reason>) | skipped (<reason>) | n/a` — `n/a` for interactive runs, resumes of a PR predating this invocation, and exits before Step 4; an orphan resume that opened the draft at Step 4 reports `created`.
 - `validation: contract (preflight) | contract (preflight, full) | fallback (no contract) | fallback (contract invalid — user authorized) | not run` — `not run` for an exit before Step 5's preflight. With `checks: none`, say it was the merge's only automated verification.
 - Whether the security lens ran.
 - `review profile: standard | prose (<flag or dispatch line>) | prose revoked → standard (<the entries the guard printed>) | prose not honored (gate waived) → standard`.

@@ -1,6 +1,6 @@
 ---
 name: issue-runner
-version: 0.13.0
+version: 0.14.0
 disable-model-invocation: true
 description: "Orchestrates a queue of GitHub issues: builds a dependency DAG and dispatches each issue to an autonomous worktree-isolated implementer subagent (explore → implement → PR → review → merge), running independent issues in parallel and cascade-skipping dependents on failure. Trigger: the user types /issue-runner. Do not auto-invoke."
 ---
@@ -74,15 +74,15 @@ bash "$RUN_STATE_SCRIPT" init "$PPID" <LOCK_TTL_MINUTES>   # append --merge-read
 - `session` — the orchestrator's `$CLAUDE_CODE_SESSION_ID` (empty if unset: every start rotates), written by `init`, removed only by a full release.
 - `paused` — `<reason>: <ISO-8601 UTC timestamp>`, written by Step 3a when an `Agent` dispatch fails with a credit/usage-limit error; while present, Step 3 item 2's ready set is empty for this invocation. `init` clears it right after the lock write (why: Why `paused` is cleared at every init).
 
-Per issue, `issue-N/`: `details.json`, `error`, optional `guidance.md`; `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`/`ready`, the last only under `--no-merge`); `worktree` (Step 3 items 4–5); `progress` (gh-issue "Progress marker", e.g. `step=8.1 iter=2 pr=#123`); `retries` (Step 4 re-dispatches, absent = 0); `result.json` (gh-issue "Result file"); `notification` (item 5); `branch` (Step 3a, non-contract resumes only); `agent` (the dispatch's agent id, Step 3a); `pr` (item 5, `ready` only); `outcome` and `blocker` (item 5's inputs); `merge-oid` (`<oid> <base> <P>`, recorded on merge proof). `profile` (`prose flag` or `prose escalation`) is written only by Step 1 (`--prose-gate`) or Step 4 (the user's explicit answer); it survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub. Step 3a clears the per-attempt files at every dispatch (`branch`, `worktree` and `error` only when the resume check ran; a Step 4 retry with a known worktree keeps them).
+Per issue, `issue-N/`: `details.json`, `error`, optional `guidance.md`; `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`/`ready`, the last only under `--no-merge`); `worktree` (Step 3 items 4–5); `progress` (gh-issue "Progress marker", e.g. `step=8.1 iter=2 pr=#123`); `retries` (Step 4 re-dispatches, absent = 0); `result.json` (gh-issue "Result file"); `notification` (item 5); `branch` (Step 3a, non-contract resumes only); `agent` (the dispatch's agent id, Step 3a); `pr` (item 5, `ready` only); `outcome` and `blocker` (item 5's inputs); `merge-oid` (`<oid> <base> <P>`, recorded on merge proof). `profile` (`prose flag`/`prose escalation`): rules in [state-files.md](state-files.md). Step 3a clears the per-attempt files at every dispatch (`branch`, `worktree` and `error` only when the resume check ran; a Step 4 retry with a known worktree keeps them).
 
 `session` and `agent` are the only **resume pointers**, never status inputs. `result.json` carries exactly these keys (lint-checked against gh-issue's copy):
 
 ```json
-{"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|n/a","security_lens":true,"review_profile":"standard|prose|revoked","blocker":null}
+{"outcome":"merged|blocker|failed|ready","pr":54,"branch":"feat/issue-54-slug","worktree":"/abs/path","phase1_iterations":2,"phase1_inline":false,"phase1_state":"converged|cap-stop|bouncing","gate_passes":1,"gate_state":"clean|degraded|waived|cap-stop|errored|bouncing|unavailable","checks":"pass|none|fail|none-after-ready|all-skipped|unchanged-after-ready","checkpoint":"created|refused|skipped|n/a","security_lens":true,"review_profile":"standard|prose|revoked","blocker":null}
 ```
 
-It is **advisory for status, authoritative for telemetry**, and `progress` is **informational only**: read [state-files.md](state-files.md) before reading either file anywhere (item 4's hang check, item 5, `--status`, Step 5) — it defines an unreadable `result.json` and what each of these files may decide.
+It is **advisory for status, authoritative for telemetry**, and `progress` is **informational only**. **Unreadable** (not one JSON object with a valid `outcome` and a non-empty `worktree`) counts as absent: [state-files.md](state-files.md).
 
 ## Recovery
 
@@ -175,6 +175,8 @@ RESUME_CHECK_SCRIPT="$(dirname "$SCHEDULER_SCRIPT")/resume-check.sh"   # Step 3a
 [ -f "$RESUME_CHECK_SCRIPT" ] || { echo "resume-check.sh not found" >&2; exit 1; }
 MERGE_READY_SCRIPT="$(dirname "$SCHEDULER_SCRIPT")/merge-ready.sh"     # the --merge-ready pass below
 [ -f "$MERGE_READY_SCRIPT" ] || { echo "merge-ready.sh not found" >&2; exit 1; }
+SUMMARY_SCRIPT="$(dirname "$SCHEDULER_SCRIPT")/summary.sh"
+[ -f "$SUMMARY_SCRIPT" ] || { echo "summary.sh not found" >&2; exit 1; }
 ```
 
 **`--merge-ready` pass** (only when `--merge-ready` was passed): run it once now, before the recovery reconciliation and the loop, per [merge-ready.md](merge-ready.md), "Step 3 — the `--merge-ready` pass".
@@ -301,6 +303,8 @@ Set `MAX_RETRIES` (default 2; `--max-retries`). Read the agent's error and `$STA
 
 ### Step 5 — cleanup and summary
 
+**Stop armed wakes first**, the paused path included: end every item 4 `Monitor`, `TaskStop` every `run_in_background` sleep.
+
 **Run paused on host credit/usage-limit (`$RUN_ROOT/paused` exists).** Read [pause.md](pause.md), "Step 5 — the paused closing message", first: it opens the closing message, and the run **skips the final lock/session release**.
 
 **Integration first**: the `run-complete` call ([integration.md](integration.md)); print its lines atop the summary.
@@ -337,7 +341,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, surface anything new, never auto-discard.
 
-**Summary.** Read [summary-report.md](summary-report.md) and follow it: the table and telemetry, actual vs. estimated spend, `ready` PRs, and the post to the tracking issue (every in-scope issue carrying the same `Part of #P` line).
+**Summary.** Run `bash "$SUMMARY_SCRIPT" "$STATE_DIR" <MAX_CODEX_ITERATIONS> [--gateless] "$DEFAULT_BRANCH"` from the repository root (`--gateless` if gateless; under `--merge-ready`: 3, gated) and print its output verbatim. Then [summary-report.md](summary-report.md): grouping, `ready` PRs and the tracking-issue post (every in-scope issue carrying the same `Part of #P` line).
 
 Last, unless the run stopped paused, release the lock and session pointer: `bash "<RUN_STATE_SCRIPT>" release "<RUN_ROOT>"` (why: Why resume pointers are written at dispatch, not at failure).
 

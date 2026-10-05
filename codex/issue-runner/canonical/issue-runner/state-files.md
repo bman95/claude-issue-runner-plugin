@@ -1,6 +1,6 @@
 # Reading `result.json`, `progress` and the resume pointers
 
-Read before Step 3 item 5 processes the first result, before any hang check (Step 3 item 4), and before Step 5 reads `result.json` or `progress` (SKILL.md, State). These rules say what each file may and may not decide. Rationale: [REFERENCE.md](REFERENCE.md).
+The full rules behind SKILL.md's State section (the decisive one, what makes `result.json` unreadable, is stated there and enforced by `summary.sh`). They say what each file may and may not decide. Rationale: [REFERENCE.md](REFERENCE.md).
 
 ## `result.json`
 
@@ -19,3 +19,7 @@ A completion notification is **final** when `result.json` is readable, or when i
 ## Resume pointers
 
 `session` and `agent` are the only **resume pointers**, never status inputs (why: Why resume pointers are written at dispatch, not at failure): `agent` only locates a hung implementer's worktree and tells which notifications count (compared with item 4's normalisation, `agent-…` or bare); `session` only decides the heartbeat bypass, rotation and `heartbeat` ownership.
+
+## `profile`
+
+`profile` (`prose flag` or `prose escalation`) is written only by Step 1 (`--prose-gate`) or Step 4 (the user's explicit answer); it survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub.

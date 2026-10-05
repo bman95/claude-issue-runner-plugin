@@ -117,8 +117,8 @@
 #                                                     default branch)
 #   pr #P <branch> draft (implemented, not ready)     any other draft
 #   pr #P <branch> non-draft (checkpoint)             the same two shapes on a PR that is
-#   pr #P <branch> non-draft (implemented, not ready) not a draft (checkpoint refused, a
-#                                                     failed revert, or a crash inside
+#   pr #P <branch> non-draft (implemented, not ready) not a draft (checkpoint refused or
+#                                                     skipped, a failed revert, or a crash inside
 #                                                     the ready→merge window)
 #   pr #P <branch> shape unknown (branch not on origin)
 #                                                     an open PR whose head branch origin

@@ -228,5 +228,8 @@ CKPT=$(jq -r '.checkpoint // ""' "$STATE_DIR/issue-$A/result.json" 2>/dev/null)
 [ "$CKPT" != refused ] \
   || printf 'NOTE: #%s checkpoint: refused - the draft PR or its push was refused (see the run report), so the run took the no-draft path\n' "$A"
 
+[ "$CKPT" != skipped ] \
+  || printf 'NOTE: #%s checkpoint: skipped - the implementer did not run the Step 4 checkpoint (not a refused push)\n' "$A"
+
 printf '\n%d passed, %d failed\n' "$npass" "$nfail"
 [ "$nfail" -eq 0 ]
