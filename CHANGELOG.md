@@ -4,6 +4,18 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+Cross-repository dependencies (#85). A run serves one repository, and the DAG only knew `#N` edges inside it, so work that needed an endpoint in another repository merged and deployed in a degraded mode before any backend issue existed.
+
+**issue-runner:**
+- **External edges** (dag.md). Step 2 recognizes `owner/repo#N` references and stated missing capabilities in other repositories, prints an `External:` line, and asks: run-elsewhere (a run in that repository), override, drop-issue, or contract-first. They never enter `dag.json`, `dag.txt` or `scope.txt`.
+- **One run serves one repository** is now a hard rule: no cross-repository worktree, branch or dispatch; the answer is a command for the user to run in the other repository.
+- Step 4 asks once per issue about a `contract-first:` blocker (wait, override, drop); the new `external` state file turns the user's answers into dispatch lines (`override`, `contract-first`, filing authorization).
+
+**gh-issue:**
+- **Contract-first outcome** (`contract-first.md`). An issue whose dependency is absent in another repository ends before any code: the implementer documents the proposed contract, files the dependency issue only where the dispatch authorized it, and returns an ordinary `blocker`.
+
+Expected behavior: rows 76 and 77 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
+
 ## [0.15.0] - 2026-10-04
 
 Fixes #83 and #84. #83: in a production run the orchestrator skipped a required read, paraphrased the Step 5 summary instead of building it, misreported a deliberately skipped checkpoint as refused, and left a wake timer armed past the lock release. The summary becomes a script, the skip gets its own value, and Step 5 ends its wakes. This is a minor bump because the `result.json` `checkpoint` enum gained a value.
@@ -19,18 +31,6 @@ Versions: issue-runner 0.13.0 → 0.14.0, gh-issue 0.11.0 → 0.12.0, Claude plu
 **gh-issue:**
 - **`checkpoint: skipped`.** A Step 4 checkpoint the implementer deliberately did not run is reported as `skipped`, no longer as `refused` (which means a push or draft was actually refused). The Step 5 summary flags both.
 - New `orchestrator-guidance.md` (linked from Step 1) says how implementers read `guidance.md`: quoted user decisions are spec input, suggestions are hints, machine-recorded blockers and traces are facts, and none of it authorizes anything. Lint check 29 pins the contract in both editions.
-
-Cross-repository dependencies (#85). A run serves one repository, and the DAG only knew `#N` edges inside it, so work that needed an endpoint in another repository merged and deployed in a degraded mode before any backend issue existed.
-
-**issue-runner:**
-- **External edges** (dag.md). Step 2 recognizes `owner/repo#N` references and stated missing capabilities in other repositories, prints an `External:` line, and asks: run-elsewhere (a run in that repository), override, drop-issue, or contract-first. They never enter `dag.json`, `dag.txt` or `scope.txt`.
-- **One run serves one repository** is now a hard rule: no cross-repository worktree, branch or dispatch; the answer is a command for the user to run in the other repository.
-- Step 4 asks once per issue about a `contract-first:` blocker (wait, override, drop); the new `external` state file turns the user's answers into dispatch lines (`override`, `contract-first`, filing authorization).
-
-**gh-issue:**
-- **Contract-first outcome** (`contract-first.md`). An issue whose dependency is absent in another repository ends before any code: the implementer documents the proposed contract, files the dependency issue only where the dispatch authorized it, and returns an ordinary `blocker`.
-
-Expected behavior: rows 76 and 77 of `docs/scenarios.md`. Like the other prompt-level rules these are prose scenarios; nothing executable covers reference parsing or the `external` file.
 
 ## [0.14.0] - 2026-09-28
 
