@@ -239,11 +239,23 @@ reorder() {  # reorder LABEL JSON
 }
 reorder "blocker first" "{\"blocker\":\"x, \\\"checkpoint\\\": \\\"refused\\\"\",\"outcome\":\"blocker\",\"pr\":5,\"branch\":\"b\",\"worktree\":\"/w\",$T}"
 reorder "blocker first, whitespace before the comma" "{\"blocker\":\"r\" , \"outcome\":\"blocker\",\"pr\":5,\"branch\":\"b\",\"worktree\":\"/w\",$T}"
-reorder "blocker first as an object, whitespace before the comma" "{\"blocker\":{\"a\":1}  , \"outcome\":\"blocker\",\"pr\":5,\"branch\":\"b\",\"worktree\":\"/w\",$T}"
 reorder "blocker in the middle" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",\"blocker\":\"a, b\",$T,\"pr\":5}"
 reorder "blocker null before the telemetry" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",\"blocker\":null,$T}"
-reorder "blocker as an object" "{\"outcome\":\"blocker\",\"blocker\":{\"checkpoint\":\"refused\",\"a\":[1,{\"b\":\"}\"}]},\"worktree\":\"/w\",$T}"
 reorder "blocker last" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",$T,\"blocker\":\"z\"}"
+
+# A malformed object around the blocker must not become valid once the blocker is dropped.
+unreadable() {  # unreadable LABEL JSON
+  reset; scope 1; issue 1 blocked
+  printf '%s\n' "$2" > "$S/issue-1/result.json"
+  run "$S" 3
+  has "$1" '- #1: no result recorded (retries=0)'
+}
+unreadable "blocker string without a comma before the next member" "{\"blocker\":\"x\" \"outcome\":\"blocker\",\"worktree\":\"/w\",$T}"
+unreadable "blocker last without a comma before it" "{\"outcome\":\"blocker\",\"worktree\":\"/w\",$T \"blocker\":\"z\"}"
+unreadable "blocker in the middle without a comma before it" "{\"outcome\":\"blocker\" \"blocker\":\"z\",\"worktree\":\"/w\",$T}"
+unreadable "blocker followed by a stray token" "{\"outcome\":\"blocker\",\"blocker\":\"z\" x,\"worktree\":\"/w\",$T}"
+unreadable "blocker as an object" "{\"outcome\":\"blocker\",\"blocker\":{\"a\":1},\"worktree\":\"/w\",$T}"
+unreadable "blocker as an array" "{\"outcome\":\"blocker\",\"blocker\":[1],\"worktree\":\"/w\",$T}"
 
 # --- Missing per-issue pieces never fail --------------------------------------------------
 reset; scope 7

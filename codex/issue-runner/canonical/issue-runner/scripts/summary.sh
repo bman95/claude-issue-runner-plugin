@@ -27,7 +27,8 @@
 # failed issues), `outcome` (a hung implementer is `hung`), `retries` (absent or
 # not a number = 0), `profile` and `result.json`. A result.json is readable only
 # when it is one JSON object on one line with an `outcome` of merged, blocker,
-# failed or ready and a non-empty `worktree`; anything else is `no result
+# failed or ready and a non-empty `worktree`, whose blocker (if any) is a string
+# or null and whose syntax around it is intact; anything else is `no result
 # recorded`, never zeros. Telemetry comes only from that file. Every free-text
 # cell (title, error, progress) is sanitized for Markdown: newlines and tabs
 # collapse to spaces, backticks become ', backslashes become /, `|` becomes
@@ -174,25 +175,23 @@ load_result() {
         if (c == "\"") {
           j = strend($0, i); key = substr($0, i, j - i + 1); k = skipws($0, j + 1)
           if (key == "\"blocker\"" && substr($0, k, 1) == ":") {
-            # drop the blocker member (key, value, one adjoining comma)
+            # drop the blocker member (key, value, one adjoining comma); the object
+            # around it must still be well-formed: the member follows `{` or a
+            # comma and is followed by a comma or `}`, and a blocker is a string
+            # or a bare token (string or null per the result-file contract), never an object
+            d = substr(o, length(o), 1)
+            if (d != "{" && d != ",") bad = 1
             k = skipws($0, k + 1); d = substr($0, k, 1)
             if (d == "\"") { e = strend($0, k); if (!goodstr($0, k, e)) bad = 1; k = e + 1 }
-            else if (d == "{" || d == "[") {
-              depth = 0
-              while (k <= n) {
-                d = substr($0, k, 1)
-                if (d == "\"") k = strend($0, k)
-                else if (d == "{" || d == "[") depth++
-                else if (d == "}" || d == "]") { depth--; if (depth == 0) { k++; break } }
-                k++
-              }
-            } else {
+            else if (d == "{" || d == "[") { bad = 1; k = n + 1 }
+            else {
               t = ""
               while (k <= n && substr($0, k, 1) != "," && substr($0, k, 1) != "}") { t = t substr($0, k, 1); k++ }
               sub(/[ \t]+$/, "", t)
               if (t !~ /^(null|true|false|-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?)$/) bad = 1
             }
             k = skipws($0, k)
+            if (substr($0, k, 1) != "," && substr($0, k, 1) != "}") bad = 1
             if (substr(o, length(o), 1) == ",") o = substr(o, 1, length(o) - 1)
             else if (substr($0, k, 1) == ",") k++
             i = k; continue
