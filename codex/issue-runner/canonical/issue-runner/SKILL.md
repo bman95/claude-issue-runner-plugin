@@ -140,7 +140,7 @@ Then, with `--prose-gate` and unless `--plan`, write the `profile` files per [pr
 
 **Primary source — the `## Blocked by` section** emitted by `/issue-plan`: every bullet referencing a bare `#X` is an edge N→X; a literal "None - can start immediately" means no deps. **Fallback heuristic** for issues without that section — scan body + comments: `depends on #X` / `blocked by #X` → edge N→X; `blocks #X` → edge X→N.
 
-Read [dag.md](dag.md) and follow it: **out-of-scope edges are never dropped silently**, **external edges** (outside the DAG) and **conflict edges** (two in-scope issues that touch the same files must not run in parallel) become `depends` edges.
+Read [dag.md](dag.md) and follow it: **out-of-scope edges are never dropped silently**, **external edges** (asked, never DAG edges) and **conflict edges** (two in-scope issues that touch the same files must not run in parallel) become `depends` edges.
 
 Persist `dag.json` and beside it `dag.txt` (the scheduler's input, Step 3): one `N: dep dep …` line per in-scope issue, the same edges as `dag.json`, empty after the colon when N has none. **Print the plan** per [dag.md](dag.md), then the estimate below.
 
