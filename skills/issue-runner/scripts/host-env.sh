@@ -60,11 +60,14 @@ has Makefile && TOOLS="$TOOLS make"
 has .husky && TOOLS="$TOOLS sh"
 if [ -r "$REPO/.issue-runner/validation" ]; then
   # every command word of every line: split on && || ; |, skip env/VAR= prefixes and `cd` segments
-  for w in $(sed -e 's/#.*$//' -e 's/^[^:]*://' -e 's/&&/\n/g' -e 's/||/\n/g' -e 's/;/\n/g' -e 's/|/\n/g' "$REPO/.issue-runner/validation" | tr -d '\r' | awk '
-      { for (i = 1; i <= NF; i++) {
-          if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || $i == "env" || $i == "exec" || $i == "time") continue
-          if ($i != "cd") print $i
-          break } }'); do
+  for w in $(sed -e 's/#.*$//' -e 's/^[^:]*://' "$REPO/.issue-runner/validation" | tr -d '\r' | awk '
+      { gsub(/&&|\|\||;|\|/, "\n"); nseg = split($0, seg, "\n")   # awk splits the segments: BSD sed has no \n in a replacement
+        for (k = 1; k <= nseg; k++) {
+          nw = split(seg[k], f)
+          for (i = 1; i <= nw; i++) {
+            if (f[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || f[i] == "env" || f[i] == "exec" || f[i] == "time") continue
+            if (f[i] != "cd") print f[i]
+            break } } }'); do
     case $w in ''|-*|.*|*[!A-Za-z0-9._+-]*) ;; *) TOOLS="$TOOLS $w" ;; esac
   done
 fi
