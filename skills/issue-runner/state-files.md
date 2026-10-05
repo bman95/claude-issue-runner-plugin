@@ -18,4 +18,4 @@ A completion notification is **final** when `result.json` is readable, or when i
 
 ## Resume pointers
 
-`session` and `agent` are the only **resume pointers**, never status inputs (why: Why resume pointers are written at dispatch, not at failure): `agent` only locates a hung implementer's worktree; `session` only decides the heartbeat bypass, rotation and `heartbeat` ownership.
+`session` and `agent` are the only **resume pointers**, never status inputs (why: Why resume pointers are written at dispatch, not at failure): `agent` only locates a hung implementer's worktree and tells which notifications count (compared with item 4's normalisation, `agent-…` or bare); `session` only decides the heartbeat bypass, rotation and `heartbeat` ownership.
