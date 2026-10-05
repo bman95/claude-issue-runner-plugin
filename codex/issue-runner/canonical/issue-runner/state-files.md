@@ -18,4 +18,4 @@ It is **advisory for status, authoritative for telemetry** (why: Why `result.jso
 
 ## `profile` and `external`
 
-`profile` (`prose flag` or `prose escalation`) is written only by Step 1 (`--prose-gate`) or Step 4 (the user's explicit answer); it survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub. `external` (dag.md, "External edges") is rewritten by Step 2 and by Step 4's `contract-first:` answer; only its `override` line survives a same-session re-entry.
+`profile` (`prose flag` or `prose escalation`) is written only by Step 1 (`--prose-gate`) or Step 4 (the user's explicit answer); it survives retries and a same-session re-entry, never a new run, and is never recovered from GitHub. `external` (dag.md, "External edges") is rewritten by Step 2 and by Step 4's `contract-first:` answer; only its `override` line and that line's `covers` text survive a same-session re-entry (a `file` authorization does not).
