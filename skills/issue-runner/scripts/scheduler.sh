@@ -14,7 +14,8 @@
 #   this script reads:
 #     STATE_DIR/issue-N/status   pending|implementing|blocked|done|failed|
 #                                 skipped|closed-externally|ready (absent/empty
-#                                 = pending; `ready` only under --no-merge)
+#                                 = pending; `ready` only under --no-merge
+#                                 or a gh-issue risk stop)
 #   and one run-level file:
 #     STATE_DIR/dag.txt          "N: dep dep …" one line per in-scope issue,
 #                                 written alongside dag.json in Step 2. Empty

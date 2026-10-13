@@ -246,7 +246,7 @@ Under the prose profile, both rules read the profile's Apply class (review-profi
 
 #### PR-body discipline
 
-Refresh Summary / Changes / Test plan on **every** push. Put iteration history only under a heading **exactly** `## Review notes`; Step 9 strips it and everything below from the squash commit (why: Why iteration history goes only under Review notes).
+Refresh Summary / Changes / Test plan on **every** push. A body passed as a file goes through a path only this issue uses (orchestrated: `<STATE_DIR>/issue-<N>/pr-body.md`; interactive: `mktemp`), never a fixed name like `/tmp/body.md`: parallel implementers share `/tmp`. Put iteration history only under a heading **exactly** `## Review notes`; Step 9 strips it and everything below from the squash commit (why: Why iteration history goes only under Review notes).
 
 ### 9. Merge
 
@@ -260,8 +260,9 @@ Refresh Summary / Changes / Test plan on **every** push. Put iteration history o
 2. **Mark the PR ready first** — the only place the draft flag comes off; a failed `gh pr ready` is a blocker (interactive: report it); then the bounded CI-registration poll.
 3. **Base freshness next** — merge the base in whenever it moved, then re-validate. A failed merge is never resolved by you: Block naming it (interactive: ask how to proceed). A failing re-validation → interactive: ask; orchestrated: push the merge commit, then blocker citing the failing validation. Never push after the checks gate passes.
 4. **Checks gate** — orchestrated: write `step=9.2 pr=#P` first. `fail` → interactive: report the failing checks and ask; orchestrated, any merge mode: push, refresh the PR body, then blocker citing the failing checks. Never merge over a failing check without explicit user authorization.
-5. **No-merge stop** (`Merge mode: no-merge`: `"outcome":"ready"`, `ready: PR #<PR_NUM>`, never `gh pr merge`) **or merge**, pinned to the validated head: a refusal because the head moved is never retried — interactive: report it; orchestrated: Block `PR head moved after the checks gate — a human must review and merge`.
-6. **Verify** — the PR `MERGED` and the issue `CLOSED`.
+5. **Risk gate** — `scripts/risk-gate.sh`; a risky or unreadable diff → interactive: name the paths in the confirmation; orchestrated: the no-merge stop plus the `awaiting-approval` label.
+6. **No-merge stop** (`Merge mode: no-merge` or a risk stop: `"outcome":"ready"`, `ready: PR #<PR_NUM>`, never `gh pr merge`) **or merge**, pinned to the validated head: a refusal because the head moved is never retried — interactive: report it; orchestrated: Block `PR head moved after the checks gate — a human must review and merge`.
+7. **Verify** — the PR `MERGED` and the issue `CLOSED`.
 
 **Teardown.** Interactive: the teardown in [interactive.md](interactive.md). **Orchestrated:** no teardown; the parent's Step 5 does it. A post-merge `fatal: '<branch>' is already used by worktree at ...` is cosmetic.
 
@@ -273,7 +274,7 @@ Report the PR URL plus:
 
 - Phase 1 iterations (a verification iteration included, and whether it converged or cap-stopped) and findings applied; fresh-eyes subagents or inline (Agent tool unavailable, or a silent reviewer's pass — "Liveness").
 - Gate passes spent (0–`MAX_CODEX_ITERATIONS`), the gate model, and the reviewers per iteration.
-- Final state: clean / degraded on credit-quota / gate-waived / cap-stop / errored / **ready — no-merge mode, Step 9's no-merge stop**.
+- Final state: clean / degraded on credit-quota / gate-waived / cap-stop / errored / **ready — no-merge mode or risk gate, Step 9's no-merge stop**.
 - Checks gate: pass / no CI configured / a Step 9 draft-filtered wording.
 - `checkpoint: created | refused (<reason>) | skipped (<reason>) | n/a` — `n/a` for interactive runs, resumes of a PR predating this invocation, and exits before Step 4; an orphan resume that opened the draft at Step 4 reports `created`.
 - `validation: contract (preflight) | contract (preflight, full) | fallback (no contract) | fallback (contract invalid — user authorized) | not run` — `not run` for an exit before Step 5's preflight. With `checks: none`, say it was the merge's only automated verification.
@@ -288,3 +289,4 @@ State **prominently** (orchestrated: also to the parent) a Codex gate skipped on
 - **Large issue** — discuss splitting into smaller PRs before starting.
 - **Issue blocked on unmerged work** — flag it.
 - **Spec-only repos** — "implement" means editing the spec files.
+- **Human-only step** — a step no agent can or may do (host access, root, a guard, credentials, another repository, a decision, a production-only check): read [human-only.md](human-only.md); record it, never work around it.

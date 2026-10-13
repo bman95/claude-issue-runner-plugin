@@ -4,6 +4,16 @@ All notable changes to this plugin will be documented here. Versions follow semv
 
 ## [Unreleased]
 
+Daily-autonomy work (local branch `feat/daily-autonomy`). An orchestrated run merged every converged PR on its own authority, including a change to authentication, a migration or the CI workflow, with no pause for a human. This adds a risk gate that parks those PRs, already green, for approval while the rest of the run continues.
+
+**gh-issue:**
+- **Risk gate before the merge** (merge.md, "Risk gate"; new bundled `scripts/risk-gate.sh`). After the checks gate, a diff that touches a risky path takes the no-merge stop: `"outcome":"ready"`, the PR labeled `awaiting-approval`, a `Risk gate: awaiting approval — <paths>` line under `## Review notes`, and `ready: PR #<P> (risk gate: <paths>)`. The policy is `.issue-runner/risk` on the base tip (never the PR's copy), else built-in defaults: auth, secrets and `.env*`, migrations, `.github/workflows/`, infra, dependency manifests. `.issue-runner/` is always risky. An unreadable policy or a git failure fails closed. Interactive runs name the paths in the merge confirmation.
+
+**issue-runner:**
+- `ready` is no longer `--no-merge`-only: a risk stop lands the issue `ready`, dependents wait, and independent work continues. `--merge-ready` merges it as the human's approval. The Step 5 summary marks `awaiting approval (risk gate)` PRs.
+
+**Lint:** check 32 runs the new `scripts/test-risk-gate.sh` and keeps both editions' script and merge.md in step.
+
 Fixes #81: model and reviewer choices had no supported channel, so an orchestrator improvised them through dispatch-prompt text, and its Codex preflight checked the pinned model rather than the one the gate used.
 
 **issue-runner:**

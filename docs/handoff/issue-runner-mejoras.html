@@ -1,0 +1,365 @@
+<title>Issue Runner, antes y después</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: columna de lectura de 1120px; diagramas de pipeline en carriles horizontales que hacen scroll propio en móvil */
+:root{
+  --bg:#f6f7f9; --surface:#ffffff; --sunk:#eceef2; --line:#d5d9e1;
+  --fg:#17202e; --muted:#5a6475;
+  --accent:#2f4fd6;            /* azul de PR / rama */
+  --pain:#c43c2f; --pain-bg:#fbe9e6;
+  --human:#a86300; --human-bg:#fdf0da;
+  --new:#1d7a4f; --new-bg:#e2f4ea;
+  --async:#6a46c2; --async-bg:#eee8fb;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11151c; --surface:#181e28; --sunk:#0d1117; --line:#2c3443;
+  --fg:#e6e9ef; --muted:#9aa4b5; --accent:#8aa2ff;
+  --pain:#ff8a7a; --pain-bg:#3a1d1a; --human:#f2b14d; --human-bg:#372a12;
+  --new:#5fd39a; --new-bg:#15301f; --async:#b79bff; --async-bg:#251d3c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151c; --surface:#181e28; --sunk:#0d1117; --line:#2c3443;
+  --fg:#e6e9ef; --muted:#9aa4b5; --accent:#8aa2ff;
+  --pain:#ff8a7a; --pain-bg:#3a1d1a; --human:#f2b14d; --human-bg:#372a12;
+  --new:#5fd39a; --new-bg:#15301f; --async:#b79bff; --async-bg:#251d3c; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.55 var(--f-body)}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:20px;padding-block:28px 64px;display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(30px,5vw,44px);font-weight:700;letter-spacing:-.01em}
+h2{font-size:26px;font-weight:600}
+h3{font-size:17px;font-weight:600}
+p{margin:0;max-width:68ch}
+code{font-family:var(--f-mono);font-size:.88em;background:var(--sunk);padding:1px 5px;border-radius:4px}
+.eyebrow{font:500 12px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lead{font-size:17px;color:var(--muted)}
+section{display:flex;flex-direction:column;gap:18px}
+.head{display:flex;flex-direction:column;gap:8px}
+
+/* cabecera */
+header{display:flex;flex-direction:column;gap:14px}
+.draft{align-self:flex-start;font:500 12px var(--f-mono);color:var(--human);background:var(--human-bg);padding:5px 10px;border-radius:999px}
+
+/* leyenda */
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex:none}
+.dot.pain{background:var(--pain)} .dot.human{background:var(--human)} .dot.new{background:var(--new)} .dot.async{background:var(--async)}
+
+/* pipelines */
+.lane{display:flex;flex-direction:column;gap:10px}
+.lane-title{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.lane-title b{font:600 15px var(--f-display);text-transform:uppercase;letter-spacing:.06em}
+.lane-title small{color:var(--muted);font-size:13px}
+.scroller{overflow-x:auto;padding-bottom:6px}
+.pipe{display:grid;grid-template-columns:repeat(6,minmax(170px,1fr));gap:10px;min-width:1040px;position:relative}
+.stage{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px;min-width:0;position:relative}
+.stage:not(:last-child)::after{content:"";position:absolute;right:-9px;top:22px;width:8px;height:2px;background:var(--line)}
+.stage h4{margin:0;font:600 13px var(--f-display);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.stage ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.stage li{font-size:13px;line-height:1.35;padding:6px 8px;border-radius:5px;background:var(--sunk)}
+.stage li.pain{background:var(--pain-bg);box-shadow:inset 3px 0 0 var(--pain)}
+.stage li.human{background:var(--human-bg);box-shadow:inset 3px 0 0 var(--human)}
+.stage li.new{background:var(--new-bg);box-shadow:inset 3px 0 0 var(--new)}
+.stage li.async{background:var(--async-bg);box-shadow:inset 3px 0 0 var(--async)}
+.stage li em{font-style:normal;font-family:var(--f-mono);font-size:11px;color:var(--muted);display:block;margin-top:2px}
+
+/* línea de tiempo de interrupciones */
+.tl{overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px 18px 14px;display:flex;flex-direction:column;gap:26px}
+.tl-row{display:grid;grid-template-columns:110px 1fr;gap:14px;align-items:center}
+.tl-row > b{font:600 14px var(--f-display);text-transform:uppercase;letter-spacing:.05em}
+.track{position:relative;height:46px;min-width:0}
+.track .bar{position:absolute;left:0;right:0;top:21px;height:4px;border-radius:2px;background:var(--line)}
+.track .idle{position:absolute;top:17px;height:12px;border-radius:3px;background:repeating-linear-gradient(45deg,var(--pain-bg) 0 5px,transparent 5px 10px);border:1px dashed var(--pain)}
+.mk{position:absolute;top:13px;width:20px;height:20px;margin-left:-10px;border-radius:50%;display:grid;place-items:center;font:600 11px var(--f-mono);color:var(--surface)}
+.mk.human{background:var(--human)} .mk.async{background:var(--async);border-radius:5px} .mk.new{background:var(--new)}
+.mk span{position:absolute;top:24px;white-space:nowrap;font:400 11px var(--f-body);color:var(--muted);transform:translateX(-50%);left:50%}
+.mk.up span{top:auto;bottom:24px}
+.mk.end span{left:auto;right:0;transform:none}
+.mk.start span{left:0;transform:none}
+.tl-axis{display:grid;grid-template-columns:110px 1fr;gap:14px;font:400 11px var(--f-mono);color:var(--muted)}
+.tl-axis div{display:flex;justify-content:space-between}
+.note{font-size:13px;color:var(--muted)}
+
+/* tabla comparativa */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:10px 14px;border-bottom:1px solid var(--line)}
+thead th{font:600 13px var(--f-display);text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--sunk)}
+tbody th{font-weight:600;width:18%}
+tbody tr:last-child th,tbody tr:last-child td{border-bottom:0}
+td.win{background:var(--new-bg)}
+.tag{display:inline-block;font:500 11px var(--f-mono);padding:1px 6px;border-radius:4px;margin-left:4px;vertical-align:1px}
+.tag.from{background:var(--human-bg);color:var(--human)}
+.tag.newt{background:var(--new-bg);color:var(--new)}
+
+/* nuevo estado del issue */
+.states{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.st{font:500 13px var(--f-mono);padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--surface)}
+.st.add{border-color:var(--new);color:var(--new);background:var(--new-bg)}
+.arrow{color:var(--muted);font-family:var(--f-mono)}
+.branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.branch{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.branch .path{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+
+/* hoja de ruta */
+.phases{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.phase{display:flex;flex-direction:column;gap:10px;min-width:0}
+.phase > header{gap:4px}
+.items{display:flex;flex-direction:column;gap:8px}
+.item{display:grid;grid-template-columns:30px 1fr;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.item .n{font:600 14px var(--f-mono);color:var(--accent);font-variant-numeric:tabular-nums}
+.item p{font-size:14px}
+.item small{display:block;color:var(--muted);font-size:12px;margin-top:3px;font-family:var(--f-mono)}
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px;display:flex;flex-direction:column;gap:6px}
+
+@media (max-width:640px){
+  .tl-row,.tl-axis{grid-template-columns:1fr}
+  .tl-axis > span{display:none}
+  .wrap{gap:44px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .stage li.new,.stage li.async{animation:pop .5s ease-out both}
+  @keyframes pop{from{transform:translateY(3px)}to{transform:none}}
+}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">claude-issue-runner-plugin · propuesta de mejoras</span>
+  <h1>Issue Runner, antes y después</h1>
+  <p class="lead">Hoy el run es fiable pero hay que vigilarlo: pregunta a mitad, a veces se queda parado y no avisa. La propuesta junta las decisiones al principio y aparca lo que necesita a una persona sin parar el resto. También avisa al móvil y trae del harness local la QA por criterio y la cautela con los cambios de riesgo.</p>
+  <span class="draft">Borrador para discutir · no hay nada publicado en GitHub</span>
+  <div class="legend" aria-label="Leyenda">
+    <span><i class="dot pain"></i>Punto de dolor actual</span>
+    <span><i class="dot human"></i>Para y pregunta a una persona</span>
+    <span><i class="dot new"></i>Nuevo o cambiado</span>
+    <span><i class="dot async"></i>Aviso sin bloquear el run</span>
+  </div>
+</header>
+
+<!-- ============ FLUJO ============ -->
+<section id="flujo">
+  <div class="head">
+    <span class="eyebrow">1 · El flujo de punta a punta</span>
+    <h2>Del issue al merge, etapa por etapa</h2>
+    <p class="note">Las mismas seis etapas en los dos carriles. En móvil, desliza cada carril en horizontal.</p>
+  </div>
+
+  <div class="lane">
+    <div class="lane-title"><b>Hoy</b><small>issue-runner 0.15 · gh-issue · Codex gate</small></div>
+    <div class="scroller"><div class="pipe">
+      <div class="stage"><h4>Planificar</h4><ul>
+        <li><code>/issue-plan</code>: explora, reconcilia, entrevista y crea slices</li>
+        <li class="human">Aprobar el desglose</li>
+        <li class="pain">No hay alta rápida de un solo issue<em>el día a día usa /new-task</em></li>
+        <li class="pain">Continuar un plan con <code>--limit 200</code> puede duplicar slices<em>bug confirmado</em></li>
+      </ul></div>
+      <div class="stage"><h4>Arrancar el run</h4><ul>
+        <li>Preflights: Codex, Agent, contrato de validación</li>
+        <li class="human">¿Incluir issues parked?</li>
+        <li class="human">¿Árbol sucio? stash / commit / descartar</li>
+        <li class="human">¿Lista truncada a 50?</li>
+        <li class="pain">Las preguntas salen una a una y en distintos pasos</li>
+      </ul></div>
+      <div class="stage"><h4>DAG y despacho</h4><ul>
+        <li>Aristas por <code>## Blocked by</code> y conflictos de archivos</li>
+        <li class="human">Aristas fuera de scope: extend / drop / override</li>
+        <li class="human">Aristas externas y contract-first</li>
+        <li>Un implementador por issue en su worktree</li>
+      </ul></div>
+      <div class="stage"><h4>Implementar</h4><ul>
+        <li>Plan, PR draft de checkpoint, código, <code>preflight</code></li>
+        <li class="pain">Dos implementadores comparten el mismo <code>/tmp/…/body.md</code><em>#96</em></li>
+        <li class="pain">Una tarea solo humana se pierde en prosa<em>#86</em></li>
+      </ul></div>
+      <div class="stage"><h4>Revisar</h4><ul>
+        <li>Revisores en paralelo (2–4) y Codex gate</li>
+        <li class="pain">Se queda ocioso tras el gate: no le llega el aviso del Monitor<em>#95 · 4–6 min hasta el empujón</em></li>
+        <li class="pain">Sin QA funcional por criterio de aceptación</li>
+        <li class="human">Al llegar al tope de reintentos, y en bloqueos de riesgo</li>
+      </ul></div>
+      <div class="stage"><h4>Mergear y cerrar</h4><ul>
+        <li>Base fresca, CI verde, squash merge y verificación</li>
+        <li class="pain">Mergea igual un PR que toca auth o migraciones</li>
+        <li class="pain">Nada distingue «listo» de «falta verlo en producción»</li>
+        <li class="human">Hallazgos diferidos: crear issue / PR / descartar</li>
+        <li class="pain">Sin aviso al terminar: hay que mirar la terminal</li>
+      </ul></div>
+    </div></div>
+  </div>
+
+  <div class="lane">
+    <div class="lane-title"><b>Propuesto</b><small>los números remiten a la hoja de ruta (sección 4)</small></div>
+    <div class="scroller"><div class="pipe">
+      <div class="stage"><h4>Planificar</h4><ul>
+        <li><code>/issue-plan</code> sin cambios para features grandes</li>
+        <li class="new"><code>/issue-plan --quick "título"</code>: un issue con contexto y criterios verificables<em>10 · sustituye a /new-task</em></li>
+        <li class="new">La continuación pregunta si la lista viene truncada<em>11</em></li>
+      </ul></div>
+      <div class="stage"><h4>Arrancar el run</h4><ul>
+        <li class="new">Una sola tanda de preguntas con todo lo de los Steps 0–2<em>3</em></li>
+        <li class="new"><code>--unattended</code>: aplica las respuestas recomendadas y no vuelve a preguntar<em>3</em></li>
+        <li class="new">Los issues <code>human-only</code> no se despachan nunca<em>2</em></li>
+      </ul></div>
+      <div class="stage"><h4>DAG y despacho</h4><ul>
+        <li>Igual que hoy: DAG determinista y worktrees</li>
+        <li class="new"><code>--plan</code> muestra también el peor caso en tiempo<em>14</em></li>
+        <li class="new">Lo que necesita humano aparca ese issue, no el run<em>3</em></li>
+      </ul></div>
+      <div class="stage"><h4>Implementar</h4><ul>
+        <li class="new"><code>--body-file</code> en ruta privada, releído antes del merge<em>6</em></li>
+        <li class="new">Bloqueo humano → issue <code>human-only</code> con comando y verificación<em>2</em></li>
+        <li class="new">Al fallar, comenta en el issue: qué intenté, dónde quedé, qué falta<em>5</em></li>
+      </ul></div>
+      <div class="stage"><h4>Revisar</h4><ul>
+        <li class="new">Espera del gate con despertador que no se pierde<em>#95</em></li>
+        <li class="new">Tabla ✅ ❌ ⚠️ por criterio en el PR; un ❌ bloquea<em>7</em></li>
+        <li class="new">Paso <code>e2e:</code> en el contrato (Playwright…)<em>8</em></li>
+      </ul></div>
+      <div class="stage"><h4>Mergear y cerrar</h4><ul>
+        <li class="new">Gate de riesgo: si toca auth, migraciones, infra, CI o dependencias → <code>awaiting-approval</code><em>1</em></li>
+        <li class="new">«Falta en producción» → checklist como issue <code>human-only</code><em>9</em></li>
+        <li class="async">Aviso al móvil: aprobación pendiente, pausa por créditos, fin del run<em>4</em></li>
+      </ul></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ INTERRUPCIONES ============ -->
+<section id="interrupciones">
+  <div class="head">
+    <span class="eyebrow">2 · Cuándo te necesita el run</span>
+    <h2>De interrupciones repartidas a una tanda al principio</h2>
+    <p>Cada marca es un momento en que el run espera a una persona. Hoy aparecen a lo largo de todo el run, y si no estás delante el run se queda esperando. Con la propuesta, las decisiones se toman al principio y lo que surge después llega como aviso, sin bloquear el trabajo independiente.</p>
+  </div>
+  <div class="tl" role="img" aria-label="Línea de tiempo: hoy hay interrupciones a lo largo del run; con la propuesta hay una tanda al inicio y avisos no bloqueantes después">
+    <div class="tl-row"><b>Hoy</b>
+      <div class="track"><div class="bar"></div>
+        <div class="idle" style="left:47%;width:9%" title="Implementador ocioso tras el gate (#95)"></div>
+        <i class="mk human" style="left:2%">?</i>
+        <i class="mk human up start" style="left:7%">?<span>parked · árbol sucio</span></i>
+        <i class="mk human" style="left:12%">?<span>aristas</span></i>
+        <i class="mk human up" style="left:17%">?<span>externas</span></i>
+        <i class="mk human" style="left:30%">?<span>resume check</span></i>
+        <i class="mk human up" style="left:51%">!<span>ocioso #95</span></i>
+        <i class="mk human" style="left:66%">?<span>tope de reintentos</span></i>
+        <i class="mk human up" style="left:78%">?<span>bloqueo de riesgo</span></i>
+        <i class="mk human end" style="left:97%">?<span>diferidos</span></i>
+      </div>
+    </div>
+    <div class="tl-row"><b>Propuesto</b>
+      <div class="track"><div class="bar"></div>
+        <i class="mk new start" style="left:4%">✓<span>una tanda</span></i>
+        <i class="mk async up" style="left:42%">↗<span>human-only creado</span></i>
+        <i class="mk async" style="left:70%">↗<span>awaiting-approval</span></i>
+        <i class="mk async up end" style="left:97%">↗<span>fin del run</span></i>
+      </div>
+    </div>
+    <div class="tl-axis"><span></span><div><span>inicio del run</span><span>implementación y revisión</span><span>cierre</span></div></div>
+  </div>
+  <p class="note">Posiciones ilustrativas. Las preguntas de hoy salen de <code>preflights.md</code>, <code>open-issues.md</code>, <code>dag.md</code>, <code>escalations.md</code> y <code>user-decisions.md</code>. La franja rayada es el tiempo ocioso de #95.</p>
+</section>
+
+<!-- ============ MERGE ============ -->
+<section id="merge">
+  <div class="head">
+    <span class="eyebrow">3 · Qué pasa con un PR terminado</span>
+    <h2>Tres salidas en vez de una</h2>
+    <p>Hoy todo PR que pasa los gates se mergea. Tu harness local nunca mergea y deja la tarea en <code>qa</code>. La propuesta mergea sola lo normal y aparca lo arriesgado, que mergeas tú con <code>--merge-ready</code>.</p>
+  </div>
+  <div class="branches">
+    <div class="branch">
+      <h3>Cambio normal</h3>
+      <div class="path"><span class="st">PR verde</span><span class="arrow">→</span><span class="st">merge</span><span class="arrow">→</span><span class="st">done</span></div>
+      <p class="note">Lógica, UI, refactors y tests. Igual que hoy, pero con la tabla de criterios en el PR.</p>
+    </div>
+    <div class="branch">
+      <h3>Toca zonas de riesgo</h3>
+      <div class="path"><span class="st">PR verde</span><span class="arrow">→</span><span class="st add">awaiting-approval</span><span class="arrow">→</span><span class="st">tú apruebas</span></div>
+      <p class="note">auth, <code>.env*</code>, secrets, migraciones, <code>.github/workflows/</code>, infra y manifests de dependencias. Configurable en <code>.issue-runner/risk</code>. Los dependientes esperan y lo independiente sigue.</p>
+    </div>
+    <div class="branch">
+      <h3>Solo se prueba en real</h3>
+      <div class="path"><span class="st">merge</span><span class="arrow">→</span><span class="st">done</span><span class="arrow">+</span><span class="st add">human-only: verificar en prod</span></div>
+      <p class="note">Dispositivo real, infra de producción, datos reales o integraciones con credenciales de prod. Es el estado <code>produccion</code> de tu <code>/review-task</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ COMPARATIVA ============ -->
+<section id="comparativa">
+  <div class="head">
+    <span class="eyebrow">4 · Tres harnesses lado a lado</span>
+    <h2>Qué aporta cada uno</h2>
+    <p class="note">En verde, lo que gana en cada fila. <span class="tag from">del local</span> marca lo que se trae de tu harness de Obsidian.</p>
+  </div>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th></th><th>Harness local (Obsidian)</th><th>Issue Runner hoy</th><th>Issue Runner propuesto</th></tr></thead>
+    <tbody>
+      <tr><th>Origen de las tareas</th><td><code>.md</code> en el vault, IDs <code>EFI-NNN</code></td><td class="win">Issues de GitHub</td><td class="win">Issues de GitHub (sin vault)</td></tr>
+      <tr><th>Alta de tareas</th><td class="win"><code>/new-task</code> rápido con recon</td><td><code>/issue-plan</code> completo, con entrevista</td><td class="win">Los dos: <code>--quick</code> y el plan completo <span class="tag from">del local</span></td></tr>
+      <tr><th>Dependencias y paralelismo</th><td>Solo la wave 0, a mano entre waves</td><td class="win">DAG con scheduler determinista y conflictos de archivos</td><td class="win">Igual que hoy</td></tr>
+      <tr><th>Revisión de código</th><td><code>/code-review</code> y <code>/security-review</code></td><td class="win">2–4 revisores con lentes y Codex gate</td><td class="win">Igual que hoy, con el despertador arreglado</td></tr>
+      <tr><th>QA funcional</th><td class="win">Playwright por criterio, con evidencia</td><td>Solo el contrato de validación</td><td class="win">Tabla de criterios y <code>e2e:</code> <span class="tag from">del local</span></td></tr>
+      <tr><th>Merge</th><td>Nunca: siempre manual</td><td>Siempre, tras los gates</td><td class="win">Solo, salvo en zonas de riesgo <span class="tag newt">nuevo</span></td></tr>
+      <tr><th>Estados</th><td class="win"><code>qa</code>, <code>produccion</code>, <code>fail</code></td><td><code>done</code>, <code>ready</code>, <code>failed</code>, <code>blocked</code></td><td class="win">Añade <code>awaiting-approval</code> y la verificación en prod <span class="tag from">del local</span></td></tr>
+      <tr><th>Recuperación</th><td>Notas «Intento N» en el <code>.md</code></td><td class="win">Lock, heartbeat, resume, traza</td><td class="win">Igual que hoy, más el comentario de fallo en el issue <span class="tag from">del local</span></td></tr>
+      <tr><th>Trabajo solo humano</th><td>Columna del board</td><td>Se pierde en prosa (#86)</td><td class="win">Issues <code>human-only</code> que el run nunca despacha <span class="tag newt">nuevo</span></td></tr>
+      <tr><th>Avisos</th><td>Ninguno</td><td>Ninguno</td><td class="win">Push al móvil <span class="tag newt">nuevo</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ============ HOJA DE RUTA ============ -->
+<section id="ruta">
+  <div class="head">
+    <span class="eyebrow">5 · Hoja de ruta (borrador)</span>
+    <h2>15 cambios en tres fases</h2>
+    <p class="note">Ordenados por valor. «tras» indica de qué cambio depende cada uno. #95 entra en el mismo run como issue ya existente.</p>
+  </div>
+  <div class="phases">
+    <div class="phase">
+      <header><span class="eyebrow">Fase 1</span><h3>Autonomía y fiabilidad</h3></header>
+      <div class="items">
+        <div class="item"><span class="n">1</span><div><p>Gate de riesgo con <code>awaiting-approval</code></p><small>merge.md · classify.sh · scheduler.sh</small></div></div>
+        <div class="item"><span class="n">2</span><div><p>Label <code>human-only</code>, plantilla corta y listado en el resumen</p><small>extiende #86</small></div></div>
+        <div class="item"><span class="n">3</span><div><p>Una tanda de preguntas y <code>--unattended</code></p><small>tras 2</small></div></div>
+        <div class="item"><span class="n">4</span><div><p>Notificaciones push</p><small>tras 1 y 3</small></div></div>
+        <div class="item"><span class="n">5</span><div><p>Comentario de fallo en el issue</p><small>escalations.md</small></div></div>
+        <div class="item"><span class="n">6</span><div><p>Higiene de #96: <code>body-file</code> privado, sin <code>-s ours</code>, versiones en lint</p><small>gh-issue · lint.sh</small></div></div>
+      </div>
+    </div>
+    <div class="phase">
+      <header><span class="eyebrow">Fase 2</span><h3>Calidad de la entrega</h3></header>
+      <div class="items">
+        <div class="item"><span class="n">7</span><div><p>Tabla de criterios de aceptación y <code>criteria[]</code> en <code>result.json</code></p><small>tras 1</small></div></div>
+        <div class="item"><span class="n">8</span><div><p>Clave <code>e2e:</code> en el contrato de validación</p><small>tras 7</small></div></div>
+        <div class="item"><span class="n">9</span><div><p>Verificación en producción como issue <code>human-only</code></p><small>tras 2 y 7</small></div></div>
+        <div class="item"><span class="n">10</span><div><p><code>/issue-plan --quick</code></p><small>issue-plan/quick.md</small></div></div>
+      </div>
+    </div>
+    <div class="phase">
+      <header><span class="eyebrow">Fase 3</span><h3>Deuda de la spec</h3></header>
+      <div class="items">
+        <div class="item"><span class="n">11</span><div><p>Bug de truncado en la continuación</p><small>continuation.md</small></div></div>
+        <div class="item"><span class="n">12</span><div><p>Partir las líneas de más de 1.500 caracteres; lint a todos los <code>.md</code>; índice «Why»</p><small>tras 3</small></div></div>
+        <div class="item"><span class="n">13</span><div><p><code>classify.sh</code> lee <code>outcome</code> y <code>blocker</code> de <code>result.json</code></p><small>tras 1</small></div></div>
+        <div class="item"><span class="n">14</span><div><p>Peor caso en tiempo y tabla del Codex gate</p><small>tras 12</small></div></div>
+        <div class="item"><span class="n">15</span><div><p>Smoke E2E con 5 issues: riesgo, cascada, human-only, <code>--unattended</code></p><small>tras 1, 2, 3 y 7</small></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>Fuentes: <code>skills/</code> del plugin (rama main, commit 23b7092), los skills locales <code>new-task</code>, <code>work-task</code>, <code>review-task</code> y <code>run-waves</code>, la revisión del Issue Runner, y los issues #86, #95 y #96.</span>
+  <span>Ideas externas tomadas en cuenta: gate de alto riesgo que aparca en lugar de fallar (fxmartin/claude-code-config); seguir con el trabajo reversible y parar solo lo que depende de una decisión (Chachamaru127/claude-code-harness).</span>
+</footer>
+
+</div>

@@ -16,7 +16,14 @@
 # Code session in the local clone, then the check and teardown commands.
 # Manual only: lint parses this script and never runs it.
 #
-# Usage: scripts/smoke/setup.sh
+# Usage: scripts/smoke/setup.sh [--autonomy]
+#
+# --autonomy adds two issues for the daily-autonomy check (check-autonomy.sh):
+#   risky       touches migrations/, so the risk gate must stop it at
+#               awaiting-approval instead of merging it
+#   human       labeled human-only, so the runner must never dispatch it, even
+#               when named explicitly
+# and prints an --unattended run (merges on) instead of the --no-merge one.
 #
 # The local clone goes to $ISSUE_RUNNER_SMOKE_ROOT/<name> (default
 # ~/issue-runner-smoke/<name>), with the repository (written first) and the
@@ -39,7 +46,9 @@ ROOT_ENV=""
 
 die() { printf 'setup: %s\n' "$1" >&2; exit 1; }
 
-[ $# -eq 0 ] || die "usage: setup.sh (no arguments)"
+AUTONOMY=0
+case ${1:-} in "") ;; --autonomy) AUTONOMY=1 ;; *) die "usage: setup.sh [--autonomy]" ;; esac
+[ $# -le 1 ] || die "usage: setup.sh [--autonomy]"
 command -v git >/dev/null 2>&1 || die "git not found"
 command -v gh >/dev/null 2>&1 || die "gh not found"
 [ -d "$HERE/fixture" ] || die "fixture not found at $HERE/fixture"
@@ -165,6 +174,50 @@ Files likely touched: \`greet.sh\`, \`tests/test-greet.sh\`
 EOF
 CONFLICT=$(new_issue "Add a shout function" "$BODY") || die "cannot create the conflicting issue"
 
+RISKY="" HUMAN=""
+if [ "$AUTONOMY" -eq 1 ]; then
+  cat >"$BODY" <<EOF
+Part of #$TRACKING
+
+## What to build
+
+Add a first database migration, \`migrations/0001_greetings.sql\`, that creates a \`greetings\` table with columns \`id INTEGER PRIMARY KEY\` and \`text TEXT NOT NULL\`.
+
+## Acceptance criteria
+
+- [ ] \`migrations/0001_greetings.sql\` creates the \`greetings\` table with those two columns
+- [ ] \`tests/test-migration.sh\` checks that the file contains \`CREATE TABLE greetings\`, and \`bash test.sh\` passes
+
+## Blocked by
+
+None - can start immediately
+
+Files likely touched: \`migrations/0001_greetings.sql\`, \`tests/test-migration.sh\`
+EOF
+  RISKY=$(new_issue "Add the greetings migration" "$BODY") || die "cannot create the risky issue"
+
+  cat >"$BODY" <<EOF
+Part of #$TRACKING
+
+## What to build
+
+Install the greeting font on the demo kiosk. A person with access to the kiosk does this; there is no code change.
+
+## Acceptance criteria
+
+- [ ] The kiosk shows the greeting in the new font
+
+## Blocked by
+
+None - can start immediately
+
+Files likely touched: \`README.md\`
+EOF
+  gh label create human-only --repo "$REPO" --color D93F0B --description "issue-runner: a person must do this" >/dev/null 2>&1 || true
+  HUMAN=$(new_issue "Human: install the greeting font on the demo kiosk" "$BODY") || die "cannot create the human-only issue"
+  gh issue edit "$HUMAN" --repo "$REPO" --add-label human-only >/dev/null || die "cannot label #$HUMAN human-only"
+fi
+
 cat >"$BODY" <<EOF
 ## Input
 
@@ -180,11 +233,31 @@ Smoke test fixture created by issue-runner's \`scripts/smoke/setup.sh\`.
 - #$DEPENDENT - Add a hello command (blocked by #$INDEPENDENT)
 - #$CONFLICT - Add a shout function (shares files with #$INDEPENDENT)
 EOF
+[ -n "$RISKY" ] && printf -- '- #%s - Add the greetings migration (risk gate)\n- #%s - Human: install the greeting font (human-only)\n' "$RISKY" "$HUMAN" >>"$BODY"
 gh issue edit "$TRACKING" --repo "$REPO" --body-file "$BODY" >/dev/null || die "cannot update the tracking issue"
 
-printf 'tracking=%s\nindependent=%s\ndependent=%s\nconflict=%s\n' \
-  "$TRACKING" "$INDEPENDENT" "$DEPENDENT" "$CONFLICT" >>"$META" \
+printf 'tracking=%s\nindependent=%s\ndependent=%s\nconflict=%s\nrisky=%s\nhuman=%s\n' \
+  "$TRACKING" "$INDEPENDENT" "$DEPENDENT" "$CONFLICT" "$RISKY" "$HUMAN" >>"$META" \
   || die "cannot write $META"
+
+if [ "$AUTONOMY" -eq 1 ]; then
+  cat <<EOF
+Smoke repository ready (autonomy): https://github.com/$REPO (private)
+  tracking #$TRACKING; independent #$INDEPENDENT; dependent #$DEPENDENT; conflict #$CONFLICT;
+  risky #$RISKY (migrations/: must stop at awaiting-approval); human #$HUMAN (human-only: never dispatched)
+
+1. Run, in the clone, with the plugin from this checkout:
+     cd "$CLONE" && claude --plugin-dir "$(cd "$HERE/../.." && pwd)"
+     /issue-runner:issue-runner --unattended $INDEPENDENT $DEPENDENT $CONFLICT $RISKY $HUMAN
+
+2. When the run has finished:
+     $ROOT_ENV"$HERE/check-autonomy.sh" $NAME
+
+3. Delete the repository and the local clone:
+     $ROOT_ENV"$HERE/teardown.sh" $NAME
+EOF
+  exit 0
+fi
 
 cat <<EOF
 Smoke repository ready: https://github.com/$REPO (private)

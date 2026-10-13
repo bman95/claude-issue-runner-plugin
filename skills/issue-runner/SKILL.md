@@ -32,9 +32,10 @@ You are the orchestrator. Implementers are `general-purpose` subagents in isolat
 - `/issue-runner --no-codex-gate` — no Codex certification gate: implementers merge on local fresh-eyes convergence alone, recorded in each PR body
 - `/issue-runner --implementer-model M --reviewer-model M --reviewers 2|3|4|auto --codex-model S` — the only channel for model and reviewer choices; read [model-choices.md](model-choices.md) at Step 0 when any is passed
 - `/issue-runner --no-llm-refine` — skip the LLM dependency-refinement pass; conflict edges from `Files likely touched:` intersection are still computed (Step 2)
-- `/issue-runner --no-merge` — implementers stop at ready-to-merge (gh-issue Step 9's no-merge stop) and return `ready: PR #<P>` for a human to merge; the issue lands `ready`, terminal for the run, worktree and branch kept; dependents wait (Step 3 item 6). Forwarded only via the dispatch prompt (Step 3a).
-- `/issue-runner --prose-gate N,…` — authorize gh-issue's prose review profile (gh-issue Step 8, "Review profile") for these in-scope issues (`--prose-gate 43,45`); Step 1 checks it and writes the `profile` files per [prose-gate.md](prose-gate.md). Refusals: prose-gate.md.
-- `/issue-runner --merge-ready` — merge every `ready` PR a prior `--no-merge` run left whose dependencies are `done` and whose checks are green on its current head (re-checked immediately before merging), then continue that run. No issue numbers; needs that run's kept state. When passed, read [merge-ready.md](merge-ready.md) before Step 1: it holds Step 1's `--merge-ready` mode and Step 3's merge pass.
+- `/issue-runner --no-merge` — implementers stop at ready-to-merge; the issue lands `ready` for a human to merge ([arguments.md](arguments.md)).
+- `/issue-runner --unattended` — never ask once launched ([arguments.md](arguments.md), [unattended.md](unattended.md)).
+- `/issue-runner --prose-gate N,…` — authorize the prose review profile for these issues ([arguments.md](arguments.md)).
+- `/issue-runner --merge-ready` — merge the `ready` PRs a prior run left, then continue it; read [merge-ready.md](merge-ready.md) before Step 1 ([arguments.md](arguments.md)).
 
 ## State
 
@@ -75,7 +76,7 @@ bash "$RUN_STATE_SCRIPT" init "$PPID" <LOCK_TTL_MINUTES>   # append --merge-read
 - `session` — the orchestrator's `$CLAUDE_CODE_SESSION_ID` (empty if unset: every start rotates), written by `init`, removed only by a full release.
 - `paused` — `<reason>: <ISO-8601 UTC timestamp>`, written by Step 3a when an `Agent` dispatch fails with a credit/usage-limit error; while present, Step 3 item 2's ready set is empty for this invocation. `init` clears it right after the lock write (why: Why `paused` is cleared at every init).
 
-Per issue, `issue-N/`: `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`/`ready`, the last only under `--no-merge`), `details.json`, `result.json`, `progress`, `retries`, and the files [state-files.md](state-files.md) lists under "Per-issue files" (`error`, `guidance.md`, `worktree`, `branch`, `agent`, `pr`, `outcome`, `blocker`, `merge-oid`, `notification`, `profile`, `hook-bypass`, `external`, `reviewers`, `codex-model`).
+Per issue, `issue-N/`: `status` (`pending`/`implementing`/`blocked`/`done`/`failed`/`skipped`/`closed-externally`/`ready`, the last only under `--no-merge` or a risk stop), `details.json`, `result.json`, `progress`, `retries`, and the files [state-files.md](state-files.md) lists under "Per-issue files" (`error`, `guidance.md`, `worktree`, `branch`, `agent`, `pr`, `outcome`, `blocker`, `merge-oid`, `notification`, `profile`, `hook-bypass`, `external`, `reviewers`, `codex-model`).
 
 `session` and `agent` are the only **resume pointers**, never status inputs. `result.json` carries exactly these keys (lint-checked against gh-issue's copy):
 
@@ -116,7 +117,7 @@ done
 
 **No arguments** → the open-issue list, filtered: read [open-issues.md](open-issues.md). Never auto-include a parked issue.
 
-**Tracking issues are never in scope** (both paths). A tracking issue's body has a line that, trimmed of trailing whitespace, is `## Slices`, and **no** such line that is `## What to build` (whole heading lines only). Drop each before the fast-path check, printing `Excluded #P: tracking issue (slice list, no ## What to build)`. An empty scope after exclusion ends the run with that message. An issue with neither heading is ordinary and stays in scope. (why: Why tracking issues are recognized by whole heading lines)
+**Tracking issues are never in scope** (both paths). A tracking issue's body has a line that, trimmed of trailing whitespace, is `## Slices`, and **no** such line that is `## What to build` (whole heading lines only). Drop each before the fast-path check, printing `Excluded #P: tracking issue (slice list, no ## What to build)`. An empty scope after exclusion ends the run with that message. An issue with neither heading is ordinary and stays in scope. (why: Why tracking issues are recognized by whole heading lines) Likewise drop a `human-only`-labeled issue: `Excluded #N: human-only`.
 
 **`--prose-gate` check** (once scope is settled, before the fast path and before any lock): per [prose-gate.md](prose-gate.md), which also writes the `profile` files after state initialization (unless `--plan`).
 
@@ -182,9 +183,11 @@ SUMMARY_SCRIPT="$(dirname "$SCHEDULER_SCRIPT")/summary.sh"
 
 **`--merge-ready` pass** (only when `--merge-ready` was passed): run it once now, before the recovery reconciliation and the loop, per [merge-ready.md](merge-ready.md), "Step 3 — the `--merge-ready` pass".
 
+**Notifications.** Read [notify.md](notify.md) before the loop.
+
 **Recovery reconciliation** (same-session re-entry only — `init` printed `state kept: same session re-entering its unfinished run`): once, before marking anything `pending`, follow [recovery.md](recovery.md), "Step 3 — recovery reconciliation". **Never re-dispatch an agent that is running.**
 
-Mark every issue not handled above `pending` (then the `run-start` hint, State), then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`/`ready`; `ready` only under `--no-merge`, with no Step 4 escalation) or paused (`blocked`; a `pending` issue with a `blocked` **or `ready`** ancestor; every `pending` issue while `$RUN_ROOT/paused` exists):
+Mark every issue not handled above `pending` (then the `run-start` hint, State), then loop until all statuses are terminal (`done`/`failed`/`skipped`/`closed-externally`/`ready`; `ready` only under `--no-merge` or a risk stop, with no Step 4 escalation) or paused (`blocked`; a `pending` issue with a `blocked` **or `ready`** ancestor; every `pending` issue while `$RUN_ROOT/paused` exists):
 
 1. **Run the scheduler and act on its output.** `bash "$SCHEDULER_SCRIPT" "$STATE_DIR"` never writes state. Apply every stdout line:
    - `skip N <error>` → write `skipped` to `issue-N/status`, `<error>` to `issue-N/error`.
@@ -196,9 +199,9 @@ Mark every issue not handled above `pending` (then the `run-start` hint, State),
    Non-zero exit: `$STATE_DIR` or `dag.txt` is unreadable — fix it; never guess a status.
 2. **Ready set.** The `dispatch N` lines — empty for every issue while `$RUN_ROOT/paused` exists, until a fresh invocation clears it.
 3. **Fill slots** up to `MAX_PARALLEL` via Step 3a; mark each `implementing`. Dispatch one at a time, checking `$RUN_ROOT/paused` immediately before each — never several dispatches in one message; once it exists, dispatch nothing more (why: Why dispatches go out one at a time).
-4. **Wait** for an in-flight agent, with a wake-up armed: a `Monitor` until-loop over the hang check, or a `run_in_background` Bash `sleep` well under `HANG_MINUTES` (never a foreground loop). On every wake: heartbeat, then drain received results through item 5, then the hang check per in-flight issue. **Hung** needs all three: its agent still runs (confirm in the host's agent list right before stopping; an arrived result wins, via item 5); the issue is `implementing`; and `progress` is unchanged for more than `HANG_MINUTES` — re-run right before the stop: `bash "$CLASSIFY_SCRIPT" hang "$N" "$STATE_DIR/issue-$N" "$HANG_MINUTES"` prints the hung line, or nothing. Implementers rewrite it every 5 minutes, so `--hang-minutes` ≤ 5 can stop healthy ones. A `notification` file means hung.md's interim bound.
+4. **Wait** for an in-flight agent, with a wake-up armed: a `run_in_background` Bash `sleep` well under `HANG_MINUTES` (never a foreground loop; a `Monitor` event may not wake an idle session, gh-issue #95). On every wake: heartbeat, then drain received results through item 5, then the hang check per in-flight issue. **Hung** needs all three: its agent still runs (confirm in the host's agent list right before stopping; an arrived result wins, via item 5); the issue is `implementing`; and `progress` is unchanged for more than `HANG_MINUTES` — re-run right before the stop: `bash "$CLASSIFY_SCRIPT" hang "$N" "$STATE_DIR/issue-$N" "$HANG_MINUTES"` prints the hung line, or nothing. Implementers rewrite it every 5 minutes, so `--hang-minutes` ≤ 5 can stop healthy ones. A `notification` file means hung.md's interim bound.
 
-   **Hung, or no `progress` file** (absent or empty) and relatively silent — nothing long after its siblings finished, well past its issue's scale: read [hung.md](hung.md) and follow it — stop, await gone, record the worktree, then classify through item 5, never writing `failed` directly.
+   **Hung, or no `progress` file** and relatively silent: follow [hung.md](hung.md), then classify through item 5, never writing `failed` directly.
 5. **Process the result.** Write a received notification to `issue-N/notification`, then classify it ([state-files.md](state-files.md)): `interim` → stay `implementing`, write nothing, wait; `final` → `rm -f` the file, continue. Read `issue-N/result.json`. Readable → `WT` is its `worktree`; classify by `outcome` and `blocker`. Absent or unreadable ([state-files.md](state-files.md)) → the final message: `WT` from its `worktree:` line, prose classification (blocker or environmental failure). Hung with no readable file → item 4's `WT` and error. Record `WT` in `issue-N/worktree` now. `CLASSIFY_SCRIPT` holds merge proof: `done` needs the issue `CLOSED` **and** a merged PR on the worktree's own branch at the worktree's `HEAD`; neither `CLOSED` alone nor `"outcome":"merged"` is proof, and branch and commit come from git, never the file (why: Why `done` needs merge proof, not just `CLOSED`). Record its inputs:
 
    - `issue-N/outcome` — one word: the file's `outcome`; without a readable file `blocker` or `failed` from the message, `hung` (item 4), or `none` (a crash with nothing to classify).
@@ -236,7 +239,7 @@ Act on its output:
 - **A lone `none` line** → dispatch the template below as-is (fresh branch, new PR).
 - **Anything else** (a `pr`, `branch`, `probe3-failed` or `keyword-unconfirmed` line, or a non-zero exit) → read [resume-check.md](resume-check.md) and act on every line as it says: resume, don't duplicate; never dispatch on a blind check; never dispatch fresh over an orphan.
 
-**If a dispatch has already gone out when you discover a duplicate, stop the implementer immediately** (`TaskStop`); if it got past its Step 4 checkpoint, close its duplicate (`gh pr close <P> --delete-branch`, or `git push origin --delete <B>` if it got no further than the push) (why: Why a duplicate dispatch is stopped at once).
+**A duplicate discovered after its dispatch went out:** [resume-check.md](resume-check.md), "Duplicate dispatches".
 
 Clear any prior attempt's files first — `rm -f "$STATE_DIR/issue-N/progress" "$STATE_DIR/issue-N/result.json" "$STATE_DIR/issue-N/notification" "$STATE_DIR/issue-N/agent" "$STATE_DIR/issue-N/outcome" "$STATE_DIR/issue-N/blocker" "$STATE_DIR/issue-N/"codex-pass-* "$STATE_DIR/issue-N/"codex-prompt-*` — plus `"$STATE_DIR/issue-N/branch" "$STATE_DIR/issue-N/worktree" "$STATE_DIR/issue-N/error"` whenever the resume check ran (a Step 4 retry with a known worktree skips it and keeps all three) (why: Why dispatch clears the prior attempt's files). One `Agent` call per issue; substitute `<N>`, `<GH_ISSUE_SKILL>`, `<MAX_CODEX_ITERATIONS>`, `<STATE_DIR>`:
 
@@ -306,7 +309,7 @@ Set `MAX_RETRIES` (default 2; `--max-retries`). Read the agent's error and `$STA
 
 ### Step 5 — cleanup and summary
 
-**Stop armed wakes first**, the paused path included: end every item 4 `Monitor`, `TaskStop` every `run_in_background` sleep.
+**Stop armed wakes first**, the paused path included: `TaskStop` every item 4 `run_in_background` sleep (and any `Monitor` a resumed run left).
 
 **Run paused on host credit/usage-limit (`$RUN_ROOT/paused` exists).** Read [pause.md](pause.md), "Step 5 — the paused closing message", first: it opens the closing message, and the run **skips the final lock/session release**.
 
@@ -344,7 +347,7 @@ git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^worktree-ag
 
 **Verify the main repo is clean**: rerun `git status --porcelain=v1 -uall`, diff against the Step 1 snapshot, surface anything new, never auto-discard.
 
-**Summary.** Run `bash "$SUMMARY_SCRIPT" "$STATE_DIR" <MAX_CODEX_ITERATIONS> [--gateless] "$DEFAULT_BRANCH"` from the repository root (`--gateless` if gateless; under `--merge-ready`: 3, gated) and print its output verbatim. Then [summary-report.md](summary-report.md): grouping, `ready` PRs and the tracking-issue post (every in-scope issue carrying the same `Part of #P` line). If the summary lists deferred findings, ask the user once: file, fix in a follow-up PR, or drop. Never decide yourself.
+**Summary.** Run `bash "$SUMMARY_SCRIPT" "$STATE_DIR" <MAX_CODEX_ITERATIONS> [--gateless] "$DEFAULT_BRANCH"` from the repository root (`--gateless` if gateless; under `--merge-ready`: 3, gated) and print its output verbatim. Then [summary-report.md](summary-report.md): human-only items, grouping, `ready` PRs and the tracking-issue post (every in-scope issue carrying the same `Part of #P` line). If the summary lists deferred findings, ask the user once: file, fix in a follow-up PR, or drop. Never decide yourself.
 
 Last, unless the run stopped paused, release the lock and session pointer: `bash "<RUN_STATE_SCRIPT>" release "<RUN_ROOT>"` (why: Why resume pointers are written at dispatch, not at failure).
 

@@ -125,6 +125,10 @@
 #      SKILL.md names environment.md in the dispatch template and links
 #      host-environment.md; the dispatch line is stated in dispatch-variants.md
 #
+#  32. the risk gate (gh-issue merge.md "Risk gate"): scripts/test-risk-gate.sh
+#      passes, both editions carry risk-gate.sh byte-identical, and both
+#      editions' merge.md name the `awaiting-approval` label and the script
+#
 # Dependency-free: bash + coreutils/grep/sed/awk only (no jq; shellcheck is
 # optional and advisory). Exits non-zero on the first-or-any failure, printing
 # every problem it found.
@@ -408,7 +412,7 @@ done
 # 8. shellcheck over this script and the bundled scripts (advisory) --------------
 if [ "$have_shellcheck" -eq 1 ]; then
   for f in "$ROOT/scripts/lint.sh" "$ROOT"/skills/*/scripts/*.sh \
-           "$ROOT/scripts/test-validation-contract.sh" "$ROOT/scripts/test-integration-contract.sh" \
+           "$ROOT/scripts/test-validation-contract.sh" "$ROOT/scripts/test-integration-contract.sh" "$ROOT/scripts/test-risk-gate.sh" \
            "$ROOT"/scripts/smoke/*.sh "$ROOT"/scripts/smoke/fixture/*.sh "$ROOT"/scripts/smoke/fixture/tests/*.sh; do
     rel="${f#"$ROOT"/}"
     if shellcheck "$f" >"$TMP/lint.sc" 2>&1; then
@@ -1036,6 +1040,27 @@ if [ -f "$TEST_HOSTENV" ]; then
   [ "$he_ok" -eq 1 ] && ok "host-environment and hook-bypass contract present in both editions (host-env fixtures, hooks.md, dispatch lines)"
 else
   err "$TEST_HOSTENV not found"
+fi
+
+# 32. Risk gate ----------------------------------------------------------------
+TEST_RISK="$ROOT/scripts/test-risk-gate.sh"
+if [ -f "$TEST_RISK" ]; then
+  if bash "$TEST_RISK" >"$TMP/test-risk-gate.out" 2>&1; then
+    ok "risk-gate fixtures pass (scripts/test-risk-gate.sh)"
+  else
+    err "risk-gate fixtures failed:"
+    cat "$TMP/test-risk-gate.out" >&2
+  fi
+  rg_ok=1
+  cmp -s "$ROOT/skills/gh-issue/scripts/risk-gate.sh" "$ROOT/codex/issue-runner/canonical/gh-issue/scripts/risk-gate.sh" \
+    || { err "codex/issue-runner/canonical/gh-issue/scripts/risk-gate.sh is missing or differs from skills/gh-issue/scripts/risk-gate.sh"; rg_ok=0; }
+  for ed in skills codex/issue-runner/canonical; do
+    grep -qF -- 'risk-gate.sh' "$ROOT/$ed/gh-issue/merge.md" && grep -qF -- 'awaiting-approval' "$ROOT/$ed/gh-issue/merge.md" \
+      || { err "$ed/gh-issue/merge.md lacks the risk gate (risk-gate.sh, awaiting-approval)"; rg_ok=0; }
+  done
+  [ "$rg_ok" -eq 1 ] && ok "risk gate present in both editions (script, merge.md)"
+else
+  err "$TEST_RISK not found"
 fi
 
 if [ "$fail" -ne 0 ]; then

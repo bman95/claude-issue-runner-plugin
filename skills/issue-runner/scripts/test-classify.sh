@@ -627,7 +627,7 @@ unset CWD
 # and the crash are Step 3a's and the implementer's). Every other row is outside these two
 # classifications: see test-scheduler.sh for the state machine's rows.
 IN_SCOPE_ROWS="5 6 11 14 15 16 17 18 21 23 24 25 35 76"
-EXPECTED_ROW_COUNT=87
+EXPECTED_ROW_COUNT=93
 if [ -f "$SCENARIOS" ]; then
   actual_rows="$(grep -cE '^\| [0-9]+ \|' "$SCENARIOS")"
   if [ "$actual_rows" -eq "$EXPECTED_ROW_COUNT" ]; then

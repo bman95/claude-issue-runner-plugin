@@ -8,6 +8,7 @@ Step 9's stages in order, each with its recipe and outcomes. SKILL.md Step 9 say
 - Mark the PR ready first
 - Base freshness next
 - Checks gate
+- Risk gate
 - No-merge stop, or merge
 - Verify
 
@@ -69,7 +70,7 @@ if [ "$(git rev-list --count "$MB..origin/$BASE_BRANCH")" -gt 0 ]; then
 fi
 ```
 
-- Merge failed → never resolve it yourself. Read the printed output, then Block naming it (interactive: ask how to proceed). A hook that rejected the merge (`pre-merge-commit`, `commit-msg`) is hooks.md's "A hook fails" case, not this blocker.
+- Merge failed → never resolve it yourself, and never record a merge that did not happen: no `git merge -s ours`, `-X ours`/`-X theirs`, or a hand-made merge commit after a stash or abort lost the merge state (why: Why a base merge is never recorded by hand). Read the printed output, then Block naming it (interactive: ask how to proceed). A hook that rejected the merge (`pre-merge-commit`, `commit-msg`) is hooks.md's "A hook fails" case, not this blocker.
 - Clean merge → re-run the validation that gated ready (`preflight`, then `full`; else the project's tests, or the conventions under a standing fallback authorization). Failure → interactive: ask; orchestrated: push the merge commit, then blocker citing the failing validation. Never merge over it.
 - Passing → push; while the prose profile holds, re-run the revoke-only guard block (review-profile.md; a revocation here is Step 8's); for `READIED=1`, repeat the registration poll; then the checks gate. Never push after the gate passes. (why: Why base freshness runs before the checks gate)
 
@@ -102,11 +103,18 @@ NEVER_RERAN=$(gh pr checks "$PR_NUM" --json name,bucket \
 
 `fail` → interactive: report the failing checks and ask; orchestrated, any merge mode: push, refresh the PR body, then blocker citing the failing checks. Never merge over a failing check without explicit user authorization.
 
+## Risk gate
+
+Orchestrated, and interactive for the confirmation's wording. After `pass` or `none`, run `bash "<risk-gate.sh>" "$BASE_BRANCH"` on the validated head, in one tool call that first resolves `risk-gate.sh` exactly as [validation.md](validation.md) resolves `validation-contract.sh` (same candidates, same directory, never this worktree's copy — why: Why the script never comes from the worktree); not found → exit 2 below. It reads `.issue-runner/risk` from the base tip (never this PR's copy; absent → built-in defaults: auth, secrets and `.env*`, migrations, `.github/workflows/`, infra, dependency manifests; `.issue-runner/` is always on).
+
+- exit 0 (`risk: none`) → continue to the merge.
+- exit 3 (`risk: awaiting approval` and one `risk: <path>` line per matching path), or exit 2 (an environment failure or an invalid policy: fail closed, the same stop, its error line in place of the paths) → **risk stop**. Interactive: name the paths in the merge confirmation (the user's yes is the approval). Orchestrated, any merge mode: take the no-merge stop below; in addition, add `Risk gate: awaiting approval — <paths>` under `## Review notes` before the refresh, and run `gh label create awaiting-approval --color FBCA04 --description "issue-runner: risk gate, a human approves the merge" 2>/dev/null; gh pr edit "$PR_NUM" --add-label awaiting-approval` (a failure is reported, never fatal). Return `ready: PR #<PR_NUM> (risk gate: <paths>)`. The approval is a human's merge, or `/issue-runner --merge-ready`. (why: Why risky PRs stop at ready instead of blocking)
+
 ## No-merge stop, or merge
 
-`pass` or `none` under `Merge mode: no-merge` → no `gh pr merge`. Refresh the PR body (Step 8's discipline), write `"outcome":"ready"` in the result file (`pr`, `branch`, `worktree` as usual), skip the merge and teardowns, and at Step 10 return `ready: PR #<PR_NUM>`: success, not a blocker. Change nothing on the PR or branch after this point.
+`pass` or `none` under `Merge mode: no-merge`, or a risk stop → no `gh pr merge`. Refresh the PR body (Step 8's discipline), write `"outcome":"ready"` in the result file (`pr`, `branch`, `worktree` as usual), skip the merge and teardowns, and at Step 10 return `ready: PR #<PR_NUM>`: success, not a blocker. Change nothing on the PR or branch after this point.
 
-Otherwise (every other orchestrated run, and every interactive run once the user confirms) → merge:
+Otherwise (every other orchestrated run, and every interactive run once the user confirms) → first re-read the body (`gh pr view "$PR_NUM" --json body -q .body`): its `Closes #<number>` must name this issue, and no other `Closes`/`Fixes`/`Resolves` line may name another; otherwise rewrite the body (Step 7's shape) and push nothing else (why: Why the body is re-read before merging). Then merge:
 
 ```bash
 gh pr merge --squash --delete-branch --match-head-commit "$(git rev-parse HEAD)" "$PR_NUM" \

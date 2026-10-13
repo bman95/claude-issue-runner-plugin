@@ -18,3 +18,7 @@ The branch contract is not sufficient alone (why: Why dispatch resumes open PRs)
   - `draft=true` resumes like any other; the implementer starts from the body's plan (gh-issue Step 3), except a `Contract-first stop` plan, which is never executed (gh-issue `resume.md`).
 - **Several `pr` lines** → ask the user which PR to resume and close the rest.
 - **Matched only by closing keyword** (`via=keyword`) → assume nothing: read `gh pr view <P> --json state,mergeable,mergeStateStatus,isDraft,files,body` and `gh pr checks <P>`. Already implements the issue → do **not** dispatch; show the user its check status and ask: review-and-merge, or close and rebuild. A PR closing several in-scope issues is one decision; mark every issue it covers.
+
+## Duplicate dispatches
+
+**If a dispatch has already gone out when you discover a duplicate, stop the implementer immediately** (`TaskStop`); if it got past its Step 4 checkpoint, close its duplicate (`gh pr close <P> --delete-branch`, or `git push origin --delete <B>` if it got no further than the push) (why: Why a duplicate dispatch is stopped at once).
