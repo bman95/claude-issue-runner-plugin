@@ -20,6 +20,26 @@ Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c
 
 Cada cambio enlaza con la sección del registro de investigación que lo justifica (`research-log.md` §9).
 
+**Revisión 3 (investigación de la industria, [`industria-revision.md`](industria-revision.md)):** se incorporan las propuestas A1–A15:
+
+| Propuesta | Sección |
+|---|---|
+| A1 Pasada estática previa a los revisores | §5.5, R1b |
+| A2 Filtro barato antes del juez | §6.2 |
+| A3 Aprendizajes por supresión | §6.4 |
+| A4 Hallazgos repetidos convertidos en reglas | §9.3 |
+| A5 Modo sombra para lo nuevo | §6.4 |
+| A6 Oráculo de tests intocable | §5.5 |
+| A7 Prueba diferencial | §5.5 |
+| A8 Taxonomía de dos ejes | §6.4 |
+| A9 Codex solo P0/P1 | §5.6 |
+| A10 Capacidad de revisión humana y tarjeta | §5.11 |
+| A11 Alcance y duplicados | §5.6 |
+| A12 Métricas por hallazgos atendidos | §12.1 |
+| A13 Evaluación propia con bugs inyectados | §12.3 |
+| A14 Muestreo de merges automáticos | §5.11 |
+| A15 Revisión incremental sin "resuelto" por LLM | §6.5b |
+
 **Ideas adoptadas del diseño independiente Sol 6.1** (2026-10-19), cada una marcada en su sección:
 
 - Snapshot de evaluación con seis campos (§4.1, §5.11).
@@ -461,6 +481,27 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
   - `error` (no arranca el servicio, falta Playwright) **no es un defecto del candidato**: se reintenta una vez y después va a FAILED_INFRA, con la sugerencia de ejecutar `ir doctor --full`.
   - Las comprobaciones `inspection` las evalúa Code Review dentro de `acceptance[]`.
   - Así nadie improvisa la verificación al final: el criterio y cómo comprobarlo se decidieron juntos en la preparación, y el implementador sabe desde el principio contra qué se le mide.
+- **Pasada determinista de análisis (A1)** [P; `industria-revision.md` §3]. Se ejecuta tras el `preflight` en verde y antes de las revisiones LLM, sobre el diff entre base y candidato. Cada herramienta se declara en `policy.yml`, con su versión en el manifiesto del entorno:
+  - Linters del proyecto.
+  - `semgrep`/`opengrep` con reglas de seguridad propias o de licencia permisiva.
+  - Reglas `ast-grep` del repo, en `.issue-runner/rules/`, en la base.
+  - `gitleaks` (secretos).
+  - `osv-scanner` (dependencias vulnerables), más una comprobación de dependencias sin versión fija.
+
+  Sus resultados se usan de dos formas:
+  1. **Como hallazgos propios** (`reviewer: static`, `ev = concrete`). Los secretos nuevos, las dependencias con vulnerabilidad conocida de severidad alta y las dependencias sin versión fija en manifiestos son **MUST_FIX directos** (R1b, §6.4). La revisión, humana o con IA, pasó por alto el 81 % de las credenciales filtradas en PR de agentes. El resto de hallazgos estáticos entra en la clasificación normal.
+  2. **Como contexto** para los revisores LLM, en un resumen recortado. Así no repiten lo que ya se sabe y se centran en lo que una herramienta no ve.
+- **Oráculo de tests intocable (A6)** [P; ImpossibleBench, dotnet/runtime].
+  - Forman el **oráculo** del ítem:
+    - los tests de reproducción y de `Verify` que crea o valida el coordinator;
+    - los tests existentes que la spec cita como cobertura de un AC;
+    - los tests de la base que pasaban antes del cambio.
+  - Si el implementador o el Codex Fixer modifican, borran o marcan para omitir un test del oráculo, se genera un debilitamiento de tests (§8.3, regla 5) de severidad `blocker`, salvo que la spec lo pida de forma explícita.
+  - El implementador **puede añadir** tests nuevos, pero no hacer pasar el candidato cambiando los que lo juzgan.
+  - En MERGE_PREP se ejecuta **la suite completa** del contrato (`full`, o `preflight` si no hay `full`), nunca un subconjunto.
+- **Prueba diferencial ligera (A7, v2.1)** [P; PatchDiff, UTBoost]. Los tests **añadidos** por el candidato se ejecutan también sobre la base.
+  - Si un test que dice probar comportamiento nuevo **pasa en la base**, no prueba nada: hallazgo `tests`, `major`.
+  - Más adelante, comparar el comportamiento entre base y candidato en los ficheros tocados.
 
 ### 5.6 Revisiones en paralelo [A]
 
@@ -498,6 +539,9 @@ Notas:
   - Lanzados desde un hook, se ejecutaron sobre el directorio equivocado: costaron 6,87 $ en revisiones inútiles y dejaron ficheros en el checkout del cliente.
 
   Con prompts propios, el alcance es el diff entre la base y el candidato que fija el coordinator, el resultado es JSON con esquema, y el coste es acotado y atribuible.
+- **Codex Reviewer solo reporta P0/P1 (A9)** [P; documentación de Codex]. Su prompt le pide señalar solo defectos graves, de corrección, seguridad o datos, que se correspondan con nuestras severidades `blocker` y `major`. El resto lo cubren la pasada estática y Code Review. Su evidencia pesa igual que la de Claude, y ninguno de los dos bloquea sin prueba (§6.4).
+- **Comprobación de alcance y duplicados (A11)** [P; AIDev, Spotify]. Code Review recibe `Out of scope` y los `Files likely touched` de la spec, y señala con `category: scope` lo que el PR hace y la spec no pide. Las funcionalidades no pedidas y los duplicados son la primera causa de rechazo de los PR de agentes. Un hallazgo `scope` con cita del diff es MUST_FIX si añade comportamiento observable, y SHOULD_FIX si es solo código sobrante.
+- **Reglas por ruta (path instructions)** [P; CodeRabbit, Amp]. `policy.yml` puede asociar *globs* a instrucciones o *checks* concretos, por ejemplo `migrations/**`: "comprobar reversibilidad". Se añaden al prompt del revisor solo cuando el diff toca esas rutas. Cada *check* crítico puede ejecutarse como subagente propio (patrón Amp) cuando el riesgo es alto.
 - **Re-revisión incremental [P]**. A partir de la segunda ronda, cada revisor recibe el diff completo contra la base, el **delta** respecto al último candidato que revisó y la lista de sus clusters abiertos, y declara para cada uno `resolved|still_present|regressed`. Se fuerza una revisión completa cuando el delta supera el 40 % del diff total o toca rutas sensibles (**H-7**).
 
 ### 5.7 Coordinación y discrepancias
@@ -584,6 +628,18 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
    - `low`: merge automático (si `auto_merge.low` está activo).
    - `medium` y `high`: hace falta una aprobación humana registrada por el runner (`ir approve` o `/ir approve`) de un usuario con `write` o más. Puede ser el propio usuario que lo ejecuta (§5.11, Identidad), además de las reviews que exija el repo.
    - **[Q3]**
+
+**Capacidad de revisión humana (A10)** [P; Microsoft dotnet/runtime, Salesforce, Spotify, Anthropic].
+- **Límite de PR de agentes esperando a un humano** por repo: `max_awaiting_human` en `policy.yml`, por defecto 3. Al llegar al límite, el Scheduler no despacha ítems nuevos de ese repo que vayan a necesitar aprobación humana. Es mejor frenar que bajar el listón: en Salesforce, los revisores se desconectaban de los PR grandes.
+- **Límite de tamaño:** diffs de más de `max_diff_lines` (por defecto 600) van a AWAITING_HUMAN con una propuesta de corte, en vez de a revisión.
+- **Tarjeta de aprobación**, generada de forma determinista desde la base de datos, sin LLM salvo un resumen de una sola llamada con Sonnet. Contiene:
+  - la intención (el `What to build` y los AC de la spec), para revisar la intención y no cada línea, como hace Anthropic;
+  - el riesgo por fichero (reglas de ruta y pasada estática);
+  - las decisiones técnicas tomadas sin consulta (Judge y Planner);
+  - los hallazgos suprimidos o rechazados con su motivo;
+  - la evidencia de los `Verify`.
+
+**Muestreo de merges automáticos (A14)** [P; Anthropic, Meta RADAR]. Si `auto_merge.low` está activo, cada semana un humano revisa una muestra ponderada por riesgo de los PR fusionados sin aprobación humana (por defecto 20 %, mínimo 2). Una discrepancia grave (un defecto que habría bloqueado) desactiva `auto_merge.low` en ese repo hasta una decisión humana.
 
 **Revisión del delta de integración [P].** Si el refresco de base (merge de `origin/<base>` en la rama) produjo conflictos que se resolvieron, o cambió ficheros del diff, se ejecutan Code Review y Security Review **sobre el delta**. La resolución de conflictos la hace Sonnet, como una ronda más.
 
@@ -699,6 +755,18 @@ Los `ReviewReport` validados contra el esquema; el resultado de CI y de validaci
 - Las líneas se ajustan al diff, y se marca si el hallazgo cae dentro del diff (`in_diff`).
 - Los hallazgos de esquema inválido se descartan, y el revisor se reintenta 1 vez con el error de validación.
 - `introduced` se calcula de forma determinista: `true` si las líneas citadas están en hunks añadidos o modificados; `false` si son contexto o están fuera del diff; `unknown` si no se puede mapear.
+- **Filtro barato previo al juez (A2)** [P; Qodo, Google AutoCommenter, Graphite, Ellipsis]. Se aplica de forma determinista, en este orden, antes de agrupar:
+  1. **Rango de líneas válido.** El hallazgo debe apuntar a líneas añadidas o modificadas del diff, salvo que su `category` sea `security` o `scope`, o que `introduced = false` lo lleve a DEFER. En Google, el 80 % de las predicciones crudas caía en líneas no tocadas.
+  2. **Cita fiel.** Si el hallazgo cita código, la cita tiene que existir en el candidato (comparación normalizada). Si no coincide, se descarta como alucinación.
+  3. **Categorías sin valor descartadas**, configurables en `policy.yml`:
+     - docstrings, anotaciones de tipo e imports sin usar (los cubre el linter);
+     - "verifica que…" o "asegúrate de que…" sin un defecto concreto;
+     - rotura especulativa de código fuera del diff sin ruta de código identificada;
+     - estilo que el linter no exige.
+  4. **Tope por revisor.** 5 hallazgos de severidad `minor` o inferior por revisor y ronda. Los `major` y superiores no tienen tope.
+  5. **Supresión por aprendizajes (A3)**: ver §6.4.
+
+  Todo lo descartado se guarda en un **registro de supresiones** con su motivo. Se puede consultar (`ir trace`) y alimenta las métricas (§12.1).
 
 ### 6.3 Agrupación (clustering)
 
@@ -726,12 +794,31 @@ Dos hallazgos forman parte del mismo cluster si coinciden la ruta y la categorí
 - Un `repro` que no compila o no se puede ejecutar no cuenta como evidencia en ningún sentido: equivale a `static`.
 - El coste es solo ejecutar tests, sin LLM. Así se ataca el fallo más documentado de la revisión con modelos: rechazar código correcto con objeciones de tipo "Logic Error" sin contraejemplo.
 
+**Taxonomía de dos ejes (A8)** [P; CodeRabbit, LinkedIn, dotnet/runtime]. Cada cluster tiene severidad (`blocker`/`major`/`minor`/`nit`) y **categoría**: `security`, `correctness`, `data`, `spec_mismatch`, `scope`, `tests`, `performance`, `maintainability`, `docs`.
+- **Solo pueden bloquear** `security`, `correctness`, `data`, `spec_mismatch`, `scope` (con comportamiento añadido) y `tests` (debilitamiento).
+- `performance` solo bloquea si viene con evidencia de benchmark: el agente de dotnet/runtime afirmaba mejoras sin pruebas.
+- `maintainability` y `docs` **nunca bloquean**. Son SHOULD_FIX como máximo. Esto también contiene el exceso de comentarios de refactor de los revisores Claude sobre código de Claude.
+
+**Aprendizajes por supresión (A3)** [P; Greptile, CodeRabbit, Bugbot].
+- Cada cluster con desenlace `rejected_with_reason`, `dropped` por R0 (`refuted`) o rechazado por un humano se guarda en `learnings` del repo, con ruta, categoría, texto normalizado y motivo.
+- Un hallazgo nuevo se **suprime** si se parece a **3 o más** rechazos distintos del mismo repo: misma categoría, misma ruta o directorio, y similitud de texto ≥ umbral (**H-29**).
+- La supresión nunca afecta a `security` con `ev ≥ concrete`, ni a R1 ni a R1b.
+- Al principio, a nuestra escala, basta con palabras clave y rutas, sin embeddings.
+- `ir learnings` lista y permite revertir una supresión.
+
+**Modo sombra por defecto para lo nuevo (A5)** [P; Anthropic, Google, CodeRabbit, Spotify, Atlassian].
+- Cada revisor, categoría o versión de prompt nueva entra en estado `shadow`: sus hallazgos se registran y se muestran como **aviso**, pero solo cuentan para bloquear si los respalda evidencia ejecutable (R0/R1) o una herramienta determinista (R1b).
+- Pasa a `enforcing` cuando su **tasa de atendidos o confirmados** en `major` o superior (§12.1) supera el umbral de `policy.yml` (**H-28**: por ejemplo ≥ 60 % con ≥ 30 hallazgos), o por decisión humana registrada.
+- Las confirmaciones estáticas del Judge (`judge_static`) siguen la misma regla: hasta calibrarse contra decisiones humanas, un MUST_FIX confirmado solo con razonamiento estático va a AWAITING_HUMAN en vez de forzar una ronda. Spotify retiró su juez por falsos bloqueos, y el de Atlassian casi no aportaba.
+- La degradación también existe: si un revisor `enforcing` cae por debajo del umbral en una ventana de 30 días, vuelve a `shadow` y se avisa a los `owners`.
+
 Reglas, evaluadas **en este orden** (gana la primera que aplique):
 
 | # | Condición | Clase |
 |---|---|---|
 | R0 | `ev = refuted` | DROP (falso positivo con evidencia; se registra) |
 | R1 | `category ∈ {ci, validation}` o `ev = confirmed` con `sev ≥ major` | MUST_FIX |
+| R1b | Hallazgo de la pasada estática (A1) de tipo **secreto nuevo, dependencia con vulnerabilidad conocida alta o crítica, o dependencia sin versión fija** | MUST_FIX (determinista; ni se suprime ni se adjudica) |
 | R2 | `category = security`, `sev ≥ major`, `introduced ≠ false` | MUST_FIX si `ev = concrete` y `conf ≥ medium`, o si el riesgo del ítem es high (fail-closed solo en riesgo high). En los demás casos VERIFY, y el Judge debe aportar un escenario de explotación para confirmar |
 | R3 | `category = security`, `introduced = false`, `sev ≥ major` | DEFER_PRIVATE (aviso privado según la visibilidad del repo; nunca un comentario público si el repo es público o su visibilidad es desconocida) |
 | R4 | `sev = blocker`, `introduced ≠ false` | MUST_FIX si `ev = concrete` y `conf ≥ medium`; VERIFY si no |
@@ -781,6 +868,10 @@ Reglas de cada estado:
   - un `prior_clusters: resolved` del revisor que lo reportó, o de otro revisor, en la re-revisión del nuevo candidato;
   - en el caso del Codex Fixer, la confirmación del Opus Reviewer.
 - **`reopened`**: el revisor responde `still_present` o `regressed`. Cuenta para el detector de estancamiento.
+- **Revisión incremental formal (A15)** [P; CodeRabbit, Bugbot].
+  - Cada revisor recibe `last_reviewed_sha..head` más los clusters abiertos, y declara por cluster `resolved|still_present|regressed`.
+  - **Nunca se da un cluster por cerrado solo porque un LLM diga `resolved`**: hace falta un repro en verde, o la confirmación del revisor sobre el **nuevo SHA** con cita del código actual. Cursor documentó que su verificación por LLM marcaba como resueltos hallazgos tras commits sin relación.
+  - Si la base cambia (refresco), se fuerza una revisión completa.
 - **`deferred_authorized`**: un DEFER de algo que bloquearía solo es posible con una Authorization humana ligada a ese cluster. Los DEFER de R3 y R9 (preexistentes) no la necesitan.
 - **Puerta 4 de §5.11**: ningún cluster bloqueante en un estado distinto de `verified_closed`, `rejected_with_reason`, `dropped`, `duplicate` o `deferred_authorized`.
 - **Tipos de hallazgo que no bloquean por defecto**: `objection_type: design_alternative` (una dirección distinta, no un defecto) y `question` (una duda del revisor). El primero se trata como un caso DIRECTION si viene de Codex con `disagree`. El segundo se registra y aparece en la tarjeta para que lo vea un humano.
@@ -1096,6 +1187,11 @@ Las respuestas humanas entran por comentarios `/ir …` de actores con permiso `
 
 ### 9.3 Memoria compartida (tres niveles) [P]
 
+**De hallazgo repetido a regla determinista (A4)** [P; OpenAI harness engineering, Amp, LinkedIn].
+- Cuando una misma clase de hallazgo (categoría, ruta y patrón) se confirma **3 o más veces** en un repo, el coordinator propone convertirla en una comprobación determinista: un lint, una regla `ast-grep`, un test estructural o una línea de REVIEW.md o CLAUDE.md. El mensaje de la regla debe explicar **cómo arreglarlo**, para que el agente lo corrija solo.
+- La propuesta se abre como **PR humano**, porque es una ruta protegida.
+- Lo que una regla determinista cubre ya no lo tiene que encontrar un LLM, y deja de costar tokens.
+
 1. **Memoria del ítem**: el dossier en SQLite (especificación, decisiones, historial de clusters, respuestas humanas). Llega a los agentes como el *brief* determinista. Muere con el ítem, aunque queda archivada.
 2. **Memoria del repositorio**: se reutilizan **CLAUDE.md y AGENTS.md** del repo, ya cargados por cada CLI, en lugar de inventar otro almacén.
    - Los agentes proponen `knowledge_candidates`.
@@ -1206,6 +1302,17 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
 
 ### 12.1 Qué se registra automáticamente (desde v2.0)
 
+**Métricas principales de revisión (A12)** [P; Uber, Atlassian, Greptile, Cursor, LinkedIn, OpenAI]. Se calculan **por revisor, por categoría y por estado (`shadow`/`enforcing`)**:
+- **Tasa de atendidos**: hallazgos cuya zona citada cambia en un commit posterior del mismo PR y dejan de aparecer en la re-revisión. Se comprueba de forma determinista por el diff; un LLM solo resuelve casos ambiguos. Referencias externas, no trasladables: OpenAI 52,7 %, Uber 65 %, LinkedIn 63,9 %, Atlassian 38,7 %, CodeRabbit en abierto 36,4 %.
+- **Tasa de confirmados** por evidencia (R0/R1) y **tasa de refutados**.
+- **Tasa de rechazados** por el Judge y por humanos, y **tasa de suprimidos** por el filtro A2/A3.
+- Por ítem:
+  - *Keep Rate* a 30 días, la supervivencia del código del implementador;
+  - *reverts*;
+  - comentarios humanos por PR;
+  - tiempo de revisión humana.
+- **Las reacciones (pulgares) no son una métrica de calidad.** LinkedIn las llama "vanity metric", y Google vio que solo el ~10 % de los comentarios reciben alguna.
+
 - **Por attempt**: rol, modelo, effort, tokens, coste de referencia, duración, resultado, `rate_limited`.
 - **Por cluster**: los revisores que lo detectaron (atribución), la clase inicial, la decisión final y el **desenlace**:
   - `fixed_verified`: corregido, con prior_cluster `resolved` en la re-revisión y CI en verde.
@@ -1241,6 +1348,16 @@ Ejemplos:
 1. **Observacional** (v2.0): solo los registros de §12.1.
 2. **Shadow** (v2.1): un revisor o una configuración extra se ejecuta, pero sus hallazgos no cuentan para la decisión. Se mide su contribución única y su tasa de falsos positivos (el Judge los evalúa por muestreo). Consume cuota, así que va con presupuesto aparte y muestreo (por ejemplo, el 20 % de los ítems).
 3. **Replay offline** (v2.2): conjunto dorado de issues ya resueltas.
+   - **Evaluación propia de revisores (A13, v2.1)** [P; Qodo, Martian, ReviewBench]. Es un conjunto de **20–50 PR propios ya fusionados** de dos tipos:
+     - con **bugs inyectados** (de 1 a 3 por PR, más violaciones de reglas del repo);
+     - con bugs reales encontrados después del merge, recuperados del historial.
+
+     Cómo se puntúa:
+     - extracción, deduplicación y emparejamiento con el bug de referencia por un juez;
+     - **F-beta con β≈0,5** para hallazgos que bloquean (precisión primero);
+     - métricas *grounded* (solo contra la referencia) separadas de las *augmented* (hallazgos válidos fuera de la referencia), y nunca se puntúa a un revisor contra hallazgos que él mismo aportó a la referencia.
+
+     Es **obligatoria antes de cambiar el prompt, el modelo o la versión de CLI de un revisor**. Solo predice la dirección del efecto, no su magnitud, así que se confirma en `shadow`.
    - Para cada una se fijan el repo, `base_sha`, la spec y tests ocultos: los tests que añadió el PR humano o aceptado, al estilo FAIL_TO_PASS / PASS_TO_PASS de SWE-bench [F].
    - **Validación de cada tarea** (SWE-Gym): el entorno y el comando de test están fijados, los tests ocultos **fallan antes y pasan después** del PR de referencia, y se descartan las tareas cuyo texto contiene la solución o no aporta información suficiente (en SWE-bench Lite fue un ~17 %; Agentless).
    - **Advertencia de contaminación**: issues anteriores a la fecha de corte de los modelos pueden dar resultados optimistas. Se prefieren issues recientes y se marca la fecha.
@@ -1349,11 +1466,11 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | F0 | *Spike* de verificación: **las 10 pruebas locales** de `research-log.md` §3 (autenticación OAuth sin API key y aislamiento sin `--bare`; fallos de esquema en Claude y en Codex; señales y códigos de salida; precedencia de credenciales en Codex; aprobaciones en `exec`; qué carga Codex de un repo; bloqueo real de escritura en revisores; heartbeat y `rate_limit_event`; uso al reanudar), más H-1, H-2 y H-16 y las preguntas Q1, Q2, Q5, Q10 y Q11 | Documento con las salidas reales, ejecutado contra un repo *sandbox* desechable y nunca contra repos de producto | 2–3 días |
 | F1 | Núcleo: esquema SQLite, state machine pura, outbox, **fencing tokens, snapshot de evaluación y RuntimeResultEnvelope**, GitHub Gateway (solo lectura y etiquetas), `ir status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
 | F2 | Agent Runner: contratos, perfiles de permisos, `env -i`, validación de esquemas, ledger, timeouts y detección de cuelgue, detección de `rate_limit` | Ejecuciones simuladas (un *fake* `claude`/`codex` que emite JSON grabado) cubren éxito, esquema inválido, cuelgue y límite | 3–4 días |
-| F3 | Implementación y validación: worktrees, Implementer, Validator (incluidas las líneas `Verify:` y la receta `verification`), **`ir doctor` en sus dos niveles**, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
-| F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R0–R10, clustering, cobertura, **ciclo de vida de clusters**), **manifiesto de validación transitivo y detector de debilitamiento de tests**, **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
+| F3 | Implementación y validación: worktrees, Implementer, Validator (incluidas las líneas `Verify:` y la receta `verification`), **pasada estática A1 (linters, semgrep, ast-grep, gitleaks, osv-scanner) y oráculo de tests A6**, **`ir doctor` en sus dos niveles**, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
+| F4 | Revisiones y coordinación: tres revisores (Codex solo P0/P1, alcance y reglas por ruta), **filtro barato A2, aprendizajes A3, modo sombra A5, taxonomía A8, revisión incremental A15**, Coordinator (tests de tabla para R0–R10 y R1b, clustering, cobertura, **ciclo de vida de clusters**), **manifiesto de validación transitivo y detector de debilitamiento de tests**, **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
 | F5 | Preparación y aprobación: lint AI-Ready (con `Verify:` por criterio), `ir doctor --init`, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
-| F6 | Merge y verificación: Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
-| F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
+| F6 | Merge y verificación: **tarjeta de aprobación, límites de PR esperando a un humano y de tamaño (A10), muestreo de merges automáticos (A14)**, Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
+| F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia, **métricas de hallazgos atendidos por revisor y categoría (A12), propuestas de reglas a partir de hallazgos repetidos (A4)** | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
 | F8 | Piloto: 10–20 issues reales de riesgo low en un repo de DOMO21, sin merge automático (`auto_merge: none`) | Métricas base en el Registry: tasa de éxito sin humano, rondas, tasa de `rejected_by_judge`, coste de referencia por ítem | 2 semanas de calendario |
 
 Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistencia de agentes (la revisión 2 añade F0 ampliado, fallos inyectados y el filtro contrafactual). **[H]**: es una estimación sin datos de velocidad del equipo.
@@ -1361,6 +1478,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 ### 15.3 Después de v2.0
 
 - **v2.1**:
+  - Prueba diferencial ligera (A7) y evaluación propia de revisores con bugs inyectados (A13).
   - Codex Fixer, con el Opus Reviewer y la ronda reservada.
   - Varios implementadores (desactivado).
   - `max_parallel` mayor que 1.
@@ -1528,4 +1646,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | H-24 | La detección determinista de debilitamiento de tests tiene pocos falsos positivos (refactors legítimos de tests) | Piloto |
 | H-25 | Incluir `environment_digest` en el snapshot no provoca invalidaciones frecuentes en la práctica (actualizaciones de CLI en mitad de un ítem) | Piloto |
 | H-27 | Un tercer revisor de otra familia, de pesos abiertos y alojado en una jurisdicción controlada, aporta hallazgos confirmados que no ven ni Claude ni Codex. Debe lograrlo con una tasa de objeciones falsas y un coste que compensen la llamada extra al juez y las rondas adicionales. Se mide en modo sombra y no se da por hecho a partir de benchmarks públicos | Modo sombra, ≥ 50 ítems |
+| H-28 | Un umbral de ≥ 60 % de atendidos o confirmados en `major` o superior, con ≥ 30 hallazgos, separa a los revisores que merecen bloquear | Piloto y sombra |
+| H-29 | La supresión por ≥ 3 rechazos parecidos reduce el ruido sin perder hallazgos confirmados (en Greptile, los atendidos pasaron del 19 % al 55 %, dato no trasladable) | Piloto |
+| H-30 | La pasada estática A1 reduce los hallazgos LLM redundantes y detecta secretos y dependencias que los LLM pasan por alto | Piloto |
 | H-23 | Con Sonnet como escritor, Codex como revisor de solo lectura aporta más de lo que daña (Xiang et al. midió Opus 4.7 escribiendo y revisores que reescriben; no es trasladable) | 50 ítems |

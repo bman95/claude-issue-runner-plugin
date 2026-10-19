@@ -631,3 +631,17 @@ Se leyó como datos, sin cargar sus skills ni ejecutar nada.
 - Coordinación determinista.
 - Aprobación ligada al hash.
 - Caducidad de la disponibilidad.
+
+## 13. Investigación de la industria (2026-10-19)
+
+Consolidada en [`industria-revision.md`](industria-revision.md), a partir de siete investigaciones paralelas:
+
+- Anthropic y OpenAI.
+- GitHub, Google, Meta y Microsoft.
+- Empresas que programan con agentes (Cursor, Cognition, Factory, Amp, Augment).
+- Proveedores de revisión y benchmarks.
+- Grandes empresas con flotas de agentes (Stripe, Spotify, Uber, Atlassian, LinkedIn, Salesforce, Ramp).
+- Evidencia empírica.
+- CodeRabbit: comprar o construir.
+
+Las propuestas A1–A15 están incorporadas en la especificación (revisión 3). La recomendación sobre CodeRabbit es copiar sus ideas, con una prueba opcional en modo sombra en un repo interno, y no comprarlo por ahora.
