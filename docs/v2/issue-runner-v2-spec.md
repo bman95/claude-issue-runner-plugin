@@ -20,6 +20,19 @@ Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c
 
 Cada cambio enlaza con la sección del registro de investigación que lo justifica (`research-log.md` §9).
 
+**Ideas adoptadas del diseño independiente Sol 6.1** (2026-10-19), cada una marcada en su sección:
+
+- Snapshot de evaluación con seis campos (§4.1, §5.11).
+- Tokens de fencing (§4.1).
+- Ciclo de vida de los clusters, en el que `addressed` no equivale a cerrado (§6.5b).
+- Resultado autenticado por el runtime (§9.1).
+- Protección de las dependencias transitivas de la validación y detección del debilitamiento de tests (§8.3).
+- Cuota desconocida no equivale a ilimitada (§10.3).
+- Bugs con reproducción o razón (§5.1).
+- Retención (§9.1).
+
+**No adoptado de ese diseño:** PostgreSQL, API con RBAC y Context Engine con grafo de procedencia, porque son excesivos para 1–2 ítems por host. Tampoco el contenedor por attempt, que queda aplazado (§16).
+
 ## Leyenda epistémica
 
 Cada afirmación relevante lleva una marca:
@@ -241,8 +254,18 @@ Puntos de entrada:
 
 - **WorkItem**: una issue en un repo. Campos: `state`, `resume_state`, `risk`, `spec_hash`, contadores (§4.3).
 - **SpecSnapshot**: la especificación congelada con la que se implementa (el texto, su hash y la versión AI-Ready).
-- **Attempt**: una invocación de agente o un paso determinista. Campos: rol, modelo, contrato de entrada (hash), salida, uso, duración, código de salida, `lease_until`, pid.
+- **Attempt**: una invocación de agente o un paso determinista.
+  - Campos: rol, modelo, contrato de entrada (hash), salida, uso, duración, código de salida, `lease_until`, pid y **`fencing_token`**.
+  - `fencing_token` es un entero creciente por `(ítem, paso)` que se asigna al lanzar el attempt [P; adoptado del diseño Sol 6.1].
+  - Solo el attempt con el token vigente puede hacer avanzar el estado. Un resultado con un token antiguo (intento cancelado, vencido o reemplazado) se archiva como **tardío** y se ignora, aunque su JSON sea válido.
+  - Toda transición compara el token dentro de la misma transacción SQLite.
 - **Candidate**: `(branch, head_sha, base_sha, parent_candidate)`. Es inmutable: cualquier commit nuevo crea otro candidato.
+- **Snapshot de evaluación** [P; adoptado del diseño Sol 6.1]: la tupla `(spec_hash, base_sha, head_sha, policy_hash, validation_manifest_hash, environment_digest)`.
+  - **Toda** revisión, validación, decisión del Judge y aprobación humana queda ligada a un snapshot, y **cualquier cambio en uno de sus seis campos la invalida**.
+  - `policy_hash`: hash de `policy.yml`, de los prompts de rol y de la tabla de reglas (§6) que estaban en vigor.
+  - `validation_manifest_hash`: hash del contrato de validación **y de los ficheros que ejecuta** (§8.3, regla 4).
+  - `environment_digest`: versiones de `claude` y `codex`, del intérprete y de las herramientas del manifiesto del host, y el hash del lockfile de dependencias del repo.
+  - El coste de esta invalidación es bajo, porque estos valores rara vez cambian durante un ítem. A cambio, evita dar por buena una aprobación obtenida con otra política u otros scripts de validación.
 - **Review**: un revisor sobre un candidato. Puede ser `full` o `delta(from_sha)`.
 - **Finding** → **Cluster**: los hallazgos se agrupan en clusters; cada cluster tiene una disposición (§6).
 - **Decision**: la toma el Coordinator, el Judge o un humano. Guarda el actor, la justificación y las referencias.
@@ -321,6 +344,9 @@ Una issue es **AI-Ready** cuando cumple las dos partes siguientes.
 - Criterios comprobables.
 - Alcance que cabe en un PR (**H-4**: ≤ ~400 líneas cambiadas estimadas).
 - Ninguna decisión de producto sin tomar.
+- **Bugs: reproducción o razón** [P; adoptado del diseño Sol 6.1]. Una issue `kind: bug` necesita un plan de reproducción (pasos o test), o un campo `no_repro_reason` que explique por qué no puede tenerlo (intermitente, depende de producción, solo se ve en la UI). Este campo alimenta §5.4, punto 5.
+- **Features: casos de aceptación observables.** Una issue `kind: feature` tiene al menos un criterio de aceptación verificable por test o por inspección concreta.
+- **Localización probable**: ficheros o símbolos que se espera tocar (`Files likely touched:`). Si es imperfecta no bloquea; sirve de contexto y para las aristas de conflicto.
 
 El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `policy.yml` (por ejemplo `auth/**`, `migrations/**`, `infra/**`, `.github/**`) lo elevan. Bajarlo es siempre una decisión humana.
 
@@ -487,7 +513,10 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 5. `acceptance[]` del último Code Review: todos los AC en `met` o `n/a` con justificación aceptada.
 6. Las rutas protegidas no han cambiado, o hay una Authorization humana.
 7. Si hubo Codex Fixer, existe la aprobación del Opus Reviewer sobre un SHA ancestro con delta revisado.
-8. La especificación no ha cambiado (`spec_hash`).
+8. **El snapshot de evaluación (§4.1) es el mismo** para todas las revisiones, validaciones y aprobaciones que cuentan: la misma spec, la misma política, el mismo manifiesto de validación y el mismo entorno. Si cambió cualquiera de ellos, se vuelve a ejecutar lo que dependía del campo cambiado:
+   - Un cambio de política vuelve a evaluar las reglas y repite las revisiones.
+   - Un cambio de validación o de entorno repite la validación.
+   - Un cambio de spec pasa por PAUSED_SPEC_DRIFT.
 9. La política de riesgo se cumple:
    - `low`: merge automático (si `auto_merge.low` está activo).
    - `medium` y `high`: hace falta una aprobación humana registrada por el runner (`ir approve` o `/ir approve`) de un usuario con `write` o más. Puede ser el propio usuario que lo ejecuta (§5.11, Identidad), además de las reviews que exija el repo.
@@ -647,6 +676,30 @@ si no                               → ACCEPTED (verificación de §5.11)
 
 Tras el Judge se aplican sus disposiciones y se vuelve a ejecutar §6.5, sin otra llamada al Judge en esa misma coordinación. El Judge **no puede** reclasificar R1 (CI/validación): un CI en rojo no se discute, se arregla, o se demuestra que la base está en rojo (WAITING_BASE).
 
+### 6.5b Ciclo de vida de un cluster [P; adoptado del diseño Sol 6.1]
+
+Un cluster pasa por estados explícitos, guardados en `cluster_events`:
+
+```
+reported ──► classified (MUST_FIX | SHOULD_FIX | VERIFY | DEFER | DROP)
+VERIFY ──► confirmed (Judge con contraejemplo, o repro confirmado) | rejected_with_reason
+confirmed / MUST_FIX ──► assigned (ronda N) ──► addressed (el implementador dice "fixed")
+addressed ──► verified_closed | reopened
+salidas laterales: duplicate · disputed · deferred_authorized · dropped
+```
+
+Reglas de cada estado:
+
+- **`addressed` solo significa que el implementador afirma haberlo arreglado.** Nunca cuenta como cerrado.
+- **`verified_closed`** exige evidencia de alguien **distinto del autor del fix**, sobre un snapshot vigente. Vale cualquiera de estas:
+  - un `repro` que antes fallaba y ahora pasa, ejecutado por el coordinator;
+  - un `prior_clusters: resolved` del revisor que lo reportó, o de otro revisor, en la re-revisión del nuevo candidato;
+  - en el caso del Codex Fixer, la confirmación del Opus Reviewer.
+- **`reopened`**: el revisor responde `still_present` o `regressed`. Cuenta para el detector de estancamiento.
+- **`deferred_authorized`**: un DEFER de algo que bloquearía solo es posible con una Authorization humana ligada a ese cluster. Los DEFER de R3 y R9 (preexistentes) no la necesitan.
+- **Puerta 4 de §5.11**: ningún cluster bloqueante en un estado distinto de `verified_closed`, `rejected_with_reason`, `dropped`, `duplicate` o `deferred_authorized`.
+- **Tipos de hallazgo que no bloquean por defecto**: `objection_type: design_alternative` (una dirección distinta, no un defecto) y `question` (una duda del revisor). El primero se trata como un caso DIRECTION si viene de Codex con `disagree`. El segundo se registra y aparece en la tarjeta para que lo vea un humano.
+
 ### 6.6 Invariante de cobertura
 
 Un candidato solo puede ser ACCEPTED si cada commit entre la base y `head_sha` está cubierto por al menos una revisión completa o delta de **cada** revisor requerido. Esto cierra el defecto de v1, donde la última ronda de fixes se fusionaba sin revisar. Cuesta una re-revisión delta después de la ronda final de correcciones, que es barata porque solo ve el delta (**H-7**).
@@ -722,7 +775,7 @@ Campos:
     "claim": "…", "evidence": "…", "failure_scenario": "entrada/estado concretos → resultado erróneo",
     "evidence_kind": "test|input|trace|static",
     "repro": {"path": "tests/ir_repro_F1.test.ts", "content": "…", "command": "npx vitest run tests/ir_repro_F1.test.ts", "expect": "fail_on_candidate"},
-    "objection_type": "logic|boundary|added_requirement|misread_spec|security|other",
+    "objection_type": "logic|boundary|added_requirement|misread_spec|security|design_alternative|question|other",
     "cwe": null, "proposed_fix": null
   }],
   "abstain": [{"dimension": "performance", "reason": "…"}],
@@ -856,6 +909,22 @@ Reglas:
 1. Los agentes solo se ejecutan sobre worktrees cuyo plano de control es **idéntico al de la base** (comprobación por hash antes de cada lanzamiento).
 2. Si un candidato modifica una ruta protegida: AWAITING_HUMAN antes de cualquier revisión. Tras la aprobación, los revisores se ejecutan con `--setting-sources user` (flag documentado; su efecto exacto es **H-2**) y en una copia con el plano de control de la base, más el diff de control como texto.
 3. El Validator ejecuta los comandos de validación de la **base**, nunca los del candidato (regla de v1).
+4. **Dependencias transitivas de la validación** [P; adoptado del diseño Sol 6.1]. v1 solo protegía el fichero del contrato. Pero un PR puede dejar intacto `.issue-runner/validation` y vaciar el script que ese contrato ejecuta (`scripts/preflight.sh`, un `Makefile`, la configuración del runner de tests).
+   - El **manifiesto de validación** es la lista de ficheros que la validación ejecuta o lee como configuración. Se declara en `policy.yml` (`validation_manifest:`) y se completa automáticamente con:
+     - el script referido por cada clave del contrato;
+     - los ficheros de configuración conocidos del runner de tests: `package.json` (sección `scripts`), `pytest.ini`, `pyproject.toml` (secciones de test), `jest.config.*`, `vitest.config.*`, `Makefile`;
+     - los workflows de CI que actúan como checks requeridos.
+   - Un candidato que modifique un fichero del manifiesto se trata como cambio del plano de control: va a **AWAITING_HUMAN antes de revisar**, como el código 5 del contrato en v1.
+   - El hash del manifiesto de la base forma parte del snapshot (§4.1).
+5. **Debilitamiento de tests** [P; adoptado del diseño Sol 6.1]. Es una comprobación determinista sobre el diff que genera un hallazgo sintético `category: tests`, `severity: major`, `objection_type: other` y `ev = concrete`.
+   - **Qué detecta**:
+     - tests o ficheros de test borrados;
+     - marcas de omisión añadidas (`skip`, `xfail`, `.only`, `@Disabled`, `t.Skip`, `it.skip`, `pytest.mark.skip`);
+     - asserts eliminados sin que el bloque entero se sustituya;
+     - umbrales de cobertura reducidos en la configuración;
+     - menos tests ejecutados entre la base y el candidato, según el resumen del runner si lo da.
+   - **Qué se hace**: si la spec no lo justifica (por ejemplo, "eliminar la funcionalidad X y sus tests"), va al Judge como `spec_dispute`.
+   - **Qué no hace**: nunca se fusiona en silencio un candidato que debilita tests.
 
 ### 8.4 Sandbox y host
 
@@ -898,6 +967,26 @@ Tablas principales:
 - `events`: append-only, la fuente de verdad de auditoría.
 - `ledger`, `quota_windows`
 - `evidence_claims`, `evidence_links`
+
+**Resultado autenticado por el runtime** [P; adoptado del diseño Sol 6.1]. Lo que el coordinator registra de cada attempt es un `RuntimeResultEnvelope`, que construye **el Agent Runner a partir del proceso**, nunca a partir de campos que escribe el modelo:
+
+- `attempt_id`, `fencing_token`, `session_id` (el asignado), binario y versión.
+- Código de salida y estado clasificado: `completed|timeout|cancelled|quota_exhausted|auth_error|invalid_output|infrastructure_error`.
+- Hora de inicio y de fin, uso (de la línea `result` o de `turn.completed`).
+- Referencias a los artefactos brutos (`stdout.jsonl`, stderr) y al payload validado.
+
+El JSON del modelo (`structured_output`) es solo el **payload** dentro del sobre. Un payload que diga "completed" o que traiga un `attempt_id` no tiene ningún efecto: el estado sale del sobre. Si el payload trae claves inesperadas, rutas fuera del worktree o referencias inexistentes, se rechaza aunque valide en forma (el esquema usa `additionalProperties: false`).
+
+**Retención** [P; adoptado del diseño Sol 6.1, con valores iniciales]:
+
+| Qué | Cuánto tiempo |
+|---|---|
+| Eventos, decisiones, autorizaciones, clusters y ledger | Toda la vida del proyecto |
+| `stdout.jsonl` y logs brutos | 90 días; los de ítems seleccionados para el Registry o el *replay*, sin límite |
+| Worktrees de ítems DONE | Se borran al terminar |
+| Worktrees de ítems fallidos o abandonados | 14 días |
+
+Los secretos se redactan antes de guardar cualquier artefacto. El backup de `ir.db` y del directorio de artefactos se hace junto, y la restauración se comprueba con los hashes de los artefactos.
 
 Cada transición de estado es **una transacción** que inserta el evento y actualiza `work_items`. Las acciones externas (push, comentario, merge) se registran como `outbox` y se ejecutan después del commit. Se marcan como hechas al confirmar la respuesta de GitHub, con una clave de idempotencia (patrón *outbox*).
 
@@ -987,6 +1076,9 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
 - **Ventanas estimadas** (respaldo, y para Codex) por proveedor y modelo, con tokens ponderados (la lectura de caché pesa menos: **H-16**, ponderación desconocida).
 - **Calibración**: cada vez que aparece un `rate_limit`, se registra el consumo estimado de la ventana en ese instante. La mediana de esos valores es la capacidad estimada (**H-17**).
 - **Admisión**: el Scheduler solo lanza un attempt si `headroom_estimado ≥ p75(coste del rol, según el Registry)`. Si no hay datos, se admite y se aprende.
+- **Desconocido no es ilimitado** [P; adoptado del diseño Sol 6.1]. Si una línea no tiene ninguna señal de cuota (ni `rate_limit_event` ni estimación calibrada), `headroom` vale `unknown`, nunca infinito.
+  - Con `unknown` se admite **un attempt cada vez** en esa línea, sin paralelismo, hasta que haya datos.
+  - Un attempt cancelado o con timeout puede haber consumido cuota igualmente; el ledger registra su uso si llegó a emitir `result` o `turn.completed`, y lo marca `usage_unknown` si no.
 - **Reserva**: se mantiene un 25 % de la ventana semanal de Opus sin usar para el Judge y los Opus Reviewers. Sin esa reserva, una cola larga de preparación podría dejar los ítems en curso sin juez.
 - **Al recibir un `rate_limit`**: la línea queda en pausa hasta el *reset* si el error lo indica; si no, espera de 15, 30 y 60 minutos hasta un máximo de 4 h, y aviso. Los ítems pasan a WAITING_QUOTA con `resume_state`, sin consumir contadores ni cambiar de modelo.
 - **Horario** opcional `quiet_hours`, para no competir con el uso interactivo del equipo, que comparte la misma cuota en Pro y Max [F].
@@ -1161,10 +1253,10 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | Fase | Entregable | Criterio de aceptación | Esfuerzo orientativo |
 |---|---|---|---|
 | F0 | *Spike* de verificación: **las 10 pruebas locales** de `research-log.md` §3 (autenticación OAuth sin API key y aislamiento sin `--bare`; fallos de esquema en Claude y en Codex; señales y códigos de salida; precedencia de credenciales en Codex; aprobaciones en `exec`; qué carga Codex de un repo; bloqueo real de escritura en revisores; heartbeat y `rate_limit_event`; uso al reanudar), más H-1, H-2 y H-16 y las preguntas Q1, Q2, Q5, Q10 y Q11 | Documento con las salidas reales, ejecutado contra un repo *sandbox* desechable y nunca contra repos de producto | 2–3 días |
-| F1 | Núcleo: esquema SQLite, state machine pura, outbox, GitHub Gateway (solo lectura y etiquetas), `ir status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
+| F1 | Núcleo: esquema SQLite, state machine pura, outbox, **fencing tokens, snapshot de evaluación y RuntimeResultEnvelope**, GitHub Gateway (solo lectura y etiquetas), `ir status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
 | F2 | Agent Runner: contratos, perfiles de permisos, `env -i`, validación de esquemas, ledger, timeouts y detección de cuelgue, detección de `rate_limit` | Ejecuciones simuladas (un *fake* `claude`/`codex` que emite JSON grabado) cubren éxito, esquema inválido, cuelgue y límite | 3–4 días |
 | F3 | Implementación y validación: worktrees, Implementer, Validator, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
-| F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R0–R10, clustering, cobertura), **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
+| F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R0–R10, clustering, cobertura, **ciclo de vida de clusters**), **manifiesto de validación transitivo y detector de debilitamiento de tests**, **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
 | F5 | Preparación y aprobación: lint AI-Ready, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
 | F6 | Merge y verificación: Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
 | F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
@@ -1198,6 +1290,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | **OpenTelemetry** | El ledger desde la salida JSON cubre v2.0 | Necesidad de paneles en tiempo real o de varios hosts |
 | **Replay offline** | Hace falta un conjunto dorado curado y consume cuota | Primer cambio de modelo o de política importante |
 | **Managed Code Review / Codex GitHub review** | Gasto incremental, sin salida estructurada, no bloquea | Shadow que demuestre aportación única |
+| **Contenedor por attempt** (sugerido por el diseño Sol 6.1) | Aísla credenciales, procesos y sistema de ficheros mejor que un worktree con el sandbox de Claude Code y `env -i`. Pero añade operación: imágenes por repo, cachés de dependencias, montajes, y que `claude` y `codex` funcionen con OAuth dentro del contenedor | Repos con dependencias poco fiables, más de un usuario por host, o un incidente de aislamiento. Es compatible con el diseño: el Agent Runner es la única pieza que cambia |
 | **Merge queue de GitHub** | El lock más el refresco de v1 bastan con concurrencia baja (design-notes §2). Además, la cola prueba un SHA (`gh-readonly-queue/*`) que nadie ha revisado, y su disponibilidad depende del plan | `max_parallel` mayor o igual que 4, o conflictos semánticos post-merge |
 | **Codex `app-server`** | Experimental y "not supported for production workloads" | Que F0 demuestre que `exec` no permite cancelar de forma fiable o no da señales de límite, o que pase a estable |
 | **Verificador o crítico entrenado** | Necesita miles de trayectorias propias. El crítico publicado de OpenHands cae por debajo del azar con otro modelo u otra población | Más de 1.000 attempts etiquetados en el Registry |
@@ -1331,4 +1424,6 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | H-20 | Hay autopreferencia de Codex al revisar su propio fix (medida en resúmenes, no en código) | v2.1 |
 | H-21 | Las confirmaciones estáticas del Judge (`judge_static`) acaban siendo `fixed_verified` | Piloto |
 | H-22 | El filtro contrafactual reduce las correcciones de código correcto sin aumentar los escapes | Piloto |
+| H-24 | La detección determinista de debilitamiento de tests tiene pocos falsos positivos (refactors legítimos de tests) | Piloto |
+| H-25 | Incluir `environment_digest` en el snapshot no provoca invalidaciones frecuentes en la práctica (actualizaciones de CLI en mitad de un ítem) | Piloto |
 | H-23 | Con Sonnet como escritor, Codex como revisor de solo lectura aporta más de lo que daña (Xiang et al. midió Opus 4.7 escribiendo y revisores que reescriben; no es trasladable) | 50 ítems |

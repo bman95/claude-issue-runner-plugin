@@ -520,3 +520,32 @@ Aplicados en `issue-runner-v2-spec.md`; cada uno lleva su sección indicada:
   - Varios usuarios sobre el mismo repo se coordinan mediante un reclamo en GitHub.
 - **Q11: planes siempre.** Codex usa el login de ChatGPT en el host persistente, en el modo "advanced" documentado, solo con repos privados.
 - **Q12: se permite el perfil solo-documentación** (sin Security Review cuando todo el diff es documentación).
+
+## 10. Comparación con el diseño independiente Sol 6.1 (2026-10-19)
+
+**Material comparado:** especificación 0.1 (18 de octubre), YAML del workflow, esquemas JSON y resumen HTML.
+
+**Adoptado en la especificación:**
+
+- Snapshot de evaluación de seis campos.
+- Tokens de fencing.
+- Ciclo de vida de los hallazgos, en el que `addressed` no equivale a cerrado y el cierre lo hace alguien distinto del autor.
+- Resultado autenticado por el runtime.
+- Protección transitiva de la validación y detección del debilitamiento de tests.
+- Cuota desconocida no equivale a ilimitada.
+- Bugs con reproducción o razón.
+- Retención.
+
+**No adoptado:**
+
+- PostgreSQL, FastAPI y RBAC, y un Context Engine con grafo de procedencia. Son excesivos para 1–2 ítems por host y no encajan con la decisión de usar `gh` con el token de cada usuario.
+- `checks_match_expected_app`, que exige una GitHub App, descartada por el usuario.
+- La merge queue, que choca con aprobar el SHA exacto.
+
+**Aplazado:** el contenedor por attempt.
+
+**Discrepancias señaladas en ese diseño:**
+
+- No define cómo pasa un hallazgo de `needs_evidence` a `confirmed`.
+- `WAITING_RESOURCE` no tiene plazo máximo ni escalado.
+- No inspeccionó el código de la skill de revisión cruzada.
