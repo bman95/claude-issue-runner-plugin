@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Issue Runner v2</title>
+<meta name="description" content="Resumen del diseño final de Issue Runner v2 para DOMO21 / Sicma21.">
+<style>
+:root{
+  --bg:#f7f6f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6762; --line:#d9ded9;
+  --accent:#1f5f55; --accent-soft:#e3efeb; --warn:#9a5a1f; --warn-soft:#f6ebdf;
+  --q:#5b4a8a; --q-soft:#ece8f5; --code:#eef1ee;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121615; --surface:#1a201e; --ink:#e4ebe8; --muted:#9aa8a3; --line:#2c3532;
+    --accent:#6cc4b2; --accent-soft:#1d322d; --warn:#e0a46a; --warn-soft:#33281c;
+    --q:#b3a3e6; --q-soft:#26223a; --code:#222a27;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121615; --surface:#1a201e; --ink:#e4ebe8; --muted:#9aa8a3; --line:#2c3532;
+  --accent:#6cc4b2; --accent-soft:#1d322d; --warn:#e0a46a; --warn-soft:#33281c;
+  --q:#b3a3e6; --q-soft:#26223a; --code:#222a27;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 16px 64px}
+header h1{font-size:clamp(32px,6vw,52px);line-height:1.1;margin:8px 0 12px;letter-spacing:-.02em}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--accent)}
+.lead{font-size:19px;color:var(--muted);max-width:760px;margin:0 0 12px}
+.meta{font-size:13px;color:var(--muted)}
+nav{display:flex;flex-wrap:wrap;gap:8px;margin:20px 0 0}
+nav a{font-size:13px;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:5px 11px;background:var(--surface)}
+section{border-top:1px solid var(--line);padding:32px 0;scroll-margin-top:12px}
+h2{font-size:26px;line-height:1.25;margin:0 0 14px;letter-spacing:-.01em}
+h3{font-size:17px;margin:0 0 6px}
+p{margin:0 0 12px}
+code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px}
+.card p:last-child{margin:0}
+.tag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:4px;margin-bottom:8px}
+.t-a{background:var(--accent-soft);color:var(--accent)}
+.t-p{background:var(--warn-soft);color:var(--warn)}
+.t-q{background:var(--q-soft);color:var(--q)}
+.callout{background:var(--accent-soft);border-left:4px solid var(--accent);padding:14px 18px;border-radius:0 8px 8px 0;margin:16px 0}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{color:var(--accent);font-weight:700;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+ol.flow{list-style:none;counter-reset:s;padding:0;margin:0;display:grid;gap:10px}
+ol.flow li{counter-increment:s;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px 12px 52px;position:relative}
+ol.flow li::before{content:counter(s);position:absolute;left:14px;top:12px;width:26px;height:26px;border-radius:50%;background:var(--accent);color:var(--bg);font-weight:700;font-size:13px;display:grid;place-items:center}
+ul{padding-left:20px;margin:0 0 12px}
+li{margin:3px 0}
+.diagram{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px}
+.diagram svg{width:100%;height:auto;display:block}
+.svg-box{fill:var(--surface);stroke:var(--accent);stroke-width:1.5}
+.svg-box2{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.svg-t{fill:var(--ink);font:600 13px system-ui,sans-serif}
+.svg-s{fill:var(--muted);font:11px system-ui,sans-serif}
+.svg-l{stroke:var(--accent);stroke-width:1.5;fill:none}
+.svg-arrow{fill:var(--accent)}
+footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:var(--muted)}
+.toggle{float:right;font:inherit;font-size:12px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+@media print{nav,.toggle{display:none}body{background:#fff;font-size:12px}section{break-inside:avoid-page}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <button class="toggle" type="button" id="themeBtn">Tema claro / oscuro</button>
+  <div class="eyebrow">DOMO21 / Sicma21 · Diseño final, revisión 2</div>
+  <h1>Issue Runner v2</h1>
+  <p class="lead">De issue de GitHub a PR fusionado con agentes Claude Code y Codex. Un programa determinista lleva el control, los agentes solo emiten juicios acotados, y no se fusiona nada sin evidencia ligada al commit exacto.</p>
+  <p class="meta">19 de octubre de 2026 · Especificación completa: <code>docs/v2/issue-runner-v2-spec.md</code> · Investigación: <code>docs/v2/research-log.md</code> · Rama <code>ccr-a980ef6d-7el8ci</code> · Diseño sin implementar.</p>
+  <nav aria-label="Secciones">
+    <a href="#tesis">Tesis</a><a href="#decisiones">Decisiones</a><a href="#arquitectura">Arquitectura</a><a href="#flujo">Flujo</a><a href="#revision">Revisión</a><a href="#agentes">Agentes</a><a href="#merge">Merge</a><a href="#uso">Uso y límites</a><a href="#persistencia">Persistencia</a><a href="#evidencia">Evidencia</a><a href="#mvp">MVP y plan</a><a href="#pendiente">Pendiente</a>
+  </nav>
+</header>
+
+<section id="tesis">
+  <h2>La idea central</h2>
+  <p>En v1, Claude ejecuta como orquestador unas 68.000 palabras de instrucciones. Sus fallos en producción fueron, sobre todo, fallos de interpretación de esa prosa: pasos omitidos, resúmenes parafraseados, aprobaciones inventadas. <strong>v2 invierte el control.</strong></p>
+  <div class="grid">
+    <div class="card"><h3>Coordinator determinista</h3><p>CLI en Python con SQLite. Una máquina de estados con transiciones transaccionales. Ningún LLM decide el flujo.</p></div>
+    <div class="card"><h3>Agentes como procesos acotados</h3><p><code>claude -p</code> y <code>codex exec</code>. Cada uno recibe un contrato de entrada y devuelve JSON validado contra un esquema. Sin hooks.</p></div>
+    <div class="card"><h3>Los agentes proponen, el coordinator decide</h3><p>Ningún agente escribe en GitHub ni fusiona. El coordinator ejecuta acciones de un catálogo cerrado, con <code>gh</code>.</p></div>
+  </div>
+</section>
+
+<section id="decisiones">
+  <h2>Decisiones acordadas</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Tema</th><th>Decisión</th></tr></thead>
+    <tbody>
+      <tr><td>Review Coordinator</td><td>Principalmente determinista. Opus interviene solo cuando hace falta juicio técnico.</td></tr>
+      <tr><td>Implementación</td><td>Sonnet mediante Claude Code, con la suscripción.</td></tr>
+      <tr><td>Revisiones</td><td>Code Review y Security Review (Claude) en paralelo, más Codex Reviewer independiente y de solo lectura. Codex puede proponer alternativas cuando discrepa de la dirección.</td></tr>
+      <tr><td>Codex Fixer</td><td>Excepcional. Sus cambios exigen un Opus Reviewer en una ejecución nueva de Claude Code.</td></tr>
+      <tr><td>Varios implementadores</td><td>Disponibles, desactivados por defecto. Se consideran ante estancamiento, alternativas arquitectónicas o criticidad especial.</td></tr>
+      <tr><td>Preparación</td><td>Opus prepara las issues que no son AI-Ready.</td></tr>
+      <tr><td>Costes</td><td>Tres contabilidades separadas: límites de suscripción, gasto incremental y coste de referencia.</td></tr>
+      <tr><td>GitHub (Q10)</td><td>Todo por GitHub CLI (<code>gh</code>), con el token y los permisos de cada usuario. Sin cuenta de bot ni GitHub App.</td></tr>
+      <tr><td>Planes (Q11)</td><td>Siempre planes: suscripción de Claude y plan de ChatGPT para Codex. Nada de API por defecto.</td></tr>
+      <tr><td>Perfil solo-documentación (Q12)</td><td>Si todo el diff es documentación, no se lanza Security Review.</td></tr>
+      <tr><td>Forge (Q13)</td><td>Solo GitHub. No se usará GitLab.</td></tr>
+      <tr><td>Hooks</td><td>Ninguno. Si se distribuye como plugin de Claude Code, es solo una fachada (<code>/ir</code>) que llama al CLI.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="arquitectura">
+  <h2>Arquitectura</h2>
+  <div class="diagram" role="img" aria-label="Componentes del coordinator: scheduler, máquina de estados, agent runner, review coordinator, validator y merger sobre SQLite; los agentes Claude y Codex se lanzan como procesos y solo el gateway escribe en GitHub mediante gh.">
+    <svg viewBox="0 0 760 330">
+      <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" class="svg-arrow"/></marker></defs>
+      <rect x="10" y="20" width="150" height="60" rx="8" class="svg-box2"/><text x="85" y="46" text-anchor="middle" class="svg-t">GitHub</text><text x="85" y="64" text-anchor="middle" class="svg-s">issues · PRs · CI</text>
+      <rect x="200" y="10" width="550" height="230" rx="10" class="svg-box" style="stroke-dasharray:5 4"/>
+      <text x="215" y="30" class="svg-s">Host del usuario · CLI ir</text>
+      <rect x="215" y="42" width="120" height="54" rx="7" class="svg-box"/><text x="275" y="66" text-anchor="middle" class="svg-t">Scheduler</text><text x="275" y="83" text-anchor="middle" class="svg-s">DAG · cuotas</text>
+      <rect x="350" y="42" width="130" height="54" rx="7" class="svg-box"/><text x="415" y="66" text-anchor="middle" class="svg-t">Máquina de estados</text><text x="415" y="83" text-anchor="middle" class="svg-s">transacciones</text>
+      <rect x="495" y="42" width="120" height="54" rx="7" class="svg-box"/><text x="555" y="66" text-anchor="middle" class="svg-t">Agent Runner</text><text x="555" y="83" text-anchor="middle" class="svg-s">contratos · fencing</text>
+      <rect x="630" y="42" width="110" height="54" rx="7" class="svg-box2"/><text x="685" y="66" text-anchor="middle" class="svg-t">claude -p</text><text x="685" y="83" text-anchor="middle" class="svg-s">codex exec</text>
+      <rect x="215" y="112" width="120" height="54" rx="7" class="svg-box"/><text x="275" y="136" text-anchor="middle" class="svg-t">Gateway gh</text><text x="275" y="153" text-anchor="middle" class="svg-s">único que escribe</text>
+      <rect x="350" y="112" width="130" height="54" rx="7" class="svg-box"/><text x="415" y="136" text-anchor="middle" class="svg-t">Review Coordinator</text><text x="415" y="153" text-anchor="middle" class="svg-s">reglas R0–R10</text>
+      <rect x="495" y="112" width="120" height="54" rx="7" class="svg-box"/><text x="555" y="136" text-anchor="middle" class="svg-t">Validator</text><text x="555" y="153" text-anchor="middle" class="svg-s">preflight · Verify:</text>
+      <rect x="630" y="112" width="110" height="54" rx="7" class="svg-box"/><text x="685" y="136" text-anchor="middle" class="svg-t">Merger</text><text x="685" y="153" text-anchor="middle" class="svg-s">lock · puertas</text>
+      <rect x="215" y="180" width="525" height="48" rx="7" class="svg-box2"/><text x="477" y="202" text-anchor="middle" class="svg-t">SQLite (eventos, intentos, hallazgos, ledger, evidencia) + artefactos</text><text x="477" y="219" text-anchor="middle" class="svg-s">outbox para efectos externos idempotentes</text>
+      <path d="M160 50 H200 V139 H215" class="svg-l" marker-end="url(#ar)"/>
+      <path d="M615 69 H630" class="svg-l" marker-end="url(#ar)"/>
+      <rect x="215" y="262" width="525" height="54" rx="7" class="svg-box"/><text x="477" y="286" text-anchor="middle" class="svg-t">Worktrees por intento · sandbox bubblewrap · env -i (sin API keys ni GH_TOKEN)</text><text x="477" y="303" text-anchor="middle" class="svg-s">los agentes no tienen credenciales de GitHub</text>
+    </svg>
+  </div>
+  <p class="meta" style="margin-top:10px">Alternativas descartadas como núcleo:</p>
+  <ul class="meta">
+    <li>Temporal: servidor adicional.</li>
+    <li>LangGraph: sin temporizadores y sin cancelación de nodos en ejecución.</li>
+    <li>GitHub Agentic Workflows: Actions con tokens de suscripción.</li>
+    <li>Agent SDK: pide API key para productos.</li>
+    <li>Code Review gestionada: no bloquea y cuesta aparte.</li>
+  </ul>
+  <p class="meta">Ningún framework resuelve la idempotencia en GitHub ni la supervisión de procesos: eso es trabajo nuestro en cualquier caso.</p>
+</section>
+
+<section id="flujo">
+  <h2>Flujo de una issue</h2>
+  <ol class="flow">
+    <li><strong>Triage determinista.</strong> Lint AI-Ready: qué construir, criterios con <code>Verify:</code> (<code>http</code>, <code>browser</code>, <code>cli</code>, <code>inspection</code>), <code>Blocked by</code>, ficheros probables, fuera de alcance, riesgo. Un bug necesita reproducción o una razón escrita de por qué no la tiene.</li>
+    <li><strong>Preparación con Opus</strong> si la issue no es AI-Ready. Las preguntas de producto van a una persona. Una persona con permiso de escritura aprueba con <code>ir:ai-ready</code>. Se congela la spec, y si cambia, el ítem se pausa.</li>
+    <li><strong>Reclamo e implementación con Sonnet.</strong> La issue se asigna al usuario para que otro runner no la tome. El implementador trabaja en un worktree, sin push ni <code>gh</code>. En bugs escribe primero un test que debe fallar en la base.</li>
+    <li><strong>Validación determinista.</strong> <code>preflight</code> del contrato de la base y ejecución de las líneas <code>Verify:</code> por el Validator. Después se hace push y se abre un draft PR.</li>
+    <li><strong>Revisiones en paralelo sobre el mismo SHA.</strong> Code Review, Security Review y Codex Reviewer, más CI. Son prompts propios con el diff explícito, no los comandos nativos.</li>
+    <li><strong>Coordinación determinista.</strong> Ejecuta los tests de reproducción de los revisores, agrupa y clasifica los hallazgos. Llama a Opus como juez solo ante ambigüedad, disputa o desacuerdo de dirección.</li>
+    <li><strong>Correcciones con Sonnet</strong>, hasta 4 rondas. Si el bucle se estanca, Opus elige una salida: Codex Fixer, varios implementadores (si están activados), volver a especificar la issue, o una persona.</li>
+    <li><strong>Verificación previa al merge.</strong> Todas las puertas se comprueban sobre el mismo snapshot: spec, base, cabeza, política, validación y entorno.</li>
+    <li><strong>Merge serializado.</strong> Se refresca la base con merge (nunca rebase), se revalida, y se fusiona con <code>merge-async</code> y el <code>sha</code> fijado. Hace falta una aprobación con <code>ir approve</code> en riesgo medio o alto, o siempre en repos con <code>merge_mode: request_only</code>.</li>
+  </ol>
+  <div class="callout"><strong>Cada bucle consume un contador limitado</strong>: rondas, adjudicaciones, Codex Fixer, refrescos de base, reintentos. Las esperas (cuota, base en rojo, humano) tienen plazo y avisan. Solo una persona reinicia los contadores, así que todo ítem termina o queda esperando a alguien de forma visible.</div>
+</section>
+
+<section id="revision">
+  <h2>Revisión basada en evidencia</h2>
+  <p>La investigación cambió el diseño en un punto clave. Pedir a un revisor que explique y arregle dispara los rechazos de código correcto (Jin y Chen, 2026). Y un revisor que reescribe puede romper código correcto (Xiang et al., 2026). Por eso:</p>
+  <div class="grid">
+    <div class="card"><span class="tag t-a">Regla</span><h3>Evidencia ejecutable</h3><p>Los revisores pueden aportar un test de reproducción, y lo ejecuta el coordinator. Si el test pasa sobre el candidato, la objeción queda refutada. Una objeción solo de razonamiento nunca bloquea por sí sola: el juez Opus tiene que aportar un contraejemplo.</p></div>
+    <div class="card"><span class="tag t-a">Regla</span><h3>Sin hallazgos es válido</h3><p>No se pide proponer arreglos. Un revisor puede abstenerse. No poder verificar algo no es un defecto. Codex interviene solo ante un defecto demostrable y conserva la estructura del autor.</p></div>
+    <div class="card"><span class="tag t-a">Regla</span><h3>Cerrar exige a otro</h3><p>Que el implementador diga "arreglado" no cierra nada. Para cerrar hace falta evidencia de alguien distinto del autor del fix: un test que ahora pasa, el revisor confirmándolo, o Opus si el fix es de Codex.</p></div>
+    <div class="card"><span class="tag t-p">Seguridad</span><h3>Fail-closed con riesgo alto</h3><p>Un hallazgo de seguridad bloquea siempre en riesgo alto, o con evidencia concreta. En los demás casos lo verifica el juez con un escenario de explotación. Un hallazgo preexistente se avisa en privado.</p></div>
+    <div class="card"><span class="tag t-p">Protección</span><h3>Plano de control</h3><p>Si el candidato cambia <code>.claude/</code>, <code>.mcp.json</code>, <code>AGENTS.md</code>, CI, el contrato de validación o los scripts que ese contrato ejecuta, va a revisión humana antes de que corra ningún agente. Los tests debilitados se detectan de forma automática.</p></div>
+    <div class="card"><span class="tag t-p">Codex Fixer</span><h3>Puerta contrafactual</h3><p>El parche de Codex se prueba antes y después, y se cuentan arreglos y regresiones por separado. El commit lo hace el coordinator. Después lo revisa un Opus Reviewer en una ejecución nueva. La aprobación del propio Codex no cuenta para su fix.</p></div>
+  </div>
+</section>
+
+<section id="agentes">
+  <h2>Agentes y permisos</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Rol</th><th>Motor</th><th>Escribe</th><th>Red</th><th>Sesión</th></tr></thead>
+    <tbody>
+      <tr><td>Preparer</td><td>Claude Opus</td><td>No</td><td>No</td><td>Nueva</td></tr>
+      <tr><td>Implementer</td><td>Claude Sonnet</td><td>Solo su worktree, sin push</td><td>Lista de dominios permitidos</td><td>Reanudable en la ronda 2</td></tr>
+      <tr><td>Code Reviewer</td><td>Claude Sonnet (Opus con riesgo alto)</td><td>No</td><td>No</td><td>Nueva, sin persistencia</td></tr>
+      <tr><td>Security Reviewer</td><td>Claude Sonnet/Opus según riesgo</td><td>No</td><td>No</td><td>Nueva</td></tr>
+      <tr><td>Codex Reviewer</td><td><code>codex exec</code>, solo lectura</td><td>No</td><td>No</td><td>Efímera</td></tr>
+      <tr><td>Judge</td><td>Claude Opus</td><td>No</td><td>No</td><td>Nueva</td></tr>
+      <tr><td>Codex Fixer</td><td><code>codex exec</code> con escritura</td><td>Worktree propio; commit del coordinator</td><td>No</td><td>Efímera</td></tr>
+      <tr><td>Opus Reviewer</td><td>Claude Opus</td><td>No</td><td>No</td><td>Nueva, nunca reanudada</td></tr>
+    </tbody>
+  </table></div>
+  <ul style="margin-top:12px">
+    <li><strong>Entorno limpio (<code>env -i</code>).</strong> Se eliminan <code>ANTHROPIC_API_KEY</code>, <code>CODEX_API_KEY</code> y <code>GH_TOKEN</code>, para no facturar API sin querer.</li>
+    <li><strong>Modo de permisos siempre explícito.</strong> Se pasa siempre <code>--permission-prompts none</code>, y nunca <code>--dangerously-skip-permissions</code>.</li>
+    <li><strong>Éxito</strong> = código de salida 0, <code>success</code> sin error, <strong>más de 0 tokens de salida</strong> y JSON válido. En pruebas reales, <code>claude -p</code> devolvió 0 y <code>success</code> con la autenticación fallida.</li>
+    <li><strong>Cada intento lleva un token de fencing.</strong> Un resultado tardío de un intento cancelado nunca hace avanzar el estado.</li>
+  </ul>
+</section>
+
+<section id="merge">
+  <h2>Puertas antes del merge</h2>
+  <div class="grid">
+    <div class="card"><h3>Ejecución</h3><ul><li>CI en verde sobre el SHA exacto.</li><li><code>preflight</code> y <code>full</code> en verde con la base actual.</li><li>Todas las líneas <code>Verify:</code> pasan.</li><li><code>status: green</code> del contrato de integración, si el repo lo declara.</li></ul></div>
+    <div class="card"><h3>Revisión</h3><ul><li>Cada commit está cubierto por todos los revisores requeridos.</li><li>Ningún hallazgo bloqueante abierto.</li><li>Aprobación del Opus Reviewer si hubo Codex Fixer.</li></ul></div>
+    <div class="card"><h3>Integridad</h3><ul><li>El snapshot no ha cambiado: spec, política, validación y entorno.</li><li>El plano de control está intacto o hay una autorización humana.</li><li>Aprobación con <code>ir approve</code> según el riesgo o el <code>merge_mode</code>.</li></ul></div>
+  </div>
+  <p style="margin-top:12px">El resultado se publica como commit status <code>issue-runner/gate</code>, exigido por el ruleset. Protege frente a merges manuales por error. El runner nunca fusiona si sus propias puertas no están en verde. Ante un resultado incierto, repetir <code>merge-async</code> con el mismo <code>sha</code> no fusiona dos veces.</p>
+</section>
+
+<section id="uso">
+  <h2>Uso y límites</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Contabilidad</th><th>Qué mide</th><th>Para qué</th></tr></thead>
+    <tbody>
+      <tr><td>Límites de suscripción</td><td>Ventanas de 5 h y semanales de Claude y ChatGPT. Señal: <code>rate_limit_event</code> (uso y hora de reinicio), con estimación por tokens como respaldo.</td><td>Ritmo. Si se agota, el ítem espera sin gastar contadores ni cambiar de modelo. Un 25 % de la cuota de Opus queda reservado para el juez.</td></tr>
+      <tr><td>Gasto incremental</td><td>Dinero real fuera de los planes.</td><td>Presupuesto duro: <strong>0 € por defecto</strong>.</td></tr>
+      <tr><td>Coste de referencia</td><td>Lo que costaría a precio de lista de la API.</td><td>Eficiencia y comparación. También como disyuntor por intento y por ítem.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="meta" style="margin-top:10px">Una cuota desconocida no se trata como ilimitada. Un fallo de autenticación pausa toda la línea de ese proveedor.</p>
+</section>
+
+<section id="persistencia">
+  <h2>Persistencia, memoria y recuperación</h2>
+  <div class="grid">
+    <div class="card"><h3>Estado</h3><p>SQLite con transacciones y eventos solo de anexado, y un outbox para push, comentarios y merge. GitHub es el espejo público: etiquetas <code>ir:*</code>, tarjeta del PR y draft PR como checkpoint.</p></div>
+    <div class="card"><h3>Memoria</h3><p>El dossier de cada ítem genera un <em>brief</em> determinista. La memoria del repo vive en CLAUDE.md y AGENTS.md, con cambios propuestos por PR. El Registry no se inyecta en los prompts. Sin RAG.</p></div>
+    <div class="card"><h3>Recuperación</h3><p>Al arrancar, el runner reconcilia con GitHub antes de actuar. Una lectura fallida nunca se toma por "no existe". Hay tests que matan el proceso en cada frontera de estado. Se conservan las 26 invariantes de v1 y unos 640 asserts portables.</p></div>
+  </div>
+</section>
+
+<section id="evidencia">
+  <h2>Evaluation &amp; Evidence Registry</h2>
+  <ul>
+    <li><strong>Desde el primer día:</strong> por cada intento, uso y resultado.</li>
+    <li><strong>Por cada hallazgo:</strong> qué revisor lo encontró y cómo acabó (confirmado, refutado, cerrado con evidencia).</li>
+    <li><strong>Por cada revisor:</strong> su precisión propia.</li>
+    <li><strong>En las reescrituras:</strong> arreglos y regresiones por separado.</li>
+    <li><strong>Después del merge:</strong> supervivencia del código, reverts y bugs posteriores.</li>
+  </ul>
+  <p>Cada cambio de política cita una hipótesis con evidencia. Dos ejemplos: H-18, si Codex aporta hallazgos que nadie más ve; H-26, si 4 rondas son el límite adecuado. Cada semana, una persona revisa una muestra de transcripciones.</p>
+  <p class="meta">Más adelante: modo sombra (v2.1) y repetición sobre issues históricas con tests ocultos (v2.2). Con cada modelo nuevo, cada componente se quita de uno en uno para comprobar si sigue aportando.</p>
+</section>
+
+<section id="fuentes-ext">
+  <h2>Qué se incorporó de fuera</h2>
+  <div class="grid">
+    <div class="card"><span class="tag t-a">Investigación</span><p>Anthropic (separar workflow y agente, evaluador independiente), Agentless (tests de reproducción), OpenHands (supervivencia del código), GitHub (<code>merge-async</code> con <code>sha</code>), Temporal y LangGraph (descartados). iCoder no se pudo leer (403) y no se usa.</p></div>
+    <div class="card"><span class="tag t-a">Diseño Sol 6.1</span><p>Snapshot de seis campos, tokens de fencing, ciclo de vida de los hallazgos, resultado firmado por el runtime, protección de los scripts de validación, cuota desconocida no es ilimitada, retención.</p></div>
+    <div class="card"><span class="tag t-a">vela91/dev-harness</span><p>Hallazgos de pruebas reales: éxito con tokens mayores que 0, los comandos nativos no sirven como revisores, stdin cerrado en Codex. Ideas: <code>Verify:</code> por criterio, <code>ir doctor</code>, <code>merge_mode: request_only</code>, estado del pipeline.</p></div>
+  </div>
+</section>
+
+<section id="mvp">
+  <h2>Primera versión y plan</h2>
+  <p><strong>v2.0</strong> trabaja un repo y una issue a la vez, con el flujo completo menos dos piezas: el Codex Fixer y los varios implementadores. Un estancamiento sale solo a "volver a especificar" o a una persona. El piloto se hace sin merge automático.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Fase</th><th>Entregable</th><th>Días</th></tr></thead>
+    <tbody>
+      <tr><td>F0</td><td>10 pruebas locales de los CLI (autenticación, esquemas, señales, aislamiento) en un repo sandbox</td><td>2–3</td></tr>
+      <tr><td>F1</td><td>Núcleo: SQLite, máquina de estados, outbox, fencing, snapshot, fixtures de v1, tests de fallos inyectados</td><td>5–6</td></tr>
+      <tr><td>F2</td><td>Agent Runner: contratos, permisos, esquemas, ledger, timeouts, límites</td><td>3–4</td></tr>
+      <tr><td>F3</td><td>Implementación, Validator con <code>Verify:</code>, <code>ir doctor</code>, draft PR</td><td>3</td></tr>
+      <tr><td>F4</td><td>Revisiones, Coordinator R0–R10, filtro contrafactual, debilitamiento de tests, juez</td><td>6–7</td></tr>
+      <tr><td>F5</td><td>Preparación con Opus, <code>ir doctor --init</code>, preguntas y aprobación</td><td>3</td></tr>
+      <tr><td>F6</td><td>Merge: gateway con <code>gh</code>, reclamo, commit status, <code>merge-async</code>, recuperación</td><td>4</td></tr>
+      <tr><td>F7</td><td>Cuotas e informes, captura de evidencia</td><td>2–3</td></tr>
+      <tr><td>F8</td><td>Piloto con 10–20 issues de riesgo bajo, sin merge automático</td><td>2 semanas</td></tr>
+    </tbody>
+  </table></div>
+  <p class="meta" style="margin-top:10px">Unas 6–7 semanas de una persona con agentes hasta el piloto. Es una estimación sin datos de velocidad del equipo.</p>
+  <h3 style="margin-top:18px">Aplazado</h3>
+  <ul>
+    <li>Codex Fixer y varios implementadores (v2.1), a la espera de datos sobre estancamiento.</li>
+    <li>Concurrencia mayor que 1.</li>
+    <li>OpenTelemetry.</li>
+    <li>Repetición sobre issues históricas (v2.2).</li>
+    <li>Contenedor por intento.</li>
+    <li>Merge queue y auto-merge, porque no fijan el SHA revisado.</li>
+    <li>Codex <code>app-server</code>, que es experimental.</li>
+    <li>Verificador entrenado.</li>
+  </ul>
+</section>
+
+<section id="pendiente">
+  <h2>Preguntas pendientes</h2>
+  <div class="grid">
+    <div class="card"><span class="tag t-q">Q1</span><p>Qué plan de Claude y quién es el titular de la credencial con la que corre el runner. Hay una nota sobre los términos de uso en el uso desatendido.</p></div>
+    <div class="card"><span class="tag t-q">Q2</span><p>Dónde corre: se recomienda una VM Linux dedicada.</p></div>
+    <div class="card"><span class="tag t-q">Q3</span><p>Autonomía: <code>auto_ready</code> y merge automático para riesgo bajo, ¿desde cuándo? Se recomienda ninguno durante el piloto.</p></div>
+    <div class="card"><span class="tag t-q">Q4–Q5</span><p>Repos del piloto (CI, protección de rama, contrato de validación) y plan de ChatGPT para Codex.</p></div>
+    <div class="card"><span class="tag t-q">Q6–Q9</span><p>Spec preparada en el cuerpo de la issue o en un comentario. Python o TypeScript. Repo para el Registry. Modelo de Codex.</p></div>
+  </div>
+</section>
+
+<footer>
+  <p>Resumen de <code>docs/v2/issue-runner-v2-spec.md</code> (revisión 2, con decisiones hasta Q13). Es un documento de diseño: no hay implementación ni se han ejecutado experimentos. Funciona sin conexión.</p>
+</footer>
+</div>
+<script>
+(function(){
+  var btn=document.getElementById('themeBtn'), root=document.documentElement, key='ir-theme';
+  try{var saved=localStorage.getItem(key); if(saved){root.setAttribute('data-theme',saved);}}catch(e){}
+  btn.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    if(!cur){cur=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}
+    var next=cur==='dark'?'light':'dark';
+    root.setAttribute('data-theme',next);
+    try{localStorage.setItem(key,next);}catch(e){}
+  });
+})();
+</script>
+</body>
+</html>
