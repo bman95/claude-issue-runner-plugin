@@ -624,13 +624,33 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
    - Un cambio de política vuelve a evaluar las reglas y repite las revisiones.
    - Un cambio de validación o de entorno repite la validación.
    - Un cambio de spec pasa por PAUSED_SPEC_DRIFT.
-9. La política de riesgo se cumple:
-   - `low`: merge automático (si `auto_merge.low` está activo).
-   - `medium` y `high`: hace falta una aprobación humana registrada por el runner (`ir approve` o `/ir approve`) de un usuario con `write` o más. Puede ser el propio usuario que lo ejecuta (§5.11, Identidad), además de las reviews que exija el repo.
-   - **[Q3]**
+9. Se cumple la **política de autonomía del repo** (ver abajo). Si exige aprobación humana, tiene que haber una registrada por el runner (`ir approve` o `/ir approve`) de un usuario con `write`, que puede ser el propio usuario que lo ejecuta (§5.11, Identidad), además de las reviews que exija el repo.
+
+**[A, Q3] Objetivo: autonomía alta y fiable.** Los humanos no van a leer todos los PR, así que el sistema debe quitar el cuello de botella humano sin perder fiabilidad. Para eso, la autonomía es **progresiva y se gana con evidencia**, por repo. Es el patrón de Meta RADAR y de los niveles de riesgo de Anthropic.
+
+| Nivel | Se fusiona sin humano | Siempre pasa por humano |
+|---|---|---|
+| **L1** | Riesgo `low` | `medium`, `high`, plano de control |
+| **L2** | `low` y `medium` | `high`, plano de control |
+| **L3** | `low`, `medium` y `high` | Plano de control (rutas protegidas, CI, validación, `policy.yml`) e invariantes marcadas como `human_required` en `policy.yml` |
+
+- **Nivel máximo por repo según la fuerza de su oráculo.** `ir doctor` calcula si el repo tiene CI en PR, contrato de validación y tests que cubran los ficheros tocados. Un repo sin tests o sin CI **no pasa de L1**: la verificación solo es tan fuerte como sus tests (Spotify, compilador de Anthropic).
+- **Nivel inicial:** L1, o el que fije `policy.yml` hasta el máximo permitido.
+- **Ascenso automático** al siguiente nivel cuando se cumplen estas condiciones (umbrales en `policy.yml`, **H-31**):
+  - los últimos N merges automáticos del nivel actual (por defecto 15) no tienen *reverts*;
+  - el CI de la base tras el merge sigue en verde;
+  - el muestreo humano (A14) no ha encontrado defectos graves.
+- **Descenso automático inmediato** de un nivel ante un escape: *revert*, defecto grave encontrado en el muestreo, o rotura de la base atribuida a un merge del runner. Se avisa a los `owners`.
+- **Vigilancia tras el merge** [P; Anthropic]. Después de cada merge automático, el runner observa el CI de la rama base. Si el primer CI en rojo tras su merge le es atribuible (mismo SHA o el siguiente, y los tests que fallan tocan sus ficheros):
+  - abre automáticamente un **PR de revert**, que se fusiona por la vía rápida porque revertir es de riesgo bajo;
+  - reabre el ítem con el fallo como hallazgo;
+  - baja el nivel del repo.
+
+  Así la fiabilidad se apoya en detectar y corregir rápido, no en que un humano lea cada PR.
+- **`merge_mode: request_only`** (repos que despliegan solos a producción) sigue disponible por repo. Equivale a fijar el nivel en L0: todo pasa por humano.
 
 **Capacidad de revisión humana (A10)** [P; Microsoft dotnet/runtime, Salesforce, Spotify, Anthropic].
-- **Límite de PR de agentes esperando a un humano** por repo: `max_awaiting_human` en `policy.yml`, por defecto 3. Al llegar al límite, el Scheduler no despacha ítems nuevos de ese repo que vayan a necesitar aprobación humana. Es mejor frenar que bajar el listón: en Salesforce, los revisores se desconectaban de los PR grandes.
+- **Límite de PR de agentes esperando a un humano** por repo (solo los que el nivel de autonomía manda a un humano): `max_awaiting_human` en `policy.yml`, por defecto 3. Al llegar al límite, el Scheduler no despacha ítems nuevos de ese repo que vayan a necesitar aprobación humana. Es mejor frenar que bajar el listón: en Salesforce, los revisores se desconectaban de los PR grandes.
 - **Límite de tamaño:** diffs de más de `max_diff_lines` (por defecto 600) van a AWAITING_HUMAN con una propuesta de corte, en vez de a revisión.
 - **Tarjeta de aprobación**, generada de forma determinista desde la base de datos, sin LLM salvo un resumen de una sola llamada con Sonnet. Contiene:
   - la intención (el `What to build` y los AC de la spec), para revisar la intención y no cada línea, como hace Anthropic;
@@ -1113,8 +1133,11 @@ Reglas:
 
 ### 8.4 Sandbox y host
 
-- Usuario de sistema dedicado `ir`, sin sudo.
-- Bash dentro del sandbox de Claude Code (bubblewrap) con `failIfUnavailable: true` y `allowUnsandboxedCommands: false` [F: sin `failIfUnavailable`, el sandbox se degrada en silencio].
+- **[A, Q2] Se ejecuta donde haga falta**: normalmente el portátil del desarrollador (macOS o Linux), o una VM o servidor siempre encendido para colas largas sin nadie delante. Nada del diseño depende del host.
+  - Requisitos, comprobados por `ir doctor`: Python 3.12, `git`, `gh`, `claude` y `codex` autenticados y actualizados, y el sandbox del sistema disponible (Seatbelt en macOS, bubblewrap en Linux).
+  - Si el portátil se duerme o se cierra, los attempts se cortan por lease y `ir recover` los retoma al volver.
+  - En una máquina compartida, se recomienda un usuario de sistema por persona y sin sudo.
+- Bash dentro del sandbox de Claude Code (Seatbelt en macOS, bubblewrap en Linux) con `failIfUnavailable: true` y `allowUnsandboxedCommands: false` [F: sin `failIfUnavailable`, el sandbox se degrada en silencio].
 - La red del implementador pasa por `network.allowedDomains`: registros de paquetes y el mirror interno.
 - Los secretos del producto nunca están en el host de agentes. Las pruebas que necesitan servicios usan los *fixtures* del repo.
 
@@ -1521,19 +1544,20 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 
 ## 17. Preguntas pendientes para el usuario
 
-1. **Q1. Credencial y plan de Claude.** Ya está acordado que se usa el plan (Q11). Queda por decidir: ¿Max individual, o asientos Team/Enterprise? ¿De quién es la credencial con la que corre el runner desatendido?
-   - Las Consumer Terms §3(7) prohíben el acceso automatizado "except… via an Anthropic API Key or where we otherwise explicitly permit it".
-   - La documentación de Claude Code ofrece `claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` para "CI pipelines and scripts".
-   - Mi lectura, que no es asesoramiento legal: es razonable para la automatización propia de un titular, y menos clara para una canalización compartida de empresa, donde Team/Enterprise o una API key es más defendible.
-   - Afecta al diseño solo en la configuración de la línea de facturación: el diseño funciona con las dos.
-2. **Q2. Dónde corre.** Recomiendo una VM dedicada (Linux con bubblewrap). ¿Hay preferencia por un portátil de desarrollador, un servidor interno o la nube?
-3. **Q3. Autonomía.** ¿`auto_ready` para riesgo low? ¿Merge automático para riesgo low desde el primer día, o después del piloto? (Recomiendo: ninguno durante el piloto.)
-4. **Q4. Repositorios.** ¿Cuántos? ¿Visibilidad, CI existente, protección de rama, `.issue-runner/validation` presente?
-5. **Q5. Plan de Codex.** ¿Plus, Pro o Business? Determina si hay ventana de 5 h y el ritmo del Codex Reviewer.
-6. **Q6. Escritura de la spec preparada.** ¿En el cuerpo de la issue, con el original conservado (mi propuesta), o en un comentario?
-7. **Q7. Lenguaje.** ¿Python (propuesta) o TypeScript, según quién lo mantendrá?
-8. **Q8. Registry.** ¿Repo privado `domo21/issue-runner-evidence` para las exportaciones?
-9. **Q9. Modelo de Codex.** v1 fija `gpt-6-sol`. ¿Se mantiene para el revisor? ¿Y para el Fixer?
+1. **Q1. Resuelta [A]: independiente del plan.** El runner solo exige que `claude`, `codex` y `gh` estén autenticados donde se ejecuta; `ir doctor` lo comprueba. Vale Max individual o asientos Team; lo habitual será Team.
+   - Nota de condiciones de uso: el uso propio con el plan propio encaja. Un servicio compartido de empresa encaja mejor con Team o Enterprise.
+   - El runner mide la cuota de quien lo ejecuta.
+2. **Q2. Resuelta [A]: cualquier host.** Normalmente el portátil del desarrollador. Requisitos y efectos en §8.4.
+3. **Q3. Resuelta [A]: autonomía alta y progresiva.** El objetivo es eliminar el cuello de botella humano sin perder fiabilidad. Niveles L1–L3 por repo, que se ganan con evidencia, más vigilancia tras el merge y revert automático (§5.11).
+4. **Q4. Resuelta [A]: los repos en los que trabaja actualmente el usuario.** Cada uno se incorpora con `ir doctor --init`, que detecta CI, tests, protección de rama y si despliega a producción; esto fija el nivel máximo de autonomía del repo.
+5. **Q5. Resuelta [A]: independiente del plan**, como Q1.
+6. **Q6. Resuelta [A]:** la preparación reescribe el cuerpo de la issue con el formato AI-Ready y conserva el texto original (`issue-runner-v2-preparacion.md`).
+7. **Q7. Resuelta [A]: Python.**
+8. **Q8. Pendiente:** repo central de evidencia (en discusión, ver §12.4).
+9. **Q9. Resuelta [A]: Codex con `gpt-6.1-sol`** (configurable) para el revisor y para el Fixer.
+   - **Herramientas al día:** `ir doctor` compara las versiones instaladas de `claude` y `codex` con las últimas publicadas y comprueba que los modelos configurados aparecen en sus catálogos. Un CLI desactualizado puede no cargar modelos nuevos.
+   - `ir update` actualiza los CLI **solo entre ítems, nunca a mitad**. Una actualización cambia `environment_digest` e invalidaría las revisiones en curso (**H-25**).
+   - Tras actualizar, se vuelve a pasar `ir doctor --full`.
 10. **Q10. Resuelta [A]: GitHub CLI siempre, con el token de cada usuario.**
     - Toda la interacción con GitHub va por `gh` (§5.11).
     - El runner usa los permisos del usuario que lo ejecuta. No hay cuenta de bot ni GitHub App.
@@ -1542,6 +1566,8 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
     - Codex usa el login del plan de ChatGPT (`codex login`, `auth.json`), igual que Claude usa la suscripción (§10.2).
     - Consecuencia para Q1: la línea de Claude es la suscripción. Lo único que queda abierto en Q1 es **qué plan y qué titular**, por la nota sobre los términos de uso.
 12. **Q12. Resuelta [A]: se permite el perfil solo-documentación** (§5.6). Si todos los ficheros cambiados son documentación, no se lanza Security Review.
+14. **Idioma [A].** Por defecto, **todo artefacto se escribe en inglés**: issues AI-Ready, PR, comentarios, tarjetas y commits, porque los consumen sobre todo agentes. Solo la interacción con el desarrollador (CLI, preguntas y resúmenes finales) puede ir en el idioma que pida cada usuario (`ir config language es`). Las cabeceras de la spec son siempre tokens en inglés.
+15. **CodeRabbit [A]:** no por ahora.
 13. **Q13. Resuelta [A]: solo GitHub.** No se usará GitLab, así que el Gateway no necesita una abstracción de forge (`gh` y `glab`) como la de `vela91/dev-harness`.
 
 ---
@@ -1649,4 +1675,5 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | H-28 | Un umbral de ≥ 60 % de atendidos o confirmados en `major` o superior, con ≥ 30 hallazgos, separa a los revisores que merecen bloquear | Piloto y sombra |
 | H-29 | La supresión por ≥ 3 rechazos parecidos reduce el ruido sin perder hallazgos confirmados (en Greptile, los atendidos pasaron del 19 % al 55 %, dato no trasladable) | Piloto |
 | H-30 | La pasada estática A1 reduce los hallazgos LLM redundantes y detecta secretos y dependencias que los LLM pasan por alto | Piloto |
+| H-31 | Los umbrales de ascenso de autonomía (15 merges sin escapes) y el descenso inmediato mantienen una tasa de *reverts* ≤ a la de PR humanos | Piloto |
 | H-23 | Con Sonnet como escritor, Codex como revisor de solo lectura aporta más de lo que daña (Xiang et al. midió Opus 4.7 escribiendo y revisores que reescriben; no es trasladable) | 50 ítems |

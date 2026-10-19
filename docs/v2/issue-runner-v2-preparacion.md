@@ -454,12 +454,14 @@ La pregunta que se mide es **si la puerta predice el éxito de la implementació
 
 ---
 
-## 12. Preguntas pendientes
+## 12. Decisiones sobre las preguntas (2026-10-19)
 
-| Pregunta | Qué hay que decidir |
+| Pregunta | Decisión [A] |
 |---|---|
-| **Q-P1 Origen de las peticiones** | ¿Quién pide trabajo y por dónde? Desarrolladores, producto, clientes; CLI, issues, chat. Determina si hace falta una entrada asíncrona amplia o basta con `ir plan` |
-| **Q-P2 Idioma** | La prosa de las issues, ¿en español o en inglés? Las cabeceras son tokens fijos en inglés |
-| **Q-P3 Quién aprueba** | ¿Puede aprobar `ir:ai-ready` cualquiera con `write`, o hay un responsable de producto por repo? |
-| **Q-P4 Documentación externa** | ¿Dónde viven los requisitos hoy (Drive, Notion, Figma…)? ¿Basta con pegar el contenido relevante, o se quieren conectores de solo lectura, cuyo contenido siempre se resume con procedencia en la issue? |
-| **Q-P5 Entrevista** | ¿Preferís la entrevista en el terminal (síncrona) o en comentarios de la issue (asíncrona)? El diseño admite las dos |
+| **Q-P1 Origen** | Normalmente pide el trabajo el desarrollador, desde el terminal (`ir plan`) o dejando una issue en GitHub (`ir:needs-prep`). Otras entradas, más adelante |
+| **Q-P2 Idioma** | **Inglés por defecto** en todas las issues AI-Ready y artefactos, porque los consumen agentes. La interacción con el desarrollador (preguntas de la entrevista, resúmenes) puede ir en su idioma (`ir config language es`) |
+| **Q-P3 Quién aprueba** | Cualquier usuario con `write` |
+| **Q-P4 Documentación externa** | Se pega el contenido relevante; sin conectores por ahora |
+| **Q-P5 Entrevista** | Las dos: en el terminal y en comentarios de la issue |
+| **Q6 (spec principal)** | La preparación reescribe el cuerpo con el formato AI-Ready y conserva el original |
+| **Autonomía de la preparación** | Coherente con Q3: con nivel de autonomía L2 o superior en el repo, una issue de riesgo `low` que pasa la puerta completa (lint, lectura en frío sin preguntas y Critic sin bloqueantes) **puede auto-aprobarse** como `ai-ready`, siempre que no haya decisiones técnicas tomadas sin consulta. Si las hay, o el riesgo es mayor, la aprueba un humano |
