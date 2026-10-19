@@ -243,6 +243,9 @@ Puntos de entrada:
     - Los tests de base en verde.
   - **`ir doctor --init`.** Prepara un proyecto nuevo, fuera de cualquier ejecución y con una persona delante. Detecta la rama destino y la pide confirmar. Propone `.issue-runner/validation`, `policy.yml` y el bloque `verification`, y los escribe como **un PR para revisión humana**, nunca directamente en la rama base. Crea las etiquetas `ir:*`.
 - Una skill de Claude Code muy fina (`/ir`) que solo llama al CLI, para uso interactivo **[P]**.
+- **[A] Sin hooks de Claude Code.** El coordinator es un programa determinista que lanza cada agente como proceso propio, así que nada depende de eventos como `SubagentStop` o `Stop`. Los hooks solo tendrían sentido si la orquestación viviera dentro de una sesión de Claude Code, como en v1 o en `vela91/dev-harness`, donde además resultaron frágiles: se disparaban con el directorio equivocado o no se disparaban (H8, H13).
+  - Si v2 se distribuye como plugin de Claude Code, el plugin es solo una fachada: la skill `/ir` llama al CLI y muestra el estado. No incluye hooks ni orquesta nada.
+  - Los perfiles de los agentes tampoco definen hooks en su `--settings`.
 
 ### 3.2 Alternativas evaluadas
 
