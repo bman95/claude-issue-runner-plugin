@@ -9,7 +9,8 @@ Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c
 - Las objeciones de los revisores necesitan evidencia ejecutable, y se añade un filtro contrafactual (§6).
 - Tests de reproducción en las issues de tipo bug (§5.4).
 - El Codex Fixer pasa una puerta contrafactual y el commit lo hace el coordinator (§5.9).
-- Toda la interacción con GitHub va por `gh` [A, Q10], con una cuenta de máquina, una puerta como commit status y `merge-async` con `sha` (§5.11 y §5.12).
+- Toda la interacción con GitHub va por `gh` con el token de cada usuario [A, Q10], con una puerta como commit status, aprobación registrada con `ir approve` y `merge-async` con `sha` (§5.11 y §5.12).
+- Perfil solo-documentación sin Security Review [A, Q12] (§5.6).
 - Codex usa el plan de ChatGPT [A, Q11] (§8.2 y §10.2).
 - `claude -p` con stream-json y `codex exec`; `app-server` queda descartado (§8.2).
 - `rate_limit_event` como señal de cuota (§10.3).
@@ -391,6 +392,13 @@ Las tres revisiones arrancan en paralelo sobre el **mismo `head_sha`**, junto co
 | **Security Review** | `claude -p`, prompt derivado del oficial `claude-code-security-review` (MIT). Sonnet si el riesgo es low; Opus si es medium o high, o si se tocan rutas sensibles (**H-6**) | Diff, especificación y acceso de lectura | `ReviewReport` con hallazgos `category: security`, CWE si aplica y `exploit_scenario` |
 | **Codex Reviewer** | `codex exec --sandbox read-only --ask-for-approval never --output-schema … --ephemeral`, modelo según la configuración | Especificación, diff y acceso de lectura | `ReviewReport` más el bloque `direction` (§7.4): `agree|concerns|disagree`, la justificación y, **solo en desacuerdo de dirección**, `alternative` (enfoque y, opcionalmente, un parche ilustrativo que **no se aplica**) [A] |
 
+**[A, Q12] Perfil solo-documentación.** Si **todos** los ficheros del diff contra la base coinciden con los patrones de documentación de `policy.yml` (por defecto `**/*.md`, `docs/**`, `*.txt`) y **ninguno** está en rutas protegidas (§8.3), el coordinator no lanza Security Review.
+
+- La decisión es determinista y se recalcula con cada candidato: si una ronda añade un fichero de código, se lanza Security Review.
+- Code Review y Codex Reviewer se ejecutan igual.
+- La puerta de cobertura (§6.6) exige solo los revisores requeridos por el perfil.
+- Se registra el perfil aplicado en cada candidato.
+
 Notas:
 
 - Los revisores no ejecutan la suite: reciben el resultado de `preflight`, y CI corre en paralelo. Eso evita sandboxes de escritura en los revisores y ahorra tokens.
@@ -482,7 +490,7 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 8. La especificación no ha cambiado (`spec_hash`).
 9. La política de riesgo se cumple:
    - `low`: merge automático (si `auto_merge.low` está activo).
-   - `medium` y `high`: hace falta una aprobación de GitHub de un humano con `write` o más.
+   - `medium` y `high`: hace falta una aprobación humana registrada por el runner (`ir approve` o `/ir approve`) de un usuario con `write` o más. Puede ser el propio usuario que lo ejecuta (§5.11, Identidad), además de las reviews que exija el repo.
    - **[Q3]**
 
 **Revisión del delta de integración [P].** Si el refresco de base (merge de `origin/<base>` en la rama) produjo conflictos que se resolvieron, o cambió ficheros del diff, se ejecutan Code Review y Security Review **sobre el delta**. La resolución de conflictos la hace Sonnet, como una ronda más.
@@ -497,27 +505,33 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 - Para lo demás se usa `gh api`, por ejemplo `gh api -X PUT repos/{o}/{r}/pulls/{n}/merge-async -f sha=…`, el *timeline* o los commit statuses.
 - El GitHub Gateway es una capa fina sobre `gh` que siempre invoca con lista de argumentos y `--json` donde se puede.
 
-**Identidad con la que se autentica `gh` [P].** `gh` es la herramienta; la identidad es su token. Propongo una **cuenta de máquina dedicada** (por ejemplo `domo21-bot`, permitida por los términos de GitHub como *machine account*) autenticada con `gh auth login` y un PAT *fine-grained* limitado a los repos del runner. Es mejor que el token personal de un desarrollador por tres razones:
+**[A] Identidad: cada usuario ejecuta el runner con su propio `gh`.** No hay cuenta de bot. El runner actúa con el token de la persona que lo lanza (`gh auth login`), así que **solo puede hacer lo que esa persona puede hacer** en cada repo. Los permisos se restringen en el propio token y en los roles de GitHub. Los push hechos con un token personal sí lanzan Actions; solo los de `GITHUB_TOKEN` no lo hacen.
 
-- **El autor de un PR no puede aprobarlo**, y "most recent reviewable push" exige que apruebe alguien distinto de quien hizo el push. Con el token de un desarrollador, ese desarrollador nunca podría aprobar los PR del runner.
-- La auditoría distingue lo que hizo el runner de lo que hicieron las personas.
-- Revocar la cuenta o el token no afecta a nadie del equipo.
+Consecuencias que el diseño absorbe:
 
-Los push hechos con este token sí lanzan Actions (solo los de `GITHUB_TOKEN` no).
+- **Aprobación del merge.** En GitHub, el autor de un PR no puede aprobar su propio PR, y los PR del runner aparecen como del usuario que lo ejecuta. Por eso la aprobación humana que exige la política de riesgo (§5.11, puerta 9) **la registra el runner, no una review de GitHub**: `ir approve <item>`, o un comentario `/ir approve` de un usuario con permiso `write` verificado. Puede ser el mismo usuario que lanzó el runner, y queda guardada como Authorization.
+- **Reglas propias del repo.** Si un repo exige reviews de GitHub en su protección de rama, esa regla sigue aplicándose: el ítem espera en AWAITING_MERGE_APPROVAL hasta que otra persona apruebe en GitHub. Es una espera visible, no un bloqueo.
+- **No hay que activar** "Require approval of the most recent reviewable push" solo por el runner. Esa decisión es del repo.
+- **Trazabilidad.** Los commits y los comentarios llevan marcas que los distinguen del trabajo manual del mismo usuario: trailers `IR-*` y la tarjeta con su marcador.
+- **Varios usuarios sobre el mismo repo.** Cada usuario tiene su propia base de datos, y el lock local no ve a los demás. Para no trabajar dos veces la misma issue, se usa un **reclamo en GitHub**:
+  - Al pasar a IMPLEMENTING, el runner asigna la issue a su usuario y pone la etiqueta `ir:in-progress` con un comentario marcador `<!-- ir:claim user=… host=… since=… -->`.
+  - Otro runner ignora las issues ya reclamadas.
+  - Un reclamo sin actividad más de 24 h queda a disposición de un humano (`/ir release`). Nunca se toma automáticamente.
+  - Véase D14 en §14.2.
 
 **La puerta en GitHub es un commit status** `issue-runner/gate` (`gh api repos/{o}/{r}/statuses/{sha}`) sobre `head_sha`.
 
 - La descripción lleva el id del candidato y `target_url` la tarjeta de estado.
 - GitHub exige que el status pase en el **último** SHA. Un resultado tardío para un SHA anterior se descarta, y antes de escribirlo se comprueba que el SHA sigue siendo la cabeza.
-- **Limitación aceptada:** cualquiera con push puede escribir ese status (solo una GitHub App puede publicar check runs con fuente fijada [F]). Contra un error humano la puerta funciona; contra una persona con permisos que quiera saltársela no. En un equipo interno de confianza es aceptable.
-- **Endurecimiento opcional futuro sin abandonar `gh`:** `gh` puede autenticarse con el token de instalación de una GitHub App (`GH_TOKEN=<installation token>`). Así se publica un check run fijado como fuente sin cambiar de herramienta. Queda en §16.
+- **Limitación aceptada:** cualquiera con push puede escribir ese status. Contra un error humano la puerta funciona; contra una persona con permisos que quiera saltársela no. En un equipo interno de confianza es aceptable.
+  - Solo una *GitHub App* (una identidad de integración registrada en la organización, distinta de una persona) puede publicar un check run que el ruleset exija "de esa fuente" [F].
+  - Se descarta por decisión del usuario.
 - Pase lo que pase en GitHub, **el coordinator nunca fusiona sin que su propia base de datos tenga todas las puertas en verde**. El status protege frente a merges manuales accidentales; no es la fuente de verdad.
 
 **Configuración recomendada del ruleset de la rama base:**
 
 - Checks requeridos: CI más `issue-runner/gate`.
-- Descartar aprobaciones obsoletas.
-- "Require approval of the most recent reviewable push", que exige la cuenta de máquina.
+- Descartar aprobaciones obsoletas, si el repo usa reviews de GitHub.
 - "Do not allow bypassing".
 
 Además, `pull_request` no se ejecuta si hay conflictos, y por eso el refresco de base va antes.
@@ -1099,6 +1113,8 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | D10 | Un revisor falla siempre (salida inválida) | La puerta de cobertura nunca se cumple | `infra_retries`, y después FAILED_INFRA para ese paso, que va a un humano con la opción de *waive* del revisor para ese ítem (Authorization registrada; prohibida para Security con riesgo ≥ medium) |
 | D11 | AWAITING_APPROVAL sin aprobador | Cola parada | No es un bloqueo: es la cola visible en `ir status`. Política opcional `auto_ready: [low]`. |
 | D12 | El implementador devuelve `completed` sin commits | Ronda vacía | Hallazgo determinista `no_changes`, que consume ronda. A la segunda vez, estancamiento. |
+| D14 | Dos usuarios ejecutan el runner sobre el mismo repo, cada uno con su base de datos | Doble trabajo sobre la misma issue, o dos PR | Reclamo en GitHub (asignación, `ir:in-progress` y comentario marcador) antes de IMPLEMENTING; los demás runners lo respetan. Un reclamo inactivo más de 24 h lo libera un humano con `/ir release`, nunca de forma automática |
+| D15 | La política exige aprobación humana pero el repo también exige una review de GitHub, y el único humano disponible es el autor del PR | AWAITING_MERGE_APPROVAL sin fin | No es un bloqueo oculto: la tarjeta indica "falta una review de otra persona" y se avisa a los `owners`. Es una regla del repo, no del runner |
 | D13 | Varios ítems en paralelo agotan juntos la cuota de Opus | Preparaciones nuevas dejan sin Judge a los ítems en curso | Reserva del 25 % para Judge y Opus Reviewer (§10.3), y prioridad del Scheduler: los ítems más avanzados primero |
 
 ### 14.3 Contradicciones revisadas en el propio diseño
@@ -1150,7 +1166,7 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | F3 | Implementación y validación: worktrees, Implementer, Validator, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
 | F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R0–R10, clustering, cobertura), **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
 | F5 | Preparación y aprobación: lint AI-Ready, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
-| F6 | Merge y verificación: Gateway sobre `gh` con cuenta de máquina, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
+| F6 | Merge y verificación: Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
 | F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
 | F8 | Piloto: 10–20 issues reales de riesgo low en un repo de DOMO21, sin merge automático (`auto_merge: none`) | Métricas base en el Registry: tasa de éxito sin humano, rondas, tasa de `rejected_by_judge`, coste de referencia por ítem | 2 semanas de calendario |
 
@@ -1183,7 +1199,6 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | **Replay offline** | Hace falta un conjunto dorado curado y consume cuota | Primer cambio de modelo o de política importante |
 | **Managed Code Review / Codex GitHub review** | Gasto incremental, sin salida estructurada, no bloquea | Shadow que demuestre aportación única |
 | **Merge queue de GitHub** | El lock más el refresco de v1 bastan con concurrencia baja (design-notes §2). Además, la cola prueba un SHA (`gh-readonly-queue/*`) que nadie ha revisado, y su disponibilidad depende del plan | `max_parallel` mayor o igual que 4, o conflictos semánticos post-merge |
-| **GitHub App detrás de `gh`** (token de instalación en `GH_TOKEN`) | Con la cuenta de máquina y un commit status basta para un equipo de confianza [A, Q10] | Necesidad de que la puerta no se pueda falsificar desde una cuenta con push |
 | **Codex `app-server`** | Experimental y "not supported for production workloads" | Que F0 demuestre que `exec` no permite cancelar de forma fiable o no da señales de límite, o que pase a estable |
 | **Verificador o crítico entrenado** | Necesita miles de trayectorias propias. El crítico publicado de OpenHands cae por debajo del azar con otro modelo u otra población | Más de 1.000 attempts etiquetados en el Registry |
 | **Muestreo masivo de parches** (estilo Agentless) | Incompatible con cuota de suscripción; casi todo el valor está en la primera muestra | Nunca por defecto |
@@ -1209,18 +1224,14 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 7. **Q7. Lenguaje.** ¿Python (propuesta) o TypeScript, según quién lo mantendrá?
 8. **Q8. Registry.** ¿Repo privado `domo21/issue-runner-evidence` para las exportaciones?
 9. **Q9. Modelo de Codex.** v1 fija `gpt-6-sol`. ¿Se mantiene para el revisor? ¿Y para el Fixer?
-10. **Q10. Resuelta [A]: GitHub CLI siempre.**
+10. **Q10. Resuelta [A]: GitHub CLI siempre, con el token de cada usuario.**
     - Toda la interacción con GitHub va por `gh` (§5.11).
-    - Sigue abierta una parte menor: **¿cuenta de máquina dedicada (recomendado) o token de un desarrollador?** Con el token de un desarrollador, esa persona no puede aprobar los PR del runner.
+    - El runner usa los permisos del usuario que lo ejecuta. No hay cuenta de bot ni GitHub App.
+    - La aprobación del merge se registra con `ir approve` (§5.11).
 11. **Q11. Resuelta [A]: planes siempre, por rentabilidad.**
     - Codex usa el login del plan de ChatGPT (`codex login`, `auth.json`), igual que Claude usa la suscripción (§10.2).
     - Consecuencia para Q1: la línea de Claude es la suscripción. Lo único que queda abierto en Q1 es **qué plan y qué titular**, por la nota sobre los términos de uso.
-12. **Q12. Perfil ligero para cambios solo de documentación.** Pendiente; reformulada en la conversación del 2026-10-19:
-    - Hoy [A] exige Code Review y Security Review en todos los PR.
-    - Propuesta: si **todos** los ficheros cambiados son documentación (`*.md` y `docs/**`, ninguno en rutas protegidas), el coordinator no lanza Security Review, porque no hay código que atacar.
-    - Es una regla determinista por rutas: un solo fichero de código la desactiva.
-    - Ahorra cuota en PR que casi nunca tendrán hallazgos de seguridad.
-    - Requiere tu aprobación porque modifica una decisión ya acordada.
+12. **Q12. Resuelta [A]: se permite el perfil solo-documentación** (§5.6). Si todos los ficheros cambiados son documentación, no se lanza Security Review.
 
 ---
 

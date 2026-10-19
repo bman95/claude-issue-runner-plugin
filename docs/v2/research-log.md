@@ -514,7 +514,9 @@ Aplicados en `issue-runner-v2-spec.md`; cada uno lleva su sección indicada:
 **Decisiones del usuario posteriores (2026-10-19):**
 
 - **Q10: GitHub CLI siempre.**
-  - El veredicto de §7 sobre la GitHub App queda en endurecimiento opcional. `gh` podría usar un token de instalación más adelante.
+  - Cada usuario ejecuta el runner con su propio token y sus permisos. No hay cuenta de bot ni GitHub App: el veredicto de §7 sobre la App queda descartado por decisión del usuario.
   - La puerta pasa a ser un commit status escrito con `gh`, con la limitación documentada de que cualquiera con push puede escribirlo.
-  - Se recomienda una cuenta de máquina, porque el autor de un PR no puede aprobarlo.
+  - GitHub no deja que el autor apruebe su propio PR, así que la aprobación humana del merge se registra en el runner (`ir approve`).
+  - Varios usuarios sobre el mismo repo se coordinan mediante un reclamo en GitHub.
 - **Q11: planes siempre.** Codex usa el login de ChatGPT en el host persistente, en el modo "advanced" documentado, solo con repos privados.
+- **Q12: se permite el perfil solo-documentación** (sin Security Review cuando todo el diff es documentación).
