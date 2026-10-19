@@ -1,7 +1,22 @@
 # Issue Runner v2: especificación de diseño (DOMO21 / Sicma21)
 
-Estado: **propuesta de diseño**, 2026-10-19. No hay código. Este documento se compara después con otro diseño independiente.
+Estado: **propuesta de diseño, revisión 2** (2026-10-19), que incorpora la fase de investigación de [`research-log.md`](research-log.md). No hay código. Este documento se compara después con otro diseño independiente.
 Ámbito: de issue de GitHub a PR fusionado, con agentes Claude Code y Codex, para los repositorios de DOMO21/Sicma21.
+Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c1d2989` (`origin/main`).
+
+**Cambios de la revisión 2:**
+
+- Las objeciones de los revisores necesitan evidencia ejecutable, y se añade un filtro contrafactual (§6).
+- Tests de reproducción en las issues de tipo bug (§5.4).
+- El Codex Fixer pasa una puerta contrafactual y el commit lo hace el coordinator (§5.9).
+- GitHub App con un check run fijado al ruleset, y `merge-async` con `sha` (§5.11 y §5.12).
+- `claude -p` con stream-json y `codex exec`; `app-server` queda descartado (§8.2).
+- `rate_limit_event` como señal de cuota (§10.3).
+- Tests con fallos inyectados (§9.5).
+- Invariantes I1–I26 de v1 trazadas (§1.2).
+- Estado de parada contract-first (§5.3).
+
+Cada cambio enlaza con la sección del registro de investigación que lo justifica (`research-log.md` §9).
 
 ## Leyenda epistémica
 
@@ -26,11 +41,23 @@ Cada afirmación relevante lleva una marca:
 3. Sonnet implementa en un worktree.
 4. Validación determinista.
 5. En paralelo: CI, Code Review (Claude), Security Review (Claude) y Codex Reviewer (solo lectura).
-6. El **Review Coordinator determinista** agrupa, clasifica y decide. Llama a **Opus (Judge)** solo cuando hay ambigüedad, disputa o desacuerdo de dirección.
+6. El **Review Coordinator determinista** ejecuta los tests de reproducción que aporten los revisores (filtro contrafactual), agrupa, clasifica y decide. **Una objeción sin evidencia ejecutable nunca bloquea por sí sola.** Llama a **Opus (Judge)** solo cuando hay ambigüedad, disputa o desacuerdo de dirección.
 7. Sonnet corrige.
-8. Si el bucle se estanca, se elige entre tres salidas: el Codex Fixer excepcional (siempre seguido de un Opus Reviewer en una ejecución nueva), varios implementadores (desactivado por defecto) o un humano.
-9. Verificación previa al merge, con puertas deterministas ligadas al SHA exacto.
-10. Merge serializado.
+8. Si el bucle se estanca, se elige entre tres salidas:
+   - el Codex Fixer excepcional, con puerta contrafactual y seguido siempre de un Opus Reviewer en una ejecución nueva;
+   - varios implementadores (desactivado por defecto);
+   - un humano.
+9. Verificación previa al merge, con puertas deterministas ligadas al SHA exacto y publicadas como check run de una GitHub App, fijado en el ruleset.
+10. Merge serializado con `merge-async` y el `sha` fijado.
+
+**Lo que cambió tras la investigación (revisión 2).**
+
+- La evidencia más fuerte sobre la revisión con modelos va en contra de obedecer objeciones sin pruebas:
+  - Pedir a un revisor que explique y arregle multiplica los rechazos de código correcto (Jin y Chen, 2026).
+  - Un revisor que reescribe puede romper código correcto de un escritor más fuerte (Xiang et al., 2026).
+- El diseño exige ahora evidencia ejecutable y mide fixes y regresiones por separado.
+- GitHub ofrece una forma de que nadie, ni un administrador, pueda saltarse la puerta: un check run de una App fijada como fuente.
+- Ningún motor durable resuelve la idempotencia de GitHub ni la supervisión de subprocesos, así que la máquina de estados propia se mantiene, con tests de fallos inyectados.
 
 **Por qué no adoptar una herramienta existente.** Ninguna combina tres cosas: la cuota de suscripción de Claude Code mediante su CLI, la política de revisión entre familias de modelos que ya está acordada, y la operación en un único host sencillo.
 
@@ -83,6 +110,12 @@ Cada afirmación relevante lleva una marca:
 
 ### 1.2 Mecanismos que se reutilizan (conceptos, y lógica donde sirve) [P]
 
+El inventario completo de invariantes que v2 debe conservar es I1–I26 (`research-log.md` §1.1). Para cada una se indica dónde la hace cumplir v1, si tiene test y qué componente de v2 la hereda. Cada invariante se convierte en al menos un test del coordinator.
+
+**Regla de portado.** Una invariante que en v1 vivía solo en prosa (**P**) se implementa en código con su test antes de declarar terminada la fase en que aparece.
+
+Lo más importante, en resumen:
+
 1. **Contrato de validación** `.issue-runner/validation` (`preflight`/`full`). Se lee desde la punta de la rama base en `origin`. Si un PR lo modifica, queda bloqueado. La gramática es estricta. Se porta `validation-contract.sh` tal cual al principio, y después se reimplementa.
 2. **Contrato de integración** `.issue-runner/integration` (`hint:`). Se conserva tal cual.
 3. **Formato de issue**: `## What to build`, `## Acceptance criteria`, `## Blocked by` y `Files likely touched:`. Es la base de la definición de AI-Ready (§5.1).
@@ -96,6 +129,11 @@ Cada afirmación relevante lleva una marca:
 11. **Visibilidad del repositorio, con cierre por defecto si no se puede leer**, para los hallazgos de seguridad (design-notes §9.6).
 12. **Requisito de CI en drafts** (`ready_for_review` más los tipos por defecto).
 13. **Separar decisiones del usuario de sugerencias** (`user-decisions.md`). En v2 son tipos distintos en la base de datos.
+14. **Devolver el PR a draft ante cualquier bloqueo** (I18), sin depender del estado y sin fallar abierto.
+15. **Errores no reintentables** (I14): códigos 3, 4 y 5 del contrato, contract-first, bypass de hooks, fusionado-pero-abierto y clasificación fallida.
+16. **Normalizar los códigos de salida** del comando de validación (I20): sus códigos 2-6 se convierten en 1 para que no puedan falsificar un veredicto.
+17. **Una sonda ciega nunca devuelve "none"** (I8): un error de lectura de GitHub o de git nunca se interpreta como ausencia.
+18. **Material de tests**: unos 640 asserts y el stub de `gh` con *bare origin* de v1 se portan como fixtures (`research-log.md` §1.3).
 
 ### 1.3 Lo que se descarta [P]
 
@@ -173,8 +211,9 @@ Puntos de entrada:
 | **GitHub Agentic Workflows (gh-aw)** [F: motores Claude Code y Codex; *safe outputs*; MIT] | Mejor modelo de seguridad; nativo de GitHub; auditable | Exige Actions: un token de suscripción como secreto ligado a una persona (§17 Q1); minutos de CI en repos privados; bucles multi-ronda con estado repartidos en workflows; depuración más difícil; hubo un aviso de seguridad que retiró versiones | No como núcleo. Se copia *safe outputs*. Se reconsidera como *backend* de ejecución en v3 si hace falta ejecutar sin host (**H-12**). |
 | **Composio agent-orchestrator** [F: Apache-2.0; worktree por tarea; reenvía fallos de CI y comentarios] | Muy próximo funcionalmente | Aplicación de escritorio; política de revisión propia que habría que reemplazar; dependencia de un tercero en el camino crítico | Se descarta para el núcleo. Merece un *spike* de una tarde para comparar UX. |
 | **Claude Agent SDK** (TS/Python) | Callbacks de permisos en código; coste por resultado | La documentación pide autenticación con API key para productos de terceros [F]; envuelve el mismo binario. Para uso interno, invocar el CLI evita la ambigüedad de credenciales y de lenguaje | No en v2.0. El Runner se abstrae para poder cambiarlo. |
-| **Temporal** | Ejecución duradera, temporizadores, señales humanas | Servidor más workers: más operación de la que pide un host con concurrencia de 1–3 | Descartado mientras haya un solo host (**H-13**: volver a evaluarlo si hay más de un host o más de 10 ítems simultáneos). |
-| **LangGraph** | Grafos con checkpoint | Framework y abstracción innecesarios; el LLM no decide el grafo | Descartado. |
+| **Temporal** | Ejecución duradera; cancelación por heartbeat ya integrada; temporizadores; Signals; versionado con `patched()` y Replayer | Servidor de producción (el de desarrollo "not intended for production") o Cloud de pago; restricción de determinismo; **no resuelve la idempotencia de GitHub** ("enforced by the service you are calling") | Descartado mientras haya un solo host. Se reconsidera (**H-13**) si hay varios hosts o workers, más de unos pocos ítems simultáneos, workflows que cambian con frecuencia mientras hay ejecuciones de días en curso, o si se acepta Temporal Cloud. |
+| **LangGraph** | Checkpoints e `interrupt()` | Su valor son los grafos dirigidos por LLM, que excluimos; **no tiene temporizadores duraderos ni cancelación de nodos en ejecución**; un nodo interrumpido se repite entero al reanudarse | Descartado. |
+| **DBOS Transact** (biblioteca; SQLite o Postgres) | Memoización por paso, `recv` con timeout, workflow-ID como clave de idempotencia, sin servidor | La versión por defecto (un hash del código) **deja huérfanos los workflows en curso** si no se fija; restricción de determinismo; se recomienda Postgres en producción | Alternativa viable. Se elige la máquina propia porque no tiene *replay* (sin restricción de determinismo) y su estado se inspecciona con SQL. Cambiar si crecen los tipos de workflow (`research-log.md` §4). |
 | **OpenHands / SWE-agent / Copilot coding agent / Devin** | Producto completo | Usan sus propios agentes o facturación, no la cuota de Claude Code ni la política acordada | Descartados. |
 | **Managed Claude Code Review** [F: solo Team/Enterprise; nunca bloquea; no deja elegir modelo; coste aparte] | Buena calidad, verificador integrado | No sirve como gate; gasto incremental; sin salida estructurada para el Coordinator | Señal opcional, apagada por defecto. Se usa la revisión local. |
 
@@ -183,7 +222,13 @@ Puntos de entrada:
 - **Python 3.12 frente a TypeScript.** Python porque `sqlite3`, `subprocess` y `json` vienen en la biblioteca estándar, el despliegue en una VM es trivial y v1 ya es bash. TypeScript sería razonable si el equipo lo prefiere (§17 Q7). El Runner no depende del lenguaje porque invoca CLI.
 - **Polling frente a webhooks.** Polling, para no exponer endpoints. Coste: hasta unos 120 s de latencia, irrelevante frente a ejecuciones de minutos.
 - **SQLite frente a ficheros planos.** SQLite por las transacciones atómicas de cada transición y las consultas para el Evidence Registry.
-- **`codex exec --output-schema` frente a `codex review`.** `codex review` no documenta salida JSON [F]. `exec` con esquema y `--sandbox read-only` da independencia y estructura.
+- **`codex exec --output-schema` frente a `codex review` y `app-server`.** `codex review` no documenta salida JSON [F]. `app-server` tiene la API más rica (`turn/interrupt`, notificaciones de límites, errores tipados), pero se declara "experimental and aren't supported for production workloads" [F]. `exec` está marcado como estable, y con esquema y `--sandbox read-only` da independencia y estructura. Se reconsidera `app-server` si las pruebas de F0 sobre cancelación y señales de límite de `exec` fallan.
+- **CLI frente a Agent SDK de Claude.** `claude -p` es "the Agent SDK via the CLI" [F] y es el binario sin modificar, que es la vía claramente permitida con suscripción propia. El SDK solo añadiría `interrupt()` en mitad de la ejecución y `canUseTool`, que no necesitamos porque los permisos son estáticos por rol.
+- **Máquina de estados propia: qué hay que construir.** Ningún framework evita las partes difíciles: supervisar subprocesos y reconciliar con GitHub antes de actuar. Presupuesto explícito para cuatro cosas, que son las que suelen fallar en una máquina hecha a mano:
+  - Recuperación al arrancar (adopción por pid y hora de inicio).
+  - Outbox con reconciliación.
+  - Versionado manual (`workflow_version` por ítem; los manejadores antiguos se conservan hasta que sus ítems terminan).
+  - **Tests con fallos inyectados en cada frontera de estado.**
 - **Revisión local con `claude -p` frente a la Code Review gestionada**: véase la tabla anterior.
 
 ---
@@ -230,7 +275,7 @@ READY ─(deps del DAG hechas)─► IMPLEMENTING ─► VALIDATING ─(rojo, ro
                      AWAITING_MERGE_APPROVAL (según riesgo) ─► MERGING ─► MERGED ─► DONE (limpieza)
 
 Suspensiones transversales (guardan resume_state y vuelven a él):
-WAITING_QUOTA · WAITING_BASE (base roja) · PAUSED_SPEC_DRIFT · PAUSED_OPERATOR
+WAITING_QUOTA · WAITING_BASE (base roja) · PAUSED_SPEC_DRIFT · PAUSED_OPERATOR · CONTRACT_FIRST_STOP (dependencia externa; §5.3)
 Terminales: DONE · ABANDONED (humano) · CLOSED_EXTERNALLY · FAILED_INFRA (tras reintentos; humano puede reabrir)
 ```
 
@@ -292,7 +337,14 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
 ### 5.3 Planificación y cola
 
 - El DAG se construye a partir de `## Blocked by` y de las aristas de conflicto por `Files likely touched:` (lógica portada de v1).
-- Las dependencias externas (`owner/repo#N`) se tratan como en v1: no se resuelven solas y van a un humano.
+- Las dependencias externas (`owner/repo#N`) se tratan como en v1 (I23): no se resuelven solas y van a un humano con cuatro opciones (`run-elsewhere`, `override`, `drop`, `contract-first`).
+  - Una arista externa solo se satisface con un PR MERGED, o con una issue cerrada como COMPLETED que tenga un PR fusionado en ese repo.
+  - `owner/repo` se valida con una regex antes de usarse en cualquier llamada.
+- **Parada contract-first [P, hereda I24].** El estado CONTRACT_FIRST_STOP se alcanza de dos formas: un humano elige `contract-first`, o el implementador devuelve `blocked` con `blocker.kind = contract_first` y el contrato propuesto. En ese estado:
+  - El coordinator abre un draft PR de parada con `Refs #N` (nunca `Closes`) que documenta el contrato.
+  - Nunca lo pasa a ready ni lo fusiona mientras la dependencia no esté fusionada o un humano no autorice un `override`.
+  - Solo abre la issue de dependencia en el otro repo si hay una Authorization para ese repo, deduplicada por un marcador.
+  - El ítem espera, sin consumir contadores, hasta que la dependencia se satisface. Después vuelve a READY.
 - `max_parallel = 1` en v2.0. A partir de v2.1 es configurable, por defecto 2, siempre limitado por las cuotas (§10).
 
 ### 5.4 Implementación (Sonnet) [A]
@@ -310,6 +362,16 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
    - El tamaño del diff está dentro del límite.
 
    Si falla cualquier comprobación, se genera un hallazgo determinista para la siguiente ronda o, si toca rutas protegidas, se va a AWAITING_HUMAN.
+
+5. **Test de reproducción para bugs [P; `research-log.md` §5.1, Agentless].** Si el SpecSnapshot clasifica la issue como `kind: bug` y el repo tiene harness de tests:
+   - El implementador escribe **primero** un test de reproducción, en un commit separado y marcado con el trailer `IR-Repro: <ruta::test>`.
+   - El coordinator lo ejecuta en un worktree temporal **sobre la base**. Debe fallar (y, si se puede comprobar, por la razón descrita en la issue).
+   - Después lo ejecuta sobre el candidato, donde debe pasar.
+   - Si no falla en la base, se genera un hallazgo determinista `repro_invalid`.
+   - Code Review audita expresamente que el test comprueba el comportamiento de la issue y no el del propio parche. En Agentless, más de la mitad de los tests que "reproducían" el bug eran incorrectos o demasiado específicos.
+   - En issues vagas, no funcionales o sin harness se registra `repro: n/a` y no se fuerza.
+   - El coste es solo ejecutar un test (**H-19**: medir si reduce rondas y escapes).
+6. **Los AC no los marca el implementador.** Su `ac_mapping` es informativo. El estado autoritativo de cada AC lo dan `acceptance[]` de Code Review y las puertas (`research-log.md` §2.2: el agente no debe validar sus propios criterios).
 
 ### 5.5 Validación determinista
 
@@ -332,6 +394,13 @@ Notas:
 
 - Los revisores no ejecutan la suite: reciben el resultado de `preflight`, y CI corre en paralelo. Eso evita sandboxes de escritura en los revisores y ahorra tokens.
 - Codex usa `--ephemeral`, y Claude usa `--no-session-persistence` en los revisores. Ninguno arrastra estado de rondas anteriores salvo lo que el contrato les pasa: sus hallazgos abiertos por identificador.
+- **Contrato de comportamiento de los revisores [P; `research-log.md` §6].**
+  - "Sin hallazgos" es un resultado válido y esperado. Se dice explícitamente en el prompt.
+  - Un revisor puede **abstenerse** (`verdict: unknown`) en una dimensión que no puede evaluar.
+  - Cada hallazgo `major` o superior debe declarar `evidence_kind` (`test|input|trace|static`). Debe aportar un contraejemplo concreto (entrada, estado y resultado esperado frente al obtenido) y, cuando pueda, un `repro`: el texto de un test que **el coordinator** ejecutará, porque el revisor no escribe.
+  - **No se pide `proposed_fix`.** Pedir explicación más fix dispara los rechazos falsos (Jin y Chen, 2026).
+  - Se incluye una lista de rúbricas: intención mal entendida, tests insuficientes, implementación incompleta o *stub*, requisito añadido, especificación mal leída (adaptada de OpenHands y de la taxonomía de objeciones falsas).
+  - A Codex se le indica además: "interviene solo si hay un defecto demostrable; si propones una alternativa, conserva la estructura del autor salvo que esa estructura sea el problema" (Xiang et al., 2026).
 - **Re-revisión incremental [P]**. A partir de la segunda ronda, cada revisor recibe el diff completo contra la base, el **delta** respecto al último candidato que revisó y la lista de sus clusters abiertos, y declara para cada uno `resolved|still_present|regressed`. Se fuerza una revisión completa cuando el delta supera el 40 % del diff total o toca rutas sensibles (**H-7**).
 
 ### 5.7 Coordinación y discrepancias
@@ -363,11 +432,17 @@ Al activarse → STALLED. El Judge, en **modo stall**, recibe un historial compa
 
 1. **`codex_fix`** [A: excepcional]. Para hallazgos localizados y concretos que Sonnet no ha resuelto. Requisito: `codex_fix < 1`.
    - El Codex Fixer trabaja con `codex exec --sandbox workspace-write`, sin red, en un **worktree separado** creado desde el candidato.
-   - Recibe solo los clusters asignados y la especificación, y hace commits.
+   - Recibe solo los clusters asignados (con sus `repro`) y la especificación, con la instrucción de hacer un **parche mínimo que conserve la estructura**.
+   - **No hace commits**: en `workspace-write`, `.git` es de solo lectura [F]. El coordinator toma el diff del árbol de trabajo y hace el commit con el trailer `IR-Role: codex_fixer`.
    - El coordinator valida (`preflight`) y verifica las rutas protegidas.
+   - **Puerta contrafactual [P; `research-log.md` §6.2]**. Ejecuta los `repro` asignados y la suite de validación **antes y después** del parche, y registra por separado *fixes* (tests que pasan de rojo a verde) y *regresiones* (de verde a rojo).
+     - Se rechaza el parche si no cambia el resultado de ningún `repro` asignado: no corrige lo que decía corregir.
+     - Se rechaza también si introduce alguna regresión.
+     - Un parche rechazado se descarta sin consumir el turno del Opus Reviewer, y el ítem pasa a AWAITING_HUMAN.
+     - Si los clusters asignados no tienen `repro`, la puerta se limita a la validación, y el Opus Reviewer debe confirmar explícitamente cada cluster.
    - Después lanza el **Opus Reviewer independiente**: una ejecución nueva de `claude -p` sin `--resume`, sin acceso a la conversación del Judge ni del implementador, que revisa el delta del Fixer y el candidato completo contra la especificación [A].
    - **[P]** También se ejecuta Security Review sobre el delta, porque es código nuevo de otro autor.
-   - **[P]** **Codex Reviewer no cuenta como aprobación del cambio del Fixer** (sesgo de autopreferencia [F: Panickssery et al. 2024]). Si se ejecuta, sus hallazgos se tratan, pero su `agree` no satisface la puerta.
+   - **[P]** **Codex Reviewer no cuenta como aprobación del cambio del Fixer.** Es una medida de precaución por autopreferencia: Panickssery et al. (2024) la midieron en resúmenes, no en código, así que es [H-20] para código. Si se ejecuta, sus hallazgos se tratan, pero su `agree` no satisface la puerta.
    - Si el Opus Reviewer rechaza el cambio, se hace como mucho 1 ronda de Sonnet con sus notas. Si sigue sin aprobarse, AWAITING_HUMAN.
 2. **`alt_impl`** [A: desactivado por defecto]. Solo si `multi_impl.enabled` está activo, o el ítem tiene riesgo `critical`, o la preparación declaró `alternatives` significativas. Véase §5.10.
 3. **`respecify`**: la especificación es ambigua o contradictoria. Se vuelve a PREPARING con el diagnóstico; los contadores de implementación se conservan.
@@ -379,11 +454,16 @@ Al activarse → STALLED. El Judge, en **modo stall**, recibe un historial compa
   - El Judge en modo stall elige `alt_impl`.
   - La preparación marca `alternatives` con impacto arquitectónico y un humano habilita el modo para ese ítem (`/ir multi`).
   - Etiqueta `risk:critical`.
+- **Por qué está apagado (evidencia).**
+  - Un sistema multiagente consume unas 15 veces los tokens de un chat, y "domains that require… many dependencies… are not a good fit… today", con la programación citada como ejemplo.
+  - Toda selección entre candidatos pierde casos: en Agentless se elige bien el 32 % frente a un 42 % alcanzable con un oráculo; en SWE-Gym, el 32 % frente al 42,8 %.
+  - La ganancia barata viene de señales de ejecución, no de verificadores LLM (`research-log.md` §2.4 y §5).
+- **Modo por defecto cuando se active: parada temprana.** Primero un candidato. Un segundo solo si el primero se estanca o el Judge expresa poca confianza. En el trabajo de OpenHands, la mayor parte de la ganancia se obtuvo con unos 1,35 intentos de media.
 - **Mecánica [P]**:
   - Se generan N=2 candidatos (3 como máximo) en worktrees separados, cada uno con una directiva de enfoque distinta. Los implementadores configurables son Sonnet con el enfoque B, Opus, o Codex `exec workspace-write` como implementador alternativo.
   - Filtro determinista: validación y CI.
   - Las revisiones completas se hacen **solo sobre los supervivientes**.
-  - Un selector Opus compara con una rúbrica (cobertura de AC, hallazgos MUST_FIX, tamaño, riesgo).
+  - La selección empieza por la ejecución: `repro`, tests y CI. Solo entre los empatados decide un selector Opus con una rúbrica (cobertura de AC, hallazgos MUST_FIX, tamaño, riesgo).
   - El perdedor se archiva como rama y se registra como evidencia.
 - **Coste**: aproximadamente N veces la implementación más N veces la revisión. Por eso está apagado hasta que el Registry aporte datos (**H-9**).
 
@@ -408,19 +488,56 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 
 **Verificación Opus final [P]**, solo con riesgo high: un Opus Reviewer en ejecución nueva hace una lectura completa de los AC frente al diff final. Con riesgo low o medium no se ejecuta; la verificación es determinista más `acceptance[]`, para ahorrar tokens (**H-10**).
 
-Como mecanismo adicional, el coordinator publica el commit status `issue-runner/gate` (`success` o `failure`) sobre `head_sha`. Si la protección de rama lo exige, **ni siquiera un humano puede fusionar sin querer** un candidato no aceptado (salvo los administradores).
+**El veredicto se publica en GitHub [P; `research-log.md` §7].**
+
+- El coordinator funciona como **GitHub App** (Q10). Publica un **check run** `issue-runner/gate` sobre `head_sha`, con `external_id` igual al id del candidato y el resumen de las puertas en `output`.
+  - Solo una App puede crear check runs.
+  - El ruleset de la rama base exige ese check **con la App como fuente esperada**: "If the status is set by any other person or integration, merging won't be allowed".
+  - Un commit status no vale, porque cualquiera con push puede escribirlo.
+  - GitHub exige que el check pase en el **último** SHA. Un resultado tardío para un SHA anterior se descarta, y antes de escribirlo se comprueba que el SHA sigue siendo la cabeza.
+- **Configuración recomendada del ruleset:**
+  - Checks requeridos: CI más `issue-runner/gate`, fijado a la App.
+  - Descartar aprobaciones obsoletas.
+  - "Require approval of the most recent reviewable push".
+  - "Do not allow bypassing", para que los administradores tampoco puedan saltarse la puerta.
+  - No usar el mismo nombre para un check y un status.
+- Con esto, **ni un humano puede fusionar por accidente** un candidato no aceptado.
+- Si el CI del repo usa Actions, el push del coordinator debe hacerse con el token de la App, porque un evento generado con `GITHUB_TOKEN` no lanza workflows. Y `pull_request` no se ejecuta si hay conflictos (por eso el refresco de base va antes).
 
 ### 5.12 Merge
 
 1. Se adquiere el lock de merge del repositorio (una fila en SQLite con lease).
-2. Se refresca la base. Si `origin/<base>` avanzó, se hace **merge, nunca rebase**, se ejecuta `preflight` y se espera CI.
-3. Se recomprueban las puertas de §5.11.
-4. `gh api …/merge` con `sha=<head_sha>` (equivalente a `--match-head-commit`), con el método configurado (squash por defecto).
-5. Se verifica `merged=true` y que `merge_commit_sha` existe. Se registra la prueba (§1.2.5).
+2. Se refresca la base siguiendo el orden de I21. Si `origin/<base>` avanzó, se hace **merge, nunca rebase**, y siempre, aunque no se solapen ficheros. Después se ejecuta `changed`, `preflight` y `full`, y se comprueba que HEAD es el oid validado.
+   - El push se hace con `--force-with-lease=<rama>:<sha esperado>`.
+   - Si no se sabe si el push llegó (timeout), se consulta `git ls-remote`: si coincide con el SHA esperado, llegó; si sigue el anterior, se reintenta; si hay otro, es un conflicto y se para.
+   - El merge de la base crea un **candidato nuevo** que pasa por la revisión del delta de integración (§5.11) y por CI.
+3. Se recomprueban las puertas de §5.11 para el nuevo `head_sha` (un `GET` del PR confirma `head.sha` y `base.sha`).
+4. **`PUT /pulls/{n}/merge-async`** con `sha=<head_sha>`, `merge_action=direct_merge` y el método configurado (squash por defecto) [F; GitHub recomienda ya el endpoint asíncrono]. El UUID de la respuesta se guarda en el outbox **antes** de seguir.
+   - Si hay timeout o el resultado es incierto, se repite la misma llamada: 409 devuelve el UUID pendiente; 200 significa que ya está fusionado.
+   - El resultado se consulta en `GET …/merge-async/{uuid}` (`pending|merged|failed`), con `GET …/pulls/{n}/merge` (204/404) como respaldo después de 24 h.
+   - Si hubo un push entre la petición y la ejecución, GitHub cancela el merge. Nunca se reintenta sin `sha`.
+5. Se verifica MERGED **independientemente del código de respuesta** (I22) y que existe el SHA del merge. Se registra la prueba de merge (I10).
 6. Se libera el lock, se envían los avisos de integración (`hint:`) y se limpia el worktree. La rama se borra **solo con la prueba de merge**.
 7. Las dependencias del DAG se desbloquean.
 
 Si la base está en rojo, porque CI falla en la punta de la base sin relación con el PR: WAITING_BASE. Se reanuda cuando la base vuelve a verde, y si sigue en rojo más de X horas se avisa a un humano.
+
+**Descartado:**
+
+- **Merge queue.** Prueba ramas `gh-readonly-queue/*`, cuyo SHA nadie ha revisado, y exige soporte de `merge_group`.
+- **Auto-merge.** No fija el SHA.
+
+Se reconsideran si `max_parallel` llega a 4 o más (§16).
+
+**Disciplina con la API de GitHub:**
+
+- Mutaciones en serie, con al menos 1 s entre ellas.
+- Se respeta `retry-after`.
+- Las lecturas de polling usan ETag, porque una respuesta 304 no consume cuota primaria.
+- Los webhooks, si se activan en v2.1, son solo una pista:
+  - Se deduplican por `X-GitHub-Delivery`.
+  - Siempre se vuelve a leer el estado antes de actuar.
+  - Un job reentrega lo que falló, porque GitHub no lo hace solo y la ventana es de 3 días.
 
 ---
 
@@ -448,18 +565,32 @@ Dos hallazgos forman parte del mismo cluster si coinciden la ruta y la categorí
 
 - `familias` es el número de familias de modelo distintas que reportan el cluster. Code Review y Security Review cuentan como una sola familia (Claude); Codex es otra.
 - `sev` es la severidad máxima del cluster.
-- `conf` es la confianza máxima; si `familias ≥ 2`, sube un nivel.
+- `conf` es la confianza máxima. Si `familias ≥ 2`, sube **un nivel como máximo**.
+  - El acuerdo entre modelos es un indicio débil, no una prueba, porque los errores pueden estar correlacionados (misma lectura equivocada de la especificación).
+  - Por eso **la corroboración nunca sustituye a la evidencia** (`research-log.md` §6.3, que descarta "consenso = certeza").
+- `ev` es la mejor evidencia del cluster, en este orden:
+  1. `confirmed`: el coordinator ejecutó un `repro` y falló sobre el candidato como se afirmaba.
+  2. `refuted`: el `repro` pasó sobre el candidato, o se comportó igual en la base y en el candidato cuando el hallazgo dice que el candidato lo introduce.
+  3. `concrete`: entrada o traza concretas, sin ejecutar.
+  4. `static`: solo razonamiento.
+
+**Filtro contrafactual [P; adaptado de Jin y Chen, 2026].** Antes de clasificar, el coordinator ejecuta los `repro` aportados por los revisores, en un worktree temporal y con timeout. Lo hace sobre el candidato y, si el hallazgo afirma `introduced = true`, también sobre la base.
+
+- Un `repro` que pasa en el candidato es `refuted`. El hallazgo baja a DROP y se registra como falso positivo con evidencia, salvo que el revisor de seguridad lo marque como no testeable por ejecución.
+- Un `repro` que no compila o no se puede ejecutar no cuenta como evidencia en ningún sentido: equivale a `static`.
+- El coste es solo ejecutar tests, sin LLM. Así se ataca el fallo más documentado de la revisión con modelos: rechazar código correcto con objeciones de tipo "Logic Error" sin contraejemplo.
 
 Reglas, evaluadas **en este orden** (gana la primera que aplique):
 
 | # | Condición | Clase |
 |---|---|---|
-| R1 | `category ∈ {ci, validation}` | MUST_FIX |
-| R2 | `category = security` y `sev ≥ major` y `introduced ≠ false` | MUST_FIX (si es `conf = low` y de una sola familia → VERIFY) |
-| R3 | `category = security` y `introduced = false` y `sev ≥ major` | DEFER_PRIVATE (aviso privado según la visibilidad del repo, nunca comentario público si el repo es público o desconocido) |
-| R4 | `sev = blocker` y `introduced ≠ false` | MUST_FIX si `conf ≥ medium`; VERIFY si no |
-| R5 | `sev = major` y `introduced = true` y `conf ≥ medium` | MUST_FIX |
-| R6 | `sev = major` y (`conf = low` o `introduced = unknown`) | VERIFY |
+| R0 | `ev = refuted` | DROP (falso positivo con evidencia; se registra) |
+| R1 | `category ∈ {ci, validation}` o `ev = confirmed` con `sev ≥ major` | MUST_FIX |
+| R2 | `category = security`, `sev ≥ major`, `introduced ≠ false` | MUST_FIX si `ev = concrete` y `conf ≥ medium`, o si el riesgo del ítem es high (fail-closed solo en riesgo high). En los demás casos VERIFY, y el Judge debe aportar un escenario de explotación para confirmar |
+| R3 | `category = security`, `introduced = false`, `sev ≥ major` | DEFER_PRIVATE (aviso privado según la visibilidad del repo; nunca un comentario público si el repo es público o su visibilidad es desconocida) |
+| R4 | `sev = blocker`, `introduced ≠ false` | MUST_FIX si `ev = concrete` y `conf ≥ medium`; VERIFY si no |
+| R5 | `sev = major`, `introduced = true`, `ev = concrete`, `conf ≥ medium` | MUST_FIX |
+| R6 | `sev = major` y (`ev = static` o `conf = low` o `introduced = unknown`) | VERIFY. **Una objeción solo estática nunca bloquea por sí sola**: la confirma el Judge con un contraejemplo, o se descarta |
 | R7 | `category = spec_mismatch` (AC `not_met`) | MUST_FIX si viene de Code Review con evidencia; VERIFY si no |
 | R8 | `sev = minor` y `introduced = true` | SHOULD_FIX (sigue la regla de v1: se aplica si el arreglo es pequeño y ya hay ronda en marcha; nunca abre una ronda por sí solo) |
 | R9 | `introduced = false` (preexistente, no de seguridad) | DEFER (propuesta de follow-up en el informe; nunca se publica como issue de forma automática, regla de v1) |
@@ -469,6 +600,8 @@ Reglas adicionales:
 
 - **Disputas.** Un cluster MUST_FIX con respuesta `disputed` del implementador pasa a VERIFY. Si el mismo cluster ya pasó por el Judge y vuelve a disputarse con los mismos argumentos (huella y respuesta similares), no vuelve al Judge: se considera estancamiento.
 - **Dirección.** `direction = disagree` de Codex abre un caso `DIRECTION`. `concerns` se registra sin bloquear, salvo que traiga hallazgos que ya bloqueen por sí mismos.
+- **Contraste con la especificación.** Las objeciones del tipo "requisito añadido" o "especificación mal leída" (un 26 % de las objeciones falsas en Jin y Chen) se marcan como `spec_dispute` y van al Judge con los AC del SpecSnapshot. Nunca se convierten directamente en MUST_FIX.
+- **Juez con evidencia.** Cuando el Judge confirma un caso VERIFY como MUST_FIX, debe aportar `failure_scenario` y, si puede, un `repro`, que el coordinator ejecuta igual que los de los revisores. Una confirmación sin contraejemplo se registra como `judge_static` y se mide en el Registry (**H-21**: tasa de confirmaciones estáticas del Judge que acaban siendo `fixed_verified`).
 
 ### 6.5 Decisión
 
@@ -555,8 +688,12 @@ Campos:
     "confidence": "high|medium|low",
     "location": {"path": "src/a.ts", "start_line": 10, "end_line": 22},
     "claim": "…", "evidence": "…", "failure_scenario": "entrada/estado concretos → resultado erróneo",
+    "evidence_kind": "test|input|trace|static",
+    "repro": {"path": "tests/ir_repro_F1.test.ts", "content": "…", "command": "npx vitest run tests/ir_repro_F1.test.ts", "expect": "fail_on_candidate"},
+    "objection_type": "logic|boundary|added_requirement|misread_spec|security|other",
     "cwe": null, "proposed_fix": null
   }],
+  "abstain": [{"dimension": "performance", "reason": "…"}],
   "prior_clusters": [{"cluster": "C-7", "status": "resolved|still_present|regressed", "note": "…"}],
   "acceptance": [{"ac": "AC-1", "status": "met|partial|not_met|n/a", "evidence": "…"}],
   "direction": {"verdict": "agree|concerns|disagree", "rationale": "…", "alternative": null},
@@ -568,15 +705,20 @@ Reglas del esquema:
 
 - `acceptance` es obligatorio solo en `code`.
 - `direction` es obligatorio solo en `codex`, y `alternative` solo está permitido si `verdict = disagree`.
-- `proposed_fix` es opcional en todos. Codex no está obligado a proponer [A].
-- `failure_scenario` es obligatorio si `severity ≥ major`; sin él, la regla R6 lo trata como `conf = low`. Esto empuja a los revisores hacia hallazgos verificables.
+- `proposed_fix` es opcional en todos y **el prompt no lo pide** (§5.6). Codex no está obligado a proponer [A].
+- `failure_scenario` y `evidence_kind` son obligatorios si `severity ≥ major`. Sin escenario, el hallazgo cuenta como `ev = static` (R6). Esto empuja a los revisores hacia hallazgos verificables.
+- **`repro`**:
+  - El coordinator solo lo ejecuta con el comando permitido por el contrato de validación de la base (el runner de tests), en un worktree temporal desechable, con timeout y sin red.
+  - El `path` debe caer bajo un directorio de tests y no puede pisar ficheros existentes.
+  - El contenido es dato no fiable: se escribe en un fichero, nunca pasa por una shell.
+- `findings: []` es una salida válida y esperada.
 
 ### 7.5 `JudgeDecision` (Opus)
 
 ```json
 {
   "mode": "adjudicate|stall|select",
-  "dispositions": [{"case": "C-7|DIRECTION", "class": "MUST_FIX|SHOULD_FIX|DEFER|DROP|NEEDS_HUMAN", "directive": "instrucción concreta para Sonnet", "rationale": "…"}],
+  "dispositions": [{"case": "C-7|DIRECTION", "class": "MUST_FIX|SHOULD_FIX|DEFER|DROP|NEEDS_HUMAN", "directive": "instrucción concreta para Sonnet", "rationale": "…", "failure_scenario": "obligatorio si class = MUST_FIX", "repro": null, "confidence": "high|medium|low|unknown"}],
   "direction": {"keep": true, "adopt_alternative": false, "directive": null},
   "stall_choice": "codex_fix|alt_impl|respecify|human|null",
   "stall_assignment": {"clusters": ["C-7"]},
@@ -600,7 +742,7 @@ El coordinator **rechaza** cualquier `stall_choice` que la política no permita 
 | Security Reviewer | claude, Sonnet/Opus | high | No | Lectura | No | No | Nueva | 40 turnos, 15 min |
 | Codex Reviewer | codex exec | config | No (`read-only`) | Sandbox de solo lectura | No | No | `--ephemeral` | 20 min |
 | Judge | claude, Opus | high | No | Lectura | No | No | Nueva | 30 turnos, 15 min |
-| Codex Fixer | codex exec | config | Sí, en un worktree propio (`workspace-write`) | Sí, en sandbox | No | No | `--ephemeral` | 30 min |
+| Codex Fixer | codex exec | config | Sí, en un worktree propio (`workspace-write`; `.git` de solo lectura, así que el commit lo hace el coordinator) | Sí, en sandbox | No | No | `--ephemeral` | 30 min |
 | Opus Reviewer | claude, Opus | high | No | Lectura | No | No | **Nueva, sin `--resume`** [A] | 40 turnos, 20 min |
 | Alt Implementer | Sonnet/Opus/Codex | config | Sí, en worktree propio | Sí | Lista permitida | No | Nueva | Como Implementer |
 
@@ -612,9 +754,11 @@ Para un revisor Claude:
 env -i HOME="$IR_AGENT_HOME" PATH="$SAFE_PATH" LANG=C.UTF-8 \
     CLAUDE_CODE_OAUTH_TOKEN="$(ir-secret claude-sub)" \
   claude -p "$(cat prompt.md)" \
+    --session-id "$ATTEMPT_UUID" \
     --model sonnet --effort medium \
-    --output-format json --json-schema "$(cat review.v1.json)" \
+    --output-format stream-json --verbose --json-schema "$(cat review.v1.json)" \
     --permission-mode dontAsk --permission-prompts none \
+    --setting-sources user --disable-slash-commands \
     --tools "Read,Grep,Glob,Bash" \
     --allowedTools "Read" "Grep" "Glob" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)" "Bash(rg *)" \
     --disallowedTools "Bash(git push *)" "Bash(gh *)" "Bash(curl *)" "Edit" "Write" \
@@ -639,8 +783,29 @@ Detalles de la invocación:
 
 - **`env -i`**: cada agente arranca con un entorno limpio. Se elimina `ANTHROPIC_API_KEY` siempre que la línea de facturación sea la suscripción, porque tiene precedencia sobre OAuth en `-p` y facturaría la API sin avisar [F]. Se elimina `GH_TOKEN`/`GITHUB_TOKEN` siempre.
 - **`--bare`** no se usa con suscripción, porque solo lee API key [F]. Para neutralizar la configuración del proyecto se combinan `--strict-mcp-config`, `--settings` del rol y la protección de rutas (§8.3).
-- **`--max-budget-usd`** actúa sobre el coste estimado. Aquí no es un presupuesto, sino un **disyuntor** contra bucles desbocados (§10).
-- Los flags concretos se fijan con `claude --help` y `codex exec --help` de la versión instalada, mediante el *preflight* de versión **[H-1]**. Algunos son recientes, como `--permission-prompts` o `--effort`.
+- **`--max-budget-usd`** actúa sobre el coste estimado. Aquí no es un presupuesto, sino un **disyuntor** contra bucles desbocados (§10). Al reanudar, los totales anteriores no cuentan para este límite, y el coste que informa es **acumulado**: el ledger guarda la diferencia con el último valor de esa sesión.
+- **Siempre `--permission-mode` explícito.** El modo por defecto puede ser `auto` [F].
+- **`--session-id`** lo asigna el coordinator (un UUID por attempt), así que un attempt perdido se puede reanudar sin depender del stdout.
+- **stream-json** da la vivacidad y las señales de límite:
+  - `tool_progress` con `heartbeat: true` cada 30 s mientras corre una herramienta, aunque no dentro de subagentes.
+  - `system/api_retry` con categoría.
+  - `rate_limit_event` con `status`, `resetsAt` y `utilization` [F; si aparece igual en el CLI con suscripción es [TEST]].
+  - La línea final `result`: `subtype`, `structured_output`, `modelUsage`, `permission_denials`, `terminal_reason`.
+- **Éxito** = código de salida 0, `subtype = success` **y** un `structured_output` presente que valide contra el esquema. Un `success` sin `structured_output` es fallo [F], y también lo es `error_max_structured_output_retries`.
+- **Cancelación y timeouts.** No hay flag de tiempo de reloj [F]: el coordinator aplica `deadline_s` y el umbral de inactividad (sin eventos en stdout durante `hang_s`).
+  - Primero SIGINT, que cierra el turno.
+  - A los 30 s, SIGTERM (código 143; mata el árbol de Bash; no registra resultado).
+  - A los 10 s más, SIGKILL al grupo de procesos (`setsid`).
+- **Comprobación previa de credencial.** `claude auth status` (0/1 y `authMethod`) al arrancar y cada hora. Un `/login` caducado hace fallar todas las peticiones [F].
+- **Aislamiento sin `--bare`**: `--setting-sources user` (sin `project`/`local`), `--strict-mcp-config` con una configuración MCP vacía, `--disable-slash-commands` y `--settings` del rol. **Qué sigue cargando, por ejemplo CLAUDE.md, es [TEST]** (F0, prueba 1).
+  - CLAUDE.md de la base es aceptable porque es contenido de confianza.
+  - Lo que no puede cargarse son los hooks y servidores MCP **del candidato**, y eso lo garantiza también §8.3.
+- **Codex**:
+  - `exec` no documenta códigos de salida ni heartbeat [F]. El coordinator trata como fallo cualquier código distinto de 0, la ausencia de `-o out.json`, un `turn.failed`/`error` en `--json`, o una salida que no valide.
+  - El uso sale de `turn.completed`, en tokens; no hay coste en USD, así que el coste de referencia se calcula con una tabla de precios versionada.
+  - AGENTS.md se lee del repo y no hay interruptor documentado para desactivarlo, de nuevo con la base como fuente de confianza.
+  - `.git`, `.codex` y `.agents` son de solo lectura incluso en `workspace-write` [F].
+- Los flags concretos se fijan con `claude --help` y `codex exec --help` de la versión instalada, mediante el *preflight* de versión **[H-1]**. Algunos son recientes, como `--permission-prompts` (v2.1.259+) o `--effort`. **Las diez pruebas locales pendientes** están en `research-log.md` §3 y forman la fase F0.
 
 ### 8.3 Rutas protegidas (plano de control) [P]
 
@@ -656,7 +821,7 @@ Hay que protegerlas porque, sin `--bare`, `claude -p` carga los hooks y servidor
 Reglas:
 
 1. Los agentes solo se ejecutan sobre worktrees cuyo plano de control es **idéntico al de la base** (comprobación por hash antes de cada lanzamiento).
-2. Si un candidato modifica una ruta protegida: AWAITING_HUMAN antes de cualquier revisión. Tras la aprobación, los revisores se ejecutan con `--setting-sources user` y en una copia sin los ficheros de control del candidato (**H-2**: verificar el flag).
+2. Si un candidato modifica una ruta protegida: AWAITING_HUMAN antes de cualquier revisión. Tras la aprobación, los revisores se ejecutan con `--setting-sources user` (flag documentado; su efecto exacto es **H-2**) y en una copia con el plano de control de la base, más el diff de control como texto.
 3. El Validator ejecuta los comandos de validación de la **base**, nunca los del candidato (regla de v1).
 
 ### 8.4 Sandbox y host
@@ -709,7 +874,7 @@ Lo que se refleja en GitHub:
 
 - Etiquetas `ir:*`: `needs-prep`, `needs-input`, `prepared`, `ai-ready` (humana), `in-progress`, `needs-human`, `blocked`.
 - **Una** tarjeta de estado por PR, un comentario con marcador que se edita (no se añaden comentarios nuevos): estado, rondas, clusters abiertos, coste de referencia y enlaces.
-- El commit status `issue-runner/gate`.
+- El check run `issue-runner/gate` de la GitHub App (§5.11).
 
 Las respuestas humanas entran por comentarios `/ir …` de actores con permiso `write` (verificado), o por el CLI.
 
@@ -727,7 +892,7 @@ Sin base de datos vectorial ni RAG en v2: el coste y la opacidad no se justifica
 
 ### 9.4 Trazabilidad
 
-Cada decisión registra `actor` (`coordinator`, `judge:<attempt>`, `human:<login>`), `rule` (R1…R10) o `rationale`, y las referencias a los findings y attempts. `ir trace <item>` reconstruye la línea temporal completa: qué vio cada agente (input.json), qué devolvió, qué decidió quién y con qué SHA. Los commits del implementador llevan los trailers `IR-Item: 42`, `IR-Attempt: <id>` e `IR-Role: implementer`.
+Cada decisión registra `actor` (`coordinator`, `judge:<attempt>`, `human:<login>`), `rule` (R0…R10) o `rationale`, y las referencias a los findings y attempts. `ir trace <item>` reconstruye la línea temporal completa: qué vio cada agente (input.json), qué devolvió, qué decidió quién y con qué SHA. Los commits del implementador llevan los trailers `IR-Item: 42`, `IR-Attempt: <id>` e `IR-Role: implementer`.
 
 ### 9.5 Recuperación ante fallos
 
@@ -737,11 +902,24 @@ Cada decisión registra `actor` (`coordinator`, `judge:<attempt>`, `human:<login
 | Agente colgado | Sin escritura en stdout (stream-json) durante `hang_s`, o se supera `deadline_s` | SIGTERM y después SIGKILL; `lost`, reintento 1 |
 | Salida que no cumple el esquema | Validación | 1 reintento con el error; después FAILED_INFRA para ese paso |
 | Límite de cuota | `system/api_retry` con `rate_limit`, código de salida o patrón en **stderr del CLI**, nunca en el texto del modelo | WAITING_QUOTA para la línea de ese proveedor y modelo (§10). El ítem no consume contadores. |
-| Crash entre la llamada de merge y el registro | Al arrancar, se reconcilia el outbox | Se consulta el PR: `merged` con `merge_commit_sha` → MERGED; si no, se repite con `sha=` (idempotente) |
+| Crash entre la llamada de merge y el registro | Al arrancar, se reconcilia el outbox | Si hay UUID guardado: `GET …/merge-async/{uuid}`. Si no: se repite `merge-async` con el mismo `sha` (409 devuelve el UUID pendiente; 200 significa ya fusionado). Después se comprueba con `GET …/merge` (204/404). Nunca se reintenta sin `sha`. |
+| Push incierto (timeout) | Outbox con el SHA previsto | `git ls-remote`: si coincide con el previsto, llegó; si sigue el anterior, se repite con lease; si hay otro, conflicto y AWAITING_HUMAN |
+| Comentario o etiqueta inciertos | Outbox | Se lista y se busca el marcador `<!-- ir:item=…:kind=… -->`; se edita el existente o se crea. Las etiquetas son idempotentes |
+| Resultado tardío de un attempt detenido o de un SHA antiguo | `attempt_id` o `head_sha` distinto del actual | Se descarta y se registra (I17) |
 | Alguien hace push a la rama | `head_sha` remoto ≠ el registrado | Nuevo Candidate `external`; se invalidan las revisiones; vuelta a VALIDATING |
 | PR cerrado o issue cerrada por un humano | Polling | ABANDONED o CLOSED_EXTERNALLY (sin borrar ramas) |
 | Se pierde el host | Draft PR más rama remota más spec en la issue | En un host nuevo, `ir adopt <repo>` reconstruye los ítems desde las marcas de GitHub (resume-check de v1). Se pierden el historial de clusters y el ledger salvo que haya copia: backup diario de `ir.db` con `sqlite3 .backup` en un almacenamiento externo. |
 | Disco lleno | Error de escritura | PAUSED_OPERATOR global; se limpian worktrees de ítems DONE |
+| Lectura de GitHub o de git fallida | Error de API o de proceso | **Nunca se interpreta como ausencia** (I8): el paso se reintenta con backoff y después va a FAILED_INFRA. Nunca se crea un PR o una rama "porque no se encontró" |
+
+**Estrategia de pruebas de la recuperación [P; `research-log.md` §4].**
+
+- La state machine es pura y testeable sin red.
+- Se añade un arnés de **fallos inyectados**: en cada frontera (antes y después del commit SQLite, antes y después de cada efecto del outbox, durante cada attempt) se mata el proceso y se comprueba que `ir recover` llega al mismo estado final sin duplicar efectos en un GitHub falso.
+- El GitHub falso extiende el stub de `gh` de v1 con un *bare origin* real.
+- Es la parte que suele fallar en una máquina de estados hecha a mano, y por eso su coste está en F1 y F6.
+
+**Versionado.** Cada ítem guarda `workflow_version`. Un cambio incompatible de la máquina de estados conserva los manejadores de la versión anterior hasta que sus ítems terminan. No hay *replay*, así que no existe la restricción de determinismo de Temporal o DBOS.
 
 ---
 
@@ -751,7 +929,7 @@ Cada decisión registra `actor` (`coordinator`, `judge:<attempt>`, `human:<login
 
 | Contabilidad | Qué mide | Fuente | Para qué se usa |
 |---|---|---|---|
-| **Límites de suscripción** | Consumo de la cuota de los planes Claude (ventana de 5 h y semanal; semanal aparte para Fable en Max [F]) y ChatGPT/Codex (5 h y semanal según plan; Pro sin límite de 5 h [F]) | No hay contador numérico público. Se estima con tokens por modelo en ventanas móviles y se observan los eventos de límite | **Ritmo**: admitir trabajo o esperar. No es dinero. |
+| **Límites de suscripción** | Consumo de la cuota de los planes Claude (ventana de 5 h y semanal; semanal aparte para Fable en Max [F]) y ChatGPT/Codex (5 h y semanal según plan; Pro sin límite de 5 h [F]) | **Claude**: `rate_limit_event` (`status`, `utilization`, `resetsAt`) en stream-json, si F0 confirma que aparece en el CLI [F/TEST]; si no, estimación por tokens en ventanas móviles más eventos de límite. **Codex**: `exec` no documenta señales de límite, así que se estima por tokens y errores (`app-server` tiene `account/rateLimits/updated`, pero es experimental) | **Ritmo**: admitir trabajo o esperar. No es dinero. |
 | **Gasto incremental** | Dinero que sale de verdad además de las cuotas fijas: llamadas con API key, *extra usage* o créditos de Claude, créditos de Codex, Code Review gestionada, minutos de CI de pago | Configuración de la línea (qué credencial) más el `total_cost_usd` de los attempts facturados por API, o tarifas de la configuración | **Presupuesto duro.** Por defecto, **0 €**. |
 | **Coste de referencia** | Lo que costaría a precio de lista de la API | `total_cost_usd` / `modelUsage` de Claude (estimación de cliente [F]); tokens de Codex × tabla de precios versionada | **Eficiencia y comparación**: entre configuraciones, frente a alternativas y frente al valor del trabajo. Nunca bloquea, salvo como disyuntor por intento y por ítem. |
 
@@ -765,7 +943,8 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
 
 ### 10.3 Ritmo según la cuota [P/H]
 
-- **Ventanas estimadas** por proveedor y modelo, con tokens ponderados (la lectura de caché pesa menos: **H-16**, ponderación desconocida).
+- **Señal primaria (Claude)**: el último `rate_limit_event.utilization` observado y su `resetsAt`. Si `status = allowed_warning`, se dejan de admitir attempts nuevos que no sean del Judge. Si es `rejected` o llega `credits_required`, la línea entra en WAITING_QUOTA hasta `resetsAt`.
+- **Ventanas estimadas** (respaldo, y para Codex) por proveedor y modelo, con tokens ponderados (la lectura de caché pesa menos: **H-16**, ponderación desconocida).
 - **Calibración**: cada vez que aparece un `rate_limit`, se registra el consumo estimado de la ventana en ese instante. La mediana de esos valores es la capacidad estimada (**H-17**).
 - **Admisión**: el Scheduler solo lanza un attempt si `headroom_estimado ≥ p75(coste del rol, según el Registry)`. Si no hay datos, se admite y se aprende.
 - **Reserva**: se mantiene un 25 % de la ventana semanal de Opus sin usar para el Judge y los Opus Reviewers. Sin esa reserva, una cola larga de preparación podría dejar los ítems en curso sin juez.
@@ -815,6 +994,11 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
   - Hotfix en los mismos ficheros.
 
   Se atribuye **qué revisor no lo vio**.
+- **Etiquetas de resultado adoptadas de OpenHands (`research-log.md` §5.3)**: PR fusionado y **supervivencia del código**, es decir, la fracción de las líneas del implementador que siguen en el diff final y, a los 30 días, en la rama base.
+- **Por revisor**: hallazgos `confirmed` o `refuted` por el filtro contrafactual, `rejected_by_judge` y `fixed_verified`. Con eso se estima la **precisión propia** de cada revisor; no se asume que las cifras publicadas sean trasladables.
+- **Por ruta que reescribe** (Codex Fixer y alternativas adoptadas): *fixes* y *regresiones* por separado, nunca solo el neto (Xiang et al.).
+- **Trayectorias completas**: el `stdout.jsonl` de cada attempt con su etiqueta de resultado. Es barato ahora y permitiría entrenar o calibrar un verificador más adelante. SWE-Gym necesitó unas 2.600 trayectorias equilibradas del **mismo** agente.
+- **Auditoría humana periódica [P; `research-log.md` §2.3 y §2.4]**: cada semana, un humano lee una muestra de 5 transcripciones de revisores y del Judge, contrasta su criterio y registra las discrepancias. Así se calibran los prompts, como recomienda Anthropic ("read the transcripts").
 
 ### 12.2 Claims (hipótesis) y decisiones
 
@@ -832,8 +1016,11 @@ Ejemplos:
 2. **Shadow** (v2.1): un revisor o una configuración extra se ejecuta, pero sus hallazgos no cuentan para la decisión. Se mide su contribución única y su tasa de falsos positivos (el Judge los evalúa por muestreo). Consume cuota, así que va con presupuesto aparte y muestreo (por ejemplo, el 20 % de los ítems).
 3. **Replay offline** (v2.2): conjunto dorado de issues ya resueltas.
    - Para cada una se fijan el repo, `base_sha`, la spec y tests ocultos: los tests que añadió el PR humano o aceptado, al estilo FAIL_TO_PASS / PASS_TO_PASS de SWE-bench [F].
+   - **Validación de cada tarea** (SWE-Gym): el entorno y el comando de test están fijados, los tests ocultos **fallan antes y pasan después** del PR de referencia, y se descartan las tareas cuyo texto contiene la solución o no aporta información suficiente (en SWE-bench Lite fue un ~17 %; Agentless).
+   - **Advertencia de contaminación**: issues anteriores a la fecha de corte de los modelos pueden dar resultados optimistas. Se prefieren issues recientes y se marca la fecha.
    - Se ejecuta la configuración candidata contra la de referencia, con artefactos inmutables por `run_id`.
    - Así se pueden evaluar cambios de modelo sin riesgo en producción.
+   - **Ablación con cada modelo nuevo [P; `research-log.md` §2.3]**: cada componente (Preparer, cada revisor, Judge, filtro contrafactual) es una suposición sobre lo que el modelo no hace bien solo. Con cada cambio de modelo se quitan **de uno en uno** en el *replay* y se eliminan los que no sostienen resultados.
 
 ### 12.4 Reglas de higiene
 
@@ -846,7 +1033,9 @@ Ejemplos:
 
 - **Autores de issues de confianza** (se hereda de v1). El runner solo procesa repos privados de la organización o issues con `ir:ai-ready` puesto por un actor verificado. Una issue escrita por alguien externo nunca llega a READY sin pasar por PREPARING y por la aprobación humana.
 - **Inyección de prompts**: ningún agente tiene credenciales de GitHub ni red general. La escritura externa la hace el coordinator, que solo ejecuta acciones de un catálogo cerrado (push de la rama del ítem, comentario con marcador, etiqueta `ir:*`, status, merge con puertas). Un agente comprometido puede, como mucho, producir un candidato malo, que pasa por las revisiones y las puertas.
-- La herramienta oficial de security review declara que **no está endurecida frente a inyección** [F]. Por eso su veredicto nunca es la única barrera: R2 es fail-closed y hay rutas protegidas y aprobación humana para riesgo high.
+- La herramienta oficial de security review declara que **no está endurecida frente a inyección** [F]. Por eso su veredicto nunca es la única barrera: R2 es fail-closed con riesgo high, y hay rutas protegidas y aprobación humana para riesgo high.
+- **Los `repro` aportados por agentes son código no fiable.** Se ejecutan solo con el runner de tests del contrato de la base, en un worktree desechable, sin red, sin credenciales y con timeout.
+- **El texto no fiable nunca pasa por una shell** (I25): todo se invoca con listas de argumentos.
 - **Repos públicos o de visibilidad desconocida**: los hallazgos de seguridad no se publican en comentarios; van a la tarjeta privada (el CLI) y se avisa a `owners`.
 - **Secretos**: tokens en un almacén del sistema (por ejemplo, `systemd-creds` o un fichero 0600 del usuario `ir`), inyectados solo en el proceso que los necesita.
 
@@ -896,6 +1085,12 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 6. **Una verificación independiente que no añade otro LLM en riesgo low o medium.** Se puede objetar que "verificación independiente" pide un agente. Mi postura: la independencia la aportan las puertas deterministas ligadas al SHA y la invariante de cobertura; el Opus final solo aporta valor en riesgo high (**H-10**). Si la otra propuesta usa un verificador LLM siempre, la diferencia es medible.
 7. **"Aprovechar la cuota Anthropic" frente a las Consumer Terms.** Es una tensión real, no resuelta en el diseño (§17 Q1).
 8. **Merge automático frente a riesgo.** Si `auto_merge.low` está activo y la preparación clasifica mal el riesgo, se fusionaría sin humano. Mitigación: el riesgo solo sube de forma automática, las reglas de ruta lo elevan y la etiqueta `ir:ai-ready` es humana por defecto, así que un humano vio la clasificación.
+9. **Seguridad fail-closed frente a objeciones falsas** (contradicción nueva de la revisión 2). La revisión 1 bloqueaba ante cualquier hallazgo de seguridad `major`. Pero la evidencia muestra que los revisores LLM rechazan código correcto con frecuencia, y más cuando se les pide explicar y arreglar. Bloquear sin evidencia empuja a Sonnet a "arreglar" código correcto (Jin y Chen; Xiang et al.).
+   - **Resolución**: fail-closed solo con riesgo high, o con evidencia concreta y confianza media o mayor. En los demás casos, VERIFY: el Judge debe aportar un escenario de explotación.
+   - **Riesgo residual aceptado**: una vulnerabilidad real descrita solo con razonamiento estático, en riesgo bajo o medio, depende del Judge. Se mide en el Registry (escapes de seguridad por clase de riesgo).
+10. **Filtro contrafactual frente a cobertura de tests.** Un `repro` que pasa es `refuted`, pero un test mal escrito puede pasar aunque el defecto sea real: el filtro es tan bueno como el test. Por eso R0 solo se aplica con un `repro` ejecutable que compruebe lo que el hallazgo afirma, y Security puede marcar un hallazgo como no testeable por ejecución. Los descartes R0 de hallazgos `blocker` se muestrean en la auditoría humana semanal.
+11. **Implementador que escribe el test de reproducción y el fix.** Si el mismo modelo los escribe, pueden compartir el mismo malentendido (Agentless: más de la mitad de los tests "reproductores" eran incorrectos). Mitigación: el test debe fallar en la base, Code Review audita que prueba el comportamiento de la issue, y los AC los valida el revisor, no el implementador.
+12. **"Paralelizar revisores" frente a "multiagente no compensa en programación".** No hay contradicción: la advertencia de Anthropic se refiere a agentes que comparten un mismo cambio acoplado. Los revisores son *sectioning* independiente de solo lectura, que es el patrón que la misma fuente recomienda. Lo que sí deja de compensar es poner varios implementadores sobre el mismo cambio, y por eso están apagados.
 
 ---
 
@@ -923,17 +1118,17 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 
 | Fase | Entregable | Criterio de aceptación | Esfuerzo orientativo |
 |---|---|---|---|
-| F0 | *Spike* de verificación de **H-1, H-2 y H-16** y de las preguntas Q1, Q2 y Q5: flags reales de `claude -p` y `codex exec` en las versiones instaladas, la forma del JSON de resultado y de los eventos de límite, `--setting-sources`, el comportamiento de `--json-schema` | Documento con las salidas reales (sin ejecutar nada contra los repos de producto) | 1–2 días |
-| F1 | Núcleo: esquema SQLite, state machine pura, outbox, GitHub Gateway (solo lectura y etiquetas), `ir status` | La state machine pasa los **escenarios portados de `docs/scenarios.md`** que apliquen, más los nuevos D1–D13 como tests | 4–5 días |
+| F0 | *Spike* de verificación: **las 10 pruebas locales** de `research-log.md` §3 (autenticación OAuth sin API key y aislamiento sin `--bare`; fallos de esquema en Claude y en Codex; señales y códigos de salida; precedencia de credenciales en Codex; aprobaciones en `exec`; qué carga Codex de un repo; bloqueo real de escritura en revisores; heartbeat y `rate_limit_event`; uso al reanudar), más H-1, H-2 y H-16 y las preguntas Q1, Q2, Q5, Q10 y Q11 | Documento con las salidas reales, ejecutado contra un repo *sandbox* desechable y nunca contra repos de producto | 2–3 días |
+| F1 | Núcleo: esquema SQLite, state machine pura, outbox, GitHub Gateway (solo lectura y etiquetas), `ir status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
 | F2 | Agent Runner: contratos, perfiles de permisos, `env -i`, validación de esquemas, ledger, timeouts y detección de cuelgue, detección de `rate_limit` | Ejecuciones simuladas (un *fake* `claude`/`codex` que emite JSON grabado) cubren éxito, esquema inválido, cuelgue y límite | 3–4 días |
 | F3 | Implementación y validación: worktrees, Implementer, Validator, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
-| F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R1–R10, clustering, cobertura), Judge, bucle de corrección, estancamiento | Tests de tabla de §6 en verde; en el repo *sandbox*, un defecto plantado se detecta y se corrige | 5–6 días |
+| F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R0–R10, clustering, cobertura), **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
 | F5 | Preparación y aprobación: lint AI-Ready, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
-| F6 | Merge y verificación: lock, refresco, puertas, `issue-runner/gate`, merge idempotente, prueba de merge, limpieza | Escenarios de crash entre merge y registro, de base en rojo y de push externo | 3 días |
+| F6 | Merge y verificación: GitHub App, check run `issue-runner/gate` fijado en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
 | F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
 | F8 | Piloto: 10–20 issues reales de riesgo low en un repo de DOMO21, sin merge automático (`auto_merge: none`) | Métricas base en el Registry: tasa de éxito sin humano, rondas, tasa de `rejected_by_judge`, coste de referencia por ítem | 2 semanas de calendario |
 
-Total aproximado hasta el piloto: unas 5–6 semanas de una persona con asistencia de agentes. **[H]**: es una estimación sin datos de velocidad del equipo.
+Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistencia de agentes (la revisión 2 añade F0 ampliado, fallos inyectados y el filtro contrafactual). **[H]**: es una estimación sin datos de velocidad del equipo.
 
 ### 15.3 Después de v2.0
 
@@ -961,7 +1156,10 @@ Total aproximado hasta el piloto: unas 5–6 semanas de una persona con asistenc
 | **OpenTelemetry** | El ledger desde la salida JSON cubre v2.0 | Necesidad de paneles en tiempo real o de varios hosts |
 | **Replay offline** | Hace falta un conjunto dorado curado y consume cuota | Primer cambio de modelo o de política importante |
 | **Managed Code Review / Codex GitHub review** | Gasto incremental, sin salida estructurada, no bloquea | Shadow que demuestre aportación única |
-| **Merge queue de GitHub** | El lock más el refresco de v1 bastan con concurrencia baja (design-notes §2) | `max_parallel` mayor o igual que 4, o conflictos semánticos post-merge |
+| **Merge queue de GitHub** | El lock más el refresco de v1 bastan con concurrencia baja (design-notes §2). Además, la cola prueba un SHA (`gh-readonly-queue/*`) que nadie ha revisado, y su disponibilidad depende del plan | `max_parallel` mayor o igual que 4, o conflictos semánticos post-merge |
+| **Codex `app-server`** | Experimental y "not supported for production workloads" | Que F0 demuestre que `exec` no permite cancelar de forma fiable o no da señales de límite, o que pase a estable |
+| **Verificador o crítico entrenado** | Necesita miles de trayectorias propias. El crítico publicado de OpenHands cae por debajo del azar con otro modelo u otra población | Más de 1.000 attempts etiquetados en el Registry |
+| **Muestreo masivo de parches** (estilo Agentless) | Incompatible con cuota de suscripción; casi todo el valor está en la primera muestra | Nunca por defecto |
 | **Temporal / multi-host** | Sobredimensionado | **H-13** |
 | **RAG / memoria vectorial** | Opaco y caro; CLAUDE.md más el brief bastan | Ítems que fallan por desconocer convenciones que no estaban en CLAUDE.md |
 | **gh-aw como backend** | Credenciales de suscripción en Actions y bucles con estado | Necesidad de ejecutar sin host, o política que exija API key de todas formas |
@@ -984,6 +1182,13 @@ Total aproximado hasta el piloto: unas 5–6 semanas de una persona con asistenc
 7. **Q7. Lenguaje.** ¿Python (propuesta) o TypeScript, según quién lo mantendrá?
 8. **Q8. Registry.** ¿Repo privado `domo21/issue-runner-evidence` para las exportaciones?
 9. **Q9. Modelo de Codex.** v1 fija `gpt-6-sol`. ¿Se mantiene para el revisor? ¿Y para el Fixer?
+10. **Q10. GitHub App o PAT.**
+    - Recomiendo una GitHub App propia de la organización, porque solo una App puede publicar check runs y fijarse como fuente esperada en el ruleset. Con un PAT, la puerta se reduce a un commit status que cualquiera con push puede escribir.
+    - Exige que un administrador de la organización instale la App y configure los rulesets (incluido "Do not allow bypassing"). ¿Es viable?
+11. **Q11. Línea de facturación de Codex.**
+    - La documentación de OpenAI recomienda API key para flujos programáticos, y marca el login de ChatGPT en CI como "advanced" y solo para repos privados, persistiendo `auth.json`.
+    - ¿Se usa el plan de ChatGPT (aceptando ese modo avanzado) o una API key con tope de gasto incremental?
+12. **Q12. Perfil ligero.** [A] fija Code Review y Security Review en paralelo siempre. ¿Se permite un perfil ligero para cambios solo de documentación, sin Security Review, como el perfil de prosa de v1? La evidencia de Anthropic sugiere escalar la profundidad del evaluador según la dificultad, pero cambiarlo es decisión del usuario.
 
 ---
 
@@ -1022,6 +1227,41 @@ Total aproximado hasta el piloto: unas 5–6 semanas de una persona con asistenc
 - Zheng et al. (2023), LLM como juez: https://arxiv.org/abs/2306.05685
 - Evaluación de SWE-bench: https://www.swebench.com/SWE-bench/guides/evaluation/
 
+**Fuentes añadidas en la revisión 2** (detalle, evidencia y veredictos en `research-log.md`):
+
+- Anthropic, artículos de ingeniería:
+  - https://www.anthropic.com/engineering/building-effective-agents
+  - https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents
+  - https://www.anthropic.com/engineering/harness-design-long-running-apps
+  - https://www.anthropic.com/engineering/multi-agent-research-system
+  - https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
+  - https://www.anthropic.com/engineering/managed-agents
+- Codex:
+  - Modo no interactivo: https://learn.chatgpt.com/docs/non-interactive-mode (redirigido desde developers.openai.com/codex/noninteractive)
+  - App-server: https://learn.chatgpt.com/docs/app-server
+  - Autenticación: https://learn.chatgpt.com/docs/auth
+- Ejecución durable:
+  - Temporal: https://docs.temporal.io/workflow-execution
+  - LangGraph: https://docs.langchain.com/oss/python/langgraph/persistence
+  - DBOS: https://docs.dbos.dev/architecture
+- Reparación y verificación:
+  - Agentless: https://github.com/OpenAutoCoder/Agentless (arXiv 2407.01489)
+  - SWE-Gym: https://github.com/SWE-Gym/SWE-Gym (arXiv 2412.21139)
+  - OpenHands: https://www.openhands.dev/blog/20260305-learning-to-verify-ai-generated-code (arXiv 2603.03800)
+- Riesgos de la revisión con modelos:
+  - Xiang et al.: https://arxiv.org/html/2607.21656v1
+  - Jin y Chen: https://link.springer.com/article/10.1007/s10515-026-00638-5
+  - Skill de revisión entre modelos: https://github.com/craigkitterman/cross-model-code-review-skill (commit `2e3916b`)
+  - iCoder: https://www.sciencedirect.com/science/article/pii/S0950584926002132 (**inaccesible; no usado como evidencia**)
+- GitHub:
+  - Pulls: https://docs.github.com/en/rest/pulls/pulls
+  - Checks: https://docs.github.com/en/rest/checks
+  - Statuses: https://docs.github.com/en/rest/commits/statuses
+  - Webhooks: https://docs.github.com/en/webhooks
+  - Actions: https://docs.github.com/en/actions
+  - Ramas protegidas: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches
+  - Merge queue: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
+
 ### Registro de hipótesis
 
 | Id | Hipótesis | Cómo se verifica |
@@ -1044,3 +1284,8 @@ Total aproximado hasta el piloto: unas 5–6 semanas de una persona con asistenc
 | H-16 | Ponderación de la caché en la cuota | F0 y piloto |
 | H-17 | Calibración de capacidad por eventos de `rate_limit` | Piloto |
 | H-18 | Aportación única de Codex Reviewer | 50 ítems |
+| H-19 | El test de reproducción previo reduce rondas y escapes en issues de tipo bug | Piloto |
+| H-20 | Hay autopreferencia de Codex al revisar su propio fix (medida en resúmenes, no en código) | v2.1 |
+| H-21 | Las confirmaciones estáticas del Judge (`judge_static`) acaban siendo `fixed_verified` | Piloto |
+| H-22 | El filtro contrafactual reduce las correcciones de código correcto sin aumentar los escapes | Piloto |
+| H-23 | Con Sonnet como escritor, Codex como revisor de solo lectura aporta más de lo que daña (Xiang et al. midió Opus 4.7 escribiendo y revisores que reescriben; no es trasladable) | 50 ítems |
