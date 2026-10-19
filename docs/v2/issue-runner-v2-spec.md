@@ -9,7 +9,8 @@ Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c
 - Las objeciones de los revisores necesitan evidencia ejecutable, y se añade un filtro contrafactual (§6).
 - Tests de reproducción en las issues de tipo bug (§5.4).
 - El Codex Fixer pasa una puerta contrafactual y el commit lo hace el coordinator (§5.9).
-- GitHub App con un check run fijado al ruleset, y `merge-async` con `sha` (§5.11 y §5.12).
+- Toda la interacción con GitHub va por `gh` [A, Q10], con una cuenta de máquina, una puerta como commit status y `merge-async` con `sha` (§5.11 y §5.12).
+- Codex usa el plan de ChatGPT [A, Q11] (§8.2 y §10.2).
 - `claude -p` con stream-json y `codex exec`; `app-server` queda descartado (§8.2).
 - `rate_limit_event` como señal de cuota (§10.3).
 - Tests con fallos inyectados (§9.5).
@@ -47,7 +48,7 @@ Cada afirmación relevante lleva una marca:
    - el Codex Fixer excepcional, con puerta contrafactual y seguido siempre de un Opus Reviewer en una ejecución nueva;
    - varios implementadores (desactivado por defecto);
    - un humano.
-9. Verificación previa al merge, con puertas deterministas ligadas al SHA exacto y publicadas como check run de una GitHub App, fijado en el ruleset.
+9. Verificación previa al merge, con puertas deterministas ligadas al SHA exacto. El resultado se publica con `gh` como commit status requerido por el ruleset.
 10. Merge serializado con `merge-async` y el `sha` fijado.
 
 **Lo que cambió tras la investigación (revisión 2).**
@@ -56,7 +57,7 @@ Cada afirmación relevante lleva una marca:
   - Pedir a un revisor que explique y arregle multiplica los rechazos de código correcto (Jin y Chen, 2026).
   - Un revisor que reescribe puede romper código correcto de un escritor más fuerte (Xiang et al., 2026).
 - El diseño exige ahora evidencia ejecutable y mide fixes y regresiones por separado.
-- GitHub ofrece una forma de que nadie, ni un administrador, pueda saltarse la puerta: un check run de una App fijada como fuente.
+- GitHub permite exigir la puerta en el ruleset, y `merge-async` con `sha` fija el commit revisado. Con `gh` y un token de usuario la puerta es un commit status: protege frente a errores, no frente a alguien con permisos que quiera saltársela.
 - Ningún motor durable resuelve la idempotencia de GitHub ni la supervisión de subprocesos, así que la máquina de estados propia se mantiene, con tests de fallos inyectados.
 
 **Por qué no adoptar una herramienta existente.** Ninguna combina tres cosas: la cuota de suscripción de Claude Code mediante su CLI, la política de revisión entre familias de modelos que ya está acordada, y la operación en un único host sencillo.
@@ -490,19 +491,36 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 
 **El veredicto se publica en GitHub [P; `research-log.md` §7].**
 
-- El coordinator funciona como **GitHub App** (Q10). Publica un **check run** `issue-runner/gate` sobre `head_sha`, con `external_id` igual al id del candidato y el resumen de las puertas en `output`.
-  - Solo una App puede crear check runs.
-  - El ruleset de la rama base exige ese check **con la App como fuente esperada**: "If the status is set by any other person or integration, merging won't be allowed".
-  - Un commit status no vale, porque cualquiera con push puede escribirlo.
-  - GitHub exige que el check pase en el **último** SHA. Un resultado tardío para un SHA anterior se descarta, y antes de escribirlo se comprueba que el SHA sigue siendo la cabeza.
-- **Configuración recomendada del ruleset:**
-  - Checks requeridos: CI más `issue-runner/gate`, fijado a la App.
-  - Descartar aprobaciones obsoletas.
-  - "Require approval of the most recent reviewable push".
-  - "Do not allow bypassing", para que los administradores tampoco puedan saltarse la puerta.
-  - No usar el mismo nombre para un check y un status.
-- Con esto, **ni un humano puede fusionar por accidente** un candidato no aceptado.
-- Si el CI del repo usa Actions, el push del coordinator debe hacerse con el token de la App, porque un evento generado con `GITHUB_TOKEN` no lanza workflows. Y `pull_request` no se ejecuta si hay conflictos (por eso el refresco de base va antes).
+**[A, Q10] Toda la interacción con GitHub pasa por GitHub CLI (`gh`).**
+
+- Se usan los comandos de alto nivel cuando existen: `gh pr create`, `gh pr ready`, `gh pr merge --match-head-commit`, `gh issue edit`.
+- Para lo demás se usa `gh api`, por ejemplo `gh api -X PUT repos/{o}/{r}/pulls/{n}/merge-async -f sha=…`, el *timeline* o los commit statuses.
+- El GitHub Gateway es una capa fina sobre `gh` que siempre invoca con lista de argumentos y `--json` donde se puede.
+
+**Identidad con la que se autentica `gh` [P].** `gh` es la herramienta; la identidad es su token. Propongo una **cuenta de máquina dedicada** (por ejemplo `domo21-bot`, permitida por los términos de GitHub como *machine account*) autenticada con `gh auth login` y un PAT *fine-grained* limitado a los repos del runner. Es mejor que el token personal de un desarrollador por tres razones:
+
+- **El autor de un PR no puede aprobarlo**, y "most recent reviewable push" exige que apruebe alguien distinto de quien hizo el push. Con el token de un desarrollador, ese desarrollador nunca podría aprobar los PR del runner.
+- La auditoría distingue lo que hizo el runner de lo que hicieron las personas.
+- Revocar la cuenta o el token no afecta a nadie del equipo.
+
+Los push hechos con este token sí lanzan Actions (solo los de `GITHUB_TOKEN` no).
+
+**La puerta en GitHub es un commit status** `issue-runner/gate` (`gh api repos/{o}/{r}/statuses/{sha}`) sobre `head_sha`.
+
+- La descripción lleva el id del candidato y `target_url` la tarjeta de estado.
+- GitHub exige que el status pase en el **último** SHA. Un resultado tardío para un SHA anterior se descarta, y antes de escribirlo se comprueba que el SHA sigue siendo la cabeza.
+- **Limitación aceptada:** cualquiera con push puede escribir ese status (solo una GitHub App puede publicar check runs con fuente fijada [F]). Contra un error humano la puerta funciona; contra una persona con permisos que quiera saltársela no. En un equipo interno de confianza es aceptable.
+- **Endurecimiento opcional futuro sin abandonar `gh`:** `gh` puede autenticarse con el token de instalación de una GitHub App (`GH_TOKEN=<installation token>`). Así se publica un check run fijado como fuente sin cambiar de herramienta. Queda en §16.
+- Pase lo que pase en GitHub, **el coordinator nunca fusiona sin que su propia base de datos tenga todas las puertas en verde**. El status protege frente a merges manuales accidentales; no es la fuente de verdad.
+
+**Configuración recomendada del ruleset de la rama base:**
+
+- Checks requeridos: CI más `issue-runner/gate`.
+- Descartar aprobaciones obsoletas.
+- "Require approval of the most recent reviewable push", que exige la cuenta de máquina.
+- "Do not allow bypassing".
+
+Además, `pull_request` no se ejecuta si hay conflictos, y por eso el refresco de base va antes.
 
 ### 5.12 Merge
 
@@ -805,6 +823,7 @@ Detalles de la invocación:
   - El uso sale de `turn.completed`, en tokens; no hay coste en USD, así que el coste de referencia se calcula con una tabla de precios versionada.
   - AGENTS.md se lee del repo y no hay interruptor documentado para desactivarlo, de nuevo con la base como fuente de confianza.
   - `.git`, `.codex` y `.agents` son de solo lectura incluso en `workspace-write` [F].
+  - Autenticación: el plan de ChatGPT con `auth.json` en `$IR_CODEX_HOME` [A, Q11]. Nunca se pone una API key en el entorno (§10.2).
 - Los flags concretos se fijan con `claude --help` y `codex exec --help` de la versión instalada, mediante el *preflight* de versión **[H-1]**. Algunos son recientes, como `--permission-prompts` (v2.1.259+) o `--effort`. **Las diez pruebas locales pendientes** están en `research-log.md` §3 y forman la fase F0.
 
 ### 8.3 Rutas protegidas (plano de control) [P]
@@ -874,7 +893,7 @@ Lo que se refleja en GitHub:
 
 - Etiquetas `ir:*`: `needs-prep`, `needs-input`, `prepared`, `ai-ready` (humana), `in-progress`, `needs-human`, `blocked`.
 - **Una** tarjeta de estado por PR, un comentario con marcador que se edita (no se añaden comentarios nuevos): estado, rondas, clusters abiertos, coste de referencia y enlaces.
-- El check run `issue-runner/gate` de la GitHub App (§5.11).
+- El commit status `issue-runner/gate`, publicado con `gh` (§5.11).
 
 Las respuestas humanas entran por comentarios `/ir …` de actores con permiso `write` (verificado), o por el CLI.
 
@@ -937,7 +956,14 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
 
 ### 10.2 Líneas de facturación y reglas [P]
 
-- Cada rol tiene una línea primaria (por defecto, suscripción) y una línea de **desbordamiento**, opcional y **desactivada**.
+- **[A, Q11] Siempre se usan los planes**, por rentabilidad: suscripción de Claude para todos los roles Claude, y plan de ChatGPT para Codex Reviewer y Codex Fixer.
+- **Codex con el plan de ChatGPT, en la práctica:**
+  - `codex login` se hace una sola vez en el host. `auth.json` vive en `$IR_CODEX_HOME`, con permisos 0600 y propietario el usuario `ir`, y se trata como una contraseña.
+  - El host es persistente, así que el refresco automático del token se conserva entre ejecuciones. OpenAI documenta este modo como "advanced" y solo para repos privados [F]; nuestros repos son privados.
+  - `CODEX_API_KEY` y `OPENAI_API_KEY` se eliminan siempre del entorno, porque no está documentado qué credencial gana si coexisten (F0, prueba 5).
+  - `--ignore-user-config` no afecta a la autenticación, que sigue leyendo `CODEX_HOME` [F].
+  - Una comprobación previa, `codex login status`, se ejecuta al arrancar y cada hora (flag exacto: H-1).
+- Cada rol tiene una línea primaria (siempre el plan) y una línea de **desbordamiento**, opcional y **desactivada**. Activarla sería una excepción explícita a [A, Q11].
 - **Nunca se cambia de credencial en silencio.** El Runner construye el entorno de cada proceso; la presencia accidental de `ANTHROPIC_API_KEY` en el host no tiene efecto.
 - El desbordamiento a la API solo se activa con `overflow.enabled: true`, un tope mensual en € y una lista de roles. Ejemplo: Judge sí, Implementer no, porque una espera de horas en el Judge bloquea todo el ítem por una llamada barata.
 
@@ -1124,7 +1150,7 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | F3 | Implementación y validación: worktrees, Implementer, Validator, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
 | F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R0–R10, clustering, cobertura), **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
 | F5 | Preparación y aprobación: lint AI-Ready, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
-| F6 | Merge y verificación: GitHub App, check run `issue-runner/gate` fijado en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
+| F6 | Merge y verificación: Gateway sobre `gh` con cuenta de máquina, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
 | F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
 | F8 | Piloto: 10–20 issues reales de riesgo low en un repo de DOMO21, sin merge automático (`auto_merge: none`) | Métricas base en el Registry: tasa de éxito sin humano, rondas, tasa de `rejected_by_judge`, coste de referencia por ítem | 2 semanas de calendario |
 
@@ -1157,6 +1183,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | **Replay offline** | Hace falta un conjunto dorado curado y consume cuota | Primer cambio de modelo o de política importante |
 | **Managed Code Review / Codex GitHub review** | Gasto incremental, sin salida estructurada, no bloquea | Shadow que demuestre aportación única |
 | **Merge queue de GitHub** | El lock más el refresco de v1 bastan con concurrencia baja (design-notes §2). Además, la cola prueba un SHA (`gh-readonly-queue/*`) que nadie ha revisado, y su disponibilidad depende del plan | `max_parallel` mayor o igual que 4, o conflictos semánticos post-merge |
+| **GitHub App detrás de `gh`** (token de instalación en `GH_TOKEN`) | Con la cuenta de máquina y un commit status basta para un equipo de confianza [A, Q10] | Necesidad de que la puerta no se pueda falsificar desde una cuenta con push |
 | **Codex `app-server`** | Experimental y "not supported for production workloads" | Que F0 demuestre que `exec` no permite cancelar de forma fiable o no da señales de límite, o que pase a estable |
 | **Verificador o crítico entrenado** | Necesita miles de trayectorias propias. El crítico publicado de OpenHands cae por debajo del azar con otro modelo u otra población | Más de 1.000 attempts etiquetados en el Registry |
 | **Muestreo masivo de parches** (estilo Agentless) | Incompatible con cuota de suscripción; casi todo el valor está en la primera muestra | Nunca por defecto |
@@ -1169,7 +1196,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 
 ## 17. Preguntas pendientes para el usuario
 
-1. **Q1. Credencial y plan de Claude.** ¿Max individual, o asientos Team/Enterprise? ¿De quién es la credencial con la que corre el runner desatendido?
+1. **Q1. Credencial y plan de Claude.** Ya está acordado que se usa el plan (Q11). Queda por decidir: ¿Max individual, o asientos Team/Enterprise? ¿De quién es la credencial con la que corre el runner desatendido?
    - Las Consumer Terms §3(7) prohíben el acceso automatizado "except… via an Anthropic API Key or where we otherwise explicitly permit it".
    - La documentación de Claude Code ofrece `claude setup-token` / `CLAUDE_CODE_OAUTH_TOKEN` para "CI pipelines and scripts".
    - Mi lectura, que no es asesoramiento legal: es razonable para la automatización propia de un titular, y menos clara para una canalización compartida de empresa, donde Team/Enterprise o una API key es más defendible.
@@ -1182,13 +1209,18 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 7. **Q7. Lenguaje.** ¿Python (propuesta) o TypeScript, según quién lo mantendrá?
 8. **Q8. Registry.** ¿Repo privado `domo21/issue-runner-evidence` para las exportaciones?
 9. **Q9. Modelo de Codex.** v1 fija `gpt-6-sol`. ¿Se mantiene para el revisor? ¿Y para el Fixer?
-10. **Q10. GitHub App o PAT.**
-    - Recomiendo una GitHub App propia de la organización, porque solo una App puede publicar check runs y fijarse como fuente esperada en el ruleset. Con un PAT, la puerta se reduce a un commit status que cualquiera con push puede escribir.
-    - Exige que un administrador de la organización instale la App y configure los rulesets (incluido "Do not allow bypassing"). ¿Es viable?
-11. **Q11. Línea de facturación de Codex.**
-    - La documentación de OpenAI recomienda API key para flujos programáticos, y marca el login de ChatGPT en CI como "advanced" y solo para repos privados, persistiendo `auth.json`.
-    - ¿Se usa el plan de ChatGPT (aceptando ese modo avanzado) o una API key con tope de gasto incremental?
-12. **Q12. Perfil ligero.** [A] fija Code Review y Security Review en paralelo siempre. ¿Se permite un perfil ligero para cambios solo de documentación, sin Security Review, como el perfil de prosa de v1? La evidencia de Anthropic sugiere escalar la profundidad del evaluador según la dificultad, pero cambiarlo es decisión del usuario.
+10. **Q10. Resuelta [A]: GitHub CLI siempre.**
+    - Toda la interacción con GitHub va por `gh` (§5.11).
+    - Sigue abierta una parte menor: **¿cuenta de máquina dedicada (recomendado) o token de un desarrollador?** Con el token de un desarrollador, esa persona no puede aprobar los PR del runner.
+11. **Q11. Resuelta [A]: planes siempre, por rentabilidad.**
+    - Codex usa el login del plan de ChatGPT (`codex login`, `auth.json`), igual que Claude usa la suscripción (§10.2).
+    - Consecuencia para Q1: la línea de Claude es la suscripción. Lo único que queda abierto en Q1 es **qué plan y qué titular**, por la nota sobre los términos de uso.
+12. **Q12. Perfil ligero para cambios solo de documentación.** Pendiente; reformulada en la conversación del 2026-10-19:
+    - Hoy [A] exige Code Review y Security Review en todos los PR.
+    - Propuesta: si **todos** los ficheros cambiados son documentación (`*.md` y `docs/**`, ninguno en rutas protegidas), el coordinator no lanza Security Review, porque no hay código que atacar.
+    - Es una regla determinista por rutas: un solo fichero de código la desactiva.
+    - Ahorra cuota en PR que casi nunca tendrán hallazgos de seguridad.
+    - Requiere tu aprobación porque modifica una decisión ya acordada.
 
 ---
 

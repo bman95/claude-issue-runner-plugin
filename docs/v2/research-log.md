@@ -510,3 +510,11 @@ Aplicados en `issue-runner-v2-spec.md`; cada uno lleva su sección indicada:
 9. **§12**: etiquetas de supervivencia del código y de fixes/regresiones por revisor; especificación del *replay* (base fijada, fallar antes y pasar después, descartar issues que contienen la solución, advertencia de contaminación).
 10. **§1.2 y §5.3**: invariantes I1–I26 trazadas; nuevo estado CONTRACT_FIRST_STOP; vuelta a draft ante cualquier bloqueo.
 11. **§17**: nuevas preguntas Q10 (GitHub App frente a PAT) y Q11 (línea de facturación de Codex, ahora que la documentación recomienda API key para automatización).
+
+**Decisiones del usuario posteriores (2026-10-19):**
+
+- **Q10: GitHub CLI siempre.**
+  - El veredicto de §7 sobre la GitHub App queda en endurecimiento opcional. `gh` podría usar un token de instalación más adelante.
+  - La puerta pasa a ser un commit status escrito con `gh`, con la limitación documentada de que cualquiera con push puede escribirlo.
+  - Se recomienda una cuenta de máquina, porque el autor de un PR no puede aprobarlo.
+- **Q11: planes siempre.** Codex usa el login de ChatGPT en el host persistente, en el modo "advanced" documentado, solo con repos privados.
