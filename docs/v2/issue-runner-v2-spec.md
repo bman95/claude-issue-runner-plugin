@@ -31,6 +31,18 @@ Cada cambio enlaza con la sección del registro de investigación que lo justifi
 - Bugs con reproducción o razón (§5.1).
 - Retención (§9.1).
 
+**Hallazgos e ideas adoptados de `vela91/dev-harness`** (commit `6499769`, pruebas reales del 14 y 15 de octubre de 2026):
+
+- Regla de éxito con tokens de salida mayores que 0 (§8.2).
+- `auth_error` pausa toda la línea (§8.2).
+- Revisores con prompts propios en lugar de `/code-review` y `/security-review` nativos (§5.6).
+- "No poder verificar no es un defecto" (§5.6).
+- stdin cerrado en `codex exec` (§8.2).
+- Reintento ante "Base branch was modified" (§5.12).
+- `Verify:` por criterio, ejecutado por el Validator (§5.1, §5.5).
+- `ir doctor` (§3.1).
+- `merge_mode` y contrato de integración con `status` (§5.12).
+
 **No adoptado de ese diseño:** PostgreSQL, API con RBAC y Context Engine con grafo de procedencia, porque son excesivos para 1–2 ítems por host. Tampoco el contenedor por attempt, que queda aplazado (§16).
 
 ## Leyenda epistémica
@@ -214,7 +226,22 @@ Componentes:
 Puntos de entrada:
 
 - `ir serve`: bucle de *polling* cada 60–120 s. El polling elimina la necesidad de exponer webhooks.
-- Comandos puntuales: `ir prepare N`, `ir run N…`, `ir status`, `ir answer`, `ir approve`, `ir recover`, `ir report`.
+- Comandos puntuales: `ir prepare N`, `ir run N…`, `ir status`, `ir answer`, `ir approve`, `ir recover`, `ir report`, `ir doctor`.
+- **`ir doctor` [P; adoptado de `vela91/dev-harness`, `harness-doctor`].** Comprobación previa en dos niveles. Su existencia viene de pruebas reales: allí los problemas de entorno se descubrían a mitad de ejecución.
+  - **Nivel barato, en cada `ir run` y `ir serve`.** Si una comprobación falla, el runner no arranca.
+    - Configuración y `policy.yml` válidos.
+    - `gh auth status`.
+    - `claude auth status` con `authMethod` de suscripción y sin `ANTHROPIC_API_KEY` efectiva.
+    - `codex login status`.
+    - Binarios y versiones del manifiesto (§8.2).
+    - Variables de entorno que exige `required_env` (solo nombres).
+    - Contrato de validación de la base, válido.
+  - **Nivel caro, con `ir doctor --full`, bajo demanda.** Cuesta tokens y minutos, así que lo invoca una persona al cambiar de máquina, de CLI o de configuración. También se lanza solo cuando cambia `environment_digest` (§4.1).
+    - Una llamada real mínima a `claude -p` y a `codex exec` con esquema, comprobando tokens de salida mayores que 0.
+    - Si el sandbox de Codex permite abrir sockets cuando la verificación lo necesita.
+    - La receta `verification` del repo: arrancar el servicio, esperar a que esté listo y apagarlo.
+    - Los tests de base en verde.
+  - **`ir doctor --init`.** Prepara un proyecto nuevo, fuera de cualquier ejecución y con una persona delante. Detecta la rama destino y la pide confirmar. Propone `.issue-runner/validation`, `policy.yml` y el bloque `verification`, y los escribe como **un PR para revisión humana**, nunca directamente en la rama base. Crea las etiquetas `ir:*`.
 - Una skill de Claude Code muy fina (`/ir`) que solo llama al CLI, para uso interactivo **[P]**.
 
 ### 3.2 Alternativas evaluadas
@@ -332,6 +359,12 @@ Una issue es **AI-Ready** cuando cumple las dos partes siguientes.
 
 - `## What to build` no vacío.
 - `## Acceptance criteria` con al menos un ítem en lista. Cada criterio recibe un identificador estable `AC-1…`.
+- **Cada criterio lleva una línea `Verify:`** [P; adoptado de `vela91/dev-harness`, decisión 6] con un chequeo ejecutable y su resultado esperado, de tres tipos:
+  - `Verify (http): DELETE /api/tasks/999 → 404, body {"error":"task not found"}`
+  - `Verify (browser): <pasos> → <estado visible esperado>` (Playwright)
+  - `Verify (cli): npm test → exit 0`
+
+  Si un criterio no se puede verificar ejecutando algo, usa `Verify (inspection): <qué mirar y qué debe verse>`, y lo comprueba Code Review con evidencia. El tipo por defecto y **cómo se arranca el servicio son del repo**, no de la issue: bloque `verification` de `policy.yml` (`default_kind`, `start`, `ready`, `base_url`, `stop`).
 - `## Blocked by` presente, aunque diga "None".
 - `Files likely touched:` presente.
 - `## Out of scope` presente **[P, nuevo]**.
@@ -407,6 +440,13 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
   - En rojo: nueva ronda del implementador con el log recortado (las últimas 200 líneas más el resumen de fallos) como hallazgo `validation`, hasta `validation_retries_per_round`.
   - En verde: push (la primera vez se crea un **draft PR** con la especificación y la tarjeta de estado), se registra el Candidate y se pasa a REVIEWING.
 - `full` se ejecuta una vez por candidato aceptado, en MERGE_PREP.
+- **Ejecución de las líneas `Verify:`** [P; adoptado de `vela91/dev-harness`]. Las ejecuta **el Validator, no un agente**.
+  - Se arranca el servicio con la receta `verification` del repo, en un worktree temporal y con timeout.
+  - Se ejecuta cada `Verify (http|cli|browser)` del SpecSnapshot y se registra por criterio `passed|failed|error`, con la salida como evidencia.
+  - `failed` genera un hallazgo sintético `category: spec_mismatch`, `ev = confirmed`, que se convierte en MUST_FIX (R1).
+  - `error` (no arranca el servicio, falta Playwright) **no es un defecto del candidato**: se reintenta una vez y después va a FAILED_INFRA, con la sugerencia de ejecutar `ir doctor --full`.
+  - Las comprobaciones `inspection` las evalúa Code Review dentro de `acceptance[]`.
+  - Así nadie improvisa la verificación al final: el criterio y cómo comprobarlo se decidieron juntos en la preparación, y el implementador sabe desde el principio contra qué se le mide.
 
 ### 5.6 Revisiones en paralelo [A]
 
@@ -436,6 +476,14 @@ Notas:
   - **No se pide `proposed_fix`.** Pedir explicación más fix dispara los rechazos falsos (Jin y Chen, 2026).
   - Se incluye una lista de rúbricas: intención mal entendida, tests insuficientes, implementación incompleta o *stub*, requisito añadido, especificación mal leída (adaptada de OpenHands y de la taxonomía de objeciones falsas).
   - A Codex se le indica además: "interviene solo si hay un defecto demostrable; si propones una alternativa, conserva la estructura del autor salvo que esa estructura sea el problema" (Xiang et al., 2026).
+  - **"No poder verificar no es un defecto"** (texto probado en `vela91/dev-harness`, hallazgo H2). En pruebas reales, el sandbox de Codex no podía abrir sockets (`listen EPERM`), y Codex rechazó tareas correctas por no haber podido ejecutar los tests. Todos los revisores reciben esta instrucción: si no puedes verificar algo, decláralo en `coverage.limitations` o con `abstain`; un hallazgo bloqueante tiene que apoyarse en un defecto concreto contra la spec o la seguridad.
+- **Por qué no se usan los comandos nativos `/code-review` y `/security-review` [F; evidencia de `vela91/dev-harness`, hallazgos H7, H9, H13 y H14].** Los revisores Claude de v2 son prompts de rol propios que reciben el diff explícito (§7.1); no se invocan los comandos nativos. En ejecuciones reales de otro harness se observó:
+  - `/security-review` no acepta la rama destino: compara contra `origin/HEAD`. En un proyecto de cliente cuya rama destino no era la principal, auditó todo el histórico. Reportó 14 vulnerabilidades preexistentes, ninguna del cambio, con 191.922 tokens de salida. Un segundo intento duró unos 20 minutos con 20 subagentes antes de matarlo a mano.
+  - `/code-review` comparaba contra una rama destino local desactualizada.
+  - Los dos delegan en subagentes, así que `usage` y `num_turns` de primer nivel salen a 0. Además, uno devolvió `is_error: false` y `subtype: success` habiendo fallado la autenticación.
+  - Lanzados desde un hook, se ejecutaron sobre el directorio equivocado: costaron 6,87 $ en revisiones inútiles y dejaron ficheros en el checkout del cliente.
+
+  Con prompts propios, el alcance es el diff entre la base y el candidato que fija el coordinator, el resultado es JSON con esquema, y el coste es acotado y atribuible.
 - **Re-revisión incremental [P]**. A partir de la segunda ronda, cada revisor recibe el diff completo contra la base, el **delta** respecto al último candidato que revisó y la lista de sus clusters abiertos, y declara para cada uno `resolved|still_present|regressed`. Se fuerza una revisión completa cuando el delta supera el 40 % del diff total o toca rutas sensibles (**H-7**).
 
 ### 5.7 Coordinación y discrepancias
@@ -510,7 +558,8 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 2. `preflight` (y `full`, si existe) en verde sobre `head_sha` mezclado con la base actual.
 3. Las tres revisiones cubren `head_sha`, como revisión completa o delta.
 4. Ningún cluster en MUST_FIX, VERIFY ni NEEDS_HUMAN.
-5. `acceptance[]` del último Code Review: todos los AC en `met` o `n/a` con justificación aceptada.
+5. Todos los criterios de aceptación pasan: los `Verify (http|cli|browser)` en `passed` en el Validator sobre `head_sha`, y los `inspection` en `met` en el `acceptance[]` del último Code Review. Un criterio `not_checked` o `error` bloquea.
+5b. Si el repo declara `status:` en su contrato de integración, devuelve `green` para `head_sha` (§5.12).
 6. Las rutas protegidas no han cambiado, o hay una Authorization humana.
 7. Si hubo Codex Fixer, existe la aprobación del Opus Reviewer sobre un SHA ancestro con delta revisado.
 8. **El snapshot de evaluación (§4.1) es el mismo** para todas las revisiones, validaciones y aprobaciones que cuentan: la misma spec, la misma política, el mismo manifiesto de validación y el mismo entorno. Si cambió cualquiera de ellos, se vuelve a ejecutar lo que dependía del campo cambiado:
@@ -577,9 +626,31 @@ Además, `pull_request` no se ejecuta si hay conflictos, y por eso el refresco d
    - Si hay timeout o el resultado es incierto, se repite la misma llamada: 409 devuelve el UUID pendiente; 200 significa que ya está fusionado.
    - El resultado se consulta en `GET …/merge-async/{uuid}` (`pending|merged|failed`), con `GET …/pulls/{n}/merge` (204/404) como respaldo después de 24 h.
    - Si hubo un push entre la petición y la ejecución, GitHub cancela el merge. Nunca se reintenta sin `sha`.
+   - **"Base branch was modified"** al fusionar poco después de otro PR es un error transitorio observado en pruebas reales (`vela91/dev-harness`, H12). La respuesta es:
+     - volver a leer el PR;
+     - comprobar que la rama sigue conteniendo la base actual (si no, se vuelve al paso 2);
+     - reintentar con el mismo `sha`, como máximo 3 veces con espera creciente.
+
+     No consume contadores ni cambia el estado del ítem.
 5. Se verifica MERGED **independientemente del código de respuesta** (I22) y que existe el SHA del merge. Se registra la prueba de merge (I10).
 6. Se libera el lock, se envían los avisos de integración (`hint:`) y se limpia el worktree. La rama se borra **solo con la prueba de merge**.
 7. Las dependencias del DAG se desbloquean.
+
+**Modo de merge por repo [P; adoptado de `vela91/dev-harness`]**: `merge_mode: auto | request_only` en `policy.yml`.
+
+- **`request_only`** deja el PR listo y verde, con el commit status en verde, y se detiene en AWAITING_MERGE_APPROVAL **sea cual sea el riesgo**. El merge lo hace una persona, desde GitHub o con `ir approve`.
+- Es el valor recomendado para repos cuya rama destino **despliega automáticamente a producción**. Ahí el merge equivale a un despliegue y queda fuera de lo que el runner debe decidir solo. Fue el caso real de un proyecto de cliente.
+- `auto` aplica la política de riesgo de §5.11.
+
+**Contrato de integración con estado [P; amplía el `hint:` de v1, adoptado de `vela91/dev-harness`, decisión 2]**. Además de `hint:`, `.issue-runner/integration` puede declarar `status: <comando>`.
+
+- El comando recibe el SHA y responde con un vocabulario cerrado: `pending|running|green|failed|superseded|unknown`.
+- Si existe, el merge exige `green` sobre el `head_sha`, como una puerta más de §5.11.
+- `pending` y `running` esperan, con plazo máximo y aviso.
+- `failed` genera un hallazgo sintético `category: ci`.
+- `unknown` y `superseded` equivalen a no tener cobertura y bloquean.
+- Sin `status`, el runner solo usa sus propias puertas y CI.
+- Rige la misma regla de confianza que en v1: se lee de la punta de la base, y un PR que lo modifique va a revisión humana.
 
 Si la base está en rojo, porque CI falla en la punta de la base sin relación con el PR: WAITING_BASE. Se reanuda cuando la base vuelve a verde, y si sigue en rojo más de X horas se avisa a un humano.
 
@@ -876,7 +947,15 @@ Detalles de la invocación:
   - `system/api_retry` con categoría.
   - `rate_limit_event` con `status`, `resetsAt` y `utilization` [F; si aparece igual en el CLI con suscripción es [TEST]].
   - La línea final `result`: `subtype`, `structured_output`, `modelUsage`, `permission_denials`, `terminal_reason`.
-- **Éxito** = código de salida 0, `subtype = success` **y** un `structured_output` presente que valide contra el esquema. Un `success` sin `structured_output` es fallo [F], y también lo es `error_max_structured_output_retries`.
+- **Éxito** = se cumplen las cuatro condiciones a la vez:
+  - código de salida 0;
+  - `subtype = success` con `is_error = false`;
+  - **tokens de salida mayores que 0** (suma de `modelUsage[*].outputTokens`);
+  - un `structured_output` presente que valide contra el esquema.
+
+  Un `success` sin `structured_output` es fallo [F], y también lo es `error_max_structured_output_retries`. **Ninguna condición basta por sí sola.** En ejecuciones reales (`vela91/dev-harness`, H1 y H7), `claude -p` salió con código 0, `is_error: false` y el texto "Invalid API key" sin haber ejecutado nada; la única señal fiable era `modelUsage` vacío.
+
+  Un fallo de autenticación se clasifica como `auth_error` y **pausa toda la línea** (como WAITING_QUOTA): no es culpa del ítem, no consume contadores y lo resuelve un humano. El texto de error se lee de la salida del CLI, nunca del payload del modelo.
 - **Cancelación y timeouts.** No hay flag de tiempo de reloj [F]: el coordinator aplica `deadline_s` y el umbral de inactividad (sin eventos en stdout durante `hang_s`).
   - Primero SIGINT, que cierra el turno.
   - A los 30 s, SIGTERM (código 143; mata el árbol de Bash; no registra resultado).
@@ -886,6 +965,7 @@ Detalles de la invocación:
   - CLAUDE.md de la base es aceptable porque es contenido de confianza.
   - Lo que no puede cargarse son los hooks y servidores MCP **del candidato**, y eso lo garantiza también §8.3.
 - **Codex**:
+  - **stdin siempre cerrado o redirigido.** `codex exec` se queda esperando ("Reading additional input from stdin...") si stdin queda abierto. En una prueba real (`vela91/dev-harness`, H10) se colgó unos 5 minutos sin hacer nada. El prompt va por stdin desde un fichero (`- < prompt.md`) y, si no, con `</dev/null`.
   - `exec` no documenta códigos de salida ni heartbeat [F]. El coordinator trata como fallo cualquier código distinto de 0, la ausencia de `-o out.json`, un `turn.failed`/`error` en `--json`, o una salida que no valide.
   - El uso sale de `turn.completed`, en tokens; no hay coste en USD, así que el coste de referencia se calcula con una tabla de precios versionada.
   - AGENTS.md se lee del repo y no hay interruptor documentado para desactivarlo, de nuevo con la base como fuente de confianza.
@@ -1255,9 +1335,9 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | F0 | *Spike* de verificación: **las 10 pruebas locales** de `research-log.md` §3 (autenticación OAuth sin API key y aislamiento sin `--bare`; fallos de esquema en Claude y en Codex; señales y códigos de salida; precedencia de credenciales en Codex; aprobaciones en `exec`; qué carga Codex de un repo; bloqueo real de escritura en revisores; heartbeat y `rate_limit_event`; uso al reanudar), más H-1, H-2 y H-16 y las preguntas Q1, Q2, Q5, Q10 y Q11 | Documento con las salidas reales, ejecutado contra un repo *sandbox* desechable y nunca contra repos de producto | 2–3 días |
 | F1 | Núcleo: esquema SQLite, state machine pura, outbox, **fencing tokens, snapshot de evaluación y RuntimeResultEnvelope**, GitHub Gateway (solo lectura y etiquetas), `ir status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
 | F2 | Agent Runner: contratos, perfiles de permisos, `env -i`, validación de esquemas, ledger, timeouts y detección de cuelgue, detección de `rate_limit` | Ejecuciones simuladas (un *fake* `claude`/`codex` que emite JSON grabado) cubren éxito, esquema inválido, cuelgue y límite | 3–4 días |
-| F3 | Implementación y validación: worktrees, Implementer, Validator, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
+| F3 | Implementación y validación: worktrees, Implementer, Validator (incluidas las líneas `Verify:` y la receta `verification`), **`ir doctor` en sus dos niveles**, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
 | F4 | Revisiones y coordinación: tres revisores, Coordinator (tests de tabla para R0–R10, clustering, cobertura, **ciclo de vida de clusters**), **manifiesto de validación transitivo y detector de debilitamiento de tests**, **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
-| F5 | Preparación y aprobación: lint AI-Ready, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
+| F5 | Preparación y aprobación: lint AI-Ready (con `Verify:` por criterio), `ir doctor --init`, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
 | F6 | Merge y verificación: Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
 | F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
 | F8 | Piloto: 10–20 issues reales de riesgo low en un repo de DOMO21, sin merge automático (`auto_merge: none`) | Métricas base en el Registry: tasa de éxito sin humano, rondas, tasa de `rejected_by_judge`, coste de referencia por ítem | 2 semanas de calendario |
@@ -1325,6 +1405,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
     - Codex usa el login del plan de ChatGPT (`codex login`, `auth.json`), igual que Claude usa la suscripción (§10.2).
     - Consecuencia para Q1: la línea de Claude es la suscripción. Lo único que queda abierto en Q1 es **qué plan y qué titular**, por la nota sobre los términos de uso.
 12. **Q12. Resuelta [A]: se permite el perfil solo-documentación** (§5.6). Si todos los ficheros cambiados son documentación, no se lanza Security Review.
+13. **Q13. Resuelta [A]: solo GitHub.** No se usará GitLab, así que el Gateway no necesita una abstracción de forge (`gh` y `glab`) como la de `vela91/dev-harness`.
 
 ---
 
@@ -1419,7 +1500,8 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | H-15 | Sin RAG basta | Piloto |
 | H-16 | Ponderación de la caché en la cuota | F0 y piloto |
 | H-17 | Calibración de capacidad por eventos de `rate_limit` | Piloto |
-| H-18 | Aportación única de Codex Reviewer | 50 ítems |
+| H-18 | Aportación única de Codex Reviewer. Primer indicio anecdótico: en `vela91/dev-harness` (EFI-101), Codex encontró un defecto real que Code Review no vio | 50 ítems |
+| H-26 | El límite de 4 rondas es adecuado. Indicio: en un proyecto real de `vela91/dev-harness`, dos tareas necesitaron 3 rondas, todas por defectos reales, y no por perfeccionismo | Piloto |
 | H-19 | El test de reproducción previo reduce rondas y escapes en issues de tipo bug | Piloto |
 | H-20 | Hay autopreferencia de Codex al revisar su propio fix (medida en resúmenes, no en código) | v2.1 |
 | H-21 | Las confirmaciones estáticas del Judge (`judge_static`) acaban siendo `fixed_verified` | Piloto |

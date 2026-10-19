@@ -549,3 +549,42 @@ Aplicados en `issue-runner-v2-spec.md`; cada uno lleva su sección indicada:
 - No define cómo pasa un hallazgo de `needs_evidence` a `confirmed`.
 - `WAITING_RESOURCE` no tiene plazo máximo ni escalado.
 - No inspeccionó el código de la skill de revisión cruzada.
+
+## 11. `vela91/dev-harness` (revisado el 2026-10-19)
+
+**Commit `6499769`.** Plugin de Claude Code de otro colaborador, inspirado en el issue-runner v1 y probado en ejecuciones reales:
+
+- un fixture, en dos ejecuciones;
+- un proyecto de cliente en GitLab, con `request_only`.
+
+Se leyó como datos, sin cargar sus skills ni ejecutar nada.
+
+**Evidencia [EXP, informes de ejecución real, n pequeño]:**
+
+- `claude -p` devuelve código 0, `is_error: false` y `success` cuando la autenticación falla. La única señal fiable es `modelUsage` vacío (H1, H7).
+- `/security-review` nativo compara contra `origin/HEAD` y no acepta la rama destino. En el proyecto real auditó todo el histórico: 14 hallazgos preexistentes, 191.922 tokens de salida, y un segundo intento de unos 20 minutos con 20 subagentes (H14).
+- El hook se disparó con el directorio de la sesión que despachaba y costó 6,87 $ en revisiones inútiles (H13).
+- `codex exec` se cuelga con stdin abierto (H10).
+- El sandbox de Codex bloquea abrir sockets (`listen EPERM`), y eso provocó rechazos por "no pude verificar" (H2).
+- "Base branch was modified" es transitorio (H12).
+- Los implementadores inventaban las horas del log (H11).
+- Codex encontró un defecto real que Code Review no vio (EFI-101).
+- En el proyecto real, las tareas necesitaron 3 rondas, todas por defectos reales.
+
+**Adoptado en la especificación:**
+
+- La regla de éxito con tokens de salida mayores que 0, y `auth_error` como pausa de toda la línea.
+- Prompts propios en lugar de los comandos nativos.
+- "No poder verificar no es un defecto".
+- stdin cerrado en `codex exec`.
+- Reintento ante "Base branch was modified".
+- `Verify:` por criterio, ejecutado por el Validator.
+- `ir doctor` en dos niveles, con `--init`.
+- `merge_mode: request_only`.
+- Contrato de integración con `status`.
+
+**No adoptado:**
+
+- Soporte de GitLab: el usuario decidió que no se usará (Q13).
+- Revisiones disparadas por un hook de `SubagentStop`, que es frágil (H8, H13). En v2 el coordinator lanza a los revisores.
+- `git remote set-head origin` persistente, que muta el checkout del proyecto.
