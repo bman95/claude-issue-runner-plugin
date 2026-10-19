@@ -356,6 +356,17 @@ Solo `ir answer`, `ir approve --extend` o una etiqueta humana reinician un conta
 
 ### 5.1 Definición de AI-Ready [P]
 
+> **Fuente de autoridad**: la fase previa a `ir:ai-ready` (entrada, triage, reconciliación, entrevista, corte en slices, redacción, puerta de autosuficiencia, aprobación y caducidad) se especifica en [`issue-runner-v2-preparacion.md`](issue-runner-v2-preparacion.md).
+>
+> Ese documento sustituye en lo que choque a §5.1 y §5.2. Lo nuevo:
+>
+> - el formato AI-Ready v2 (`Context` verificado, `Unchanged behavior`, `Constraints` con umbral, `Assumptions`, `Test data & environment` y `Human-only steps`);
+> - el contrato de autosuficiencia: **el implementador no lee la issue de seguimiento, los comentarios ni los enlaces externos**;
+> - la lectura en frío con Sonnet y la revisión de la spec con Codex;
+> - la aprobación ligada al hash del cuerpo.
+>
+> Lo que sigue en §5.1 y §5.2 es un resumen y se mantiene por compatibilidad de referencias.
+
 Una issue es **AI-Ready** cuando cumple las dos partes siguientes.
 
 **(a) Lint determinista** (sin LLM):

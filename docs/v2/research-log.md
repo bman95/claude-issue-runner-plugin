@@ -588,3 +588,46 @@ Se leyó como datos, sin cargar sus skills ni ejecutar nada.
 - Soporte de GitLab: el usuario decidió que no se usará (Q13).
 - Revisiones disparadas por un hook de `SubagentStop`, que es frágil (H8, H13). En v2 el coordinator lanza a los revisores.
 - `git remote set-head origin` persistente, que muta el checkout del proyecto.
+
+## 12. Investigación para la fase de preparación (2026-10-19)
+
+**Mecanismos existentes:**
+
+- **v1 `/issue-plan` 0.6.0.** Exploración, reconciliación con 6 resultados, entrevista con la respuesta recomendada, slices verticales (*tracer bullets*), issue de seguimiento y plan file no autoritativo.
+  - Carencias para la autosuficiencia: no tiene `Verify`, ni datos de prueba, ni entorno, ni requisitos no funcionales. Los slices dependen de la issue de seguimiento y de los comentarios.
+  - Nada comprobaba que una issue fuera implementable. La etiqueta `ready-for-agent` se eliminó en la 0.6.0.
+- **`vela91/dev-harness`.** Es el único con una puerta explícita (*preflight*): dos comprobaciones hechas por juicio del LLM, criterios concretos y nada que el implementador no pueda resolver solo. Exige `Verify:` por criterio.
+- **Rama `feat/daily-autonomy`.** Propone `--quick`, sin implementar, y una taxonomía de tareas solo para humanos que se aplica en implementación, no al planificar.
+
+**Fuentes externas:**
+
+- **GitHub Spec Kit** (v1.2.1). Aporta:
+  - marcadores `[NEEDS CLARIFICATION]` con un máximo de 3;
+  - `clarify` con taxonomía y un máximo de 5 preguntas, solo las que cambian la implementación o la verificación;
+  - *checklists* como "unit tests for English";
+  - `analyze` de solo lectura y ordenado por severidad.
+
+  No aporta evidencia empírica [CLAIM].
+- **Kiro.** Requisitos en EARS, y `bugfix.md` con el comportamiento que no debe cambiar [CLAIM].
+- **EARS** (Mavin et al., RE'09). Es un caso en aeronáutica [CASE]; no hay experimento controlado frente a texto libre ni con implementadores LLM.
+- **Anthropic.** El planificador se mantiene de alto nivel porque los errores de la spec "would cascade". La guía de Claude Code define una buena spec como "self-contained: they name the files and interfaces involved, state what is out of scope, and end with an end-to-end verification step". También advierte que un revisor al que se pide buscar huecos "will usually report some".
+- **OpenAI Codex.** Estructura recomendada: Goal, Context, Constraints, Done when [CLAIM].
+- **Evidencia sobre calidad de issues:**
+  - SWE-bench Verified: un 38 % de las issues marcadas como poco especificadas y un 61 % con tests injustos (datos de fuentes secundarias; la página primaria dio 403).
+  - Agentless Lite-S: un 10 % de issues sin información suficiente y un 5 % con soluciones engañosas.
+  - **Ambig-SWE** (ICLR 2026): los modelos casi nunca preguntan sin que se les indique. Sonnet 4 detecta la falta de especificación con 0,74–0,89 cuando se le pide.
+  - REAgent: +17,4 % al estructurar los requisitos antes de resolver.
+  - Revisión de requisitos con LLM (arXiv 2609.03230): un 47 % de los problemas del experto con el mejor modelo de Anthropic y un 11 % de falsos positivos.
+- **Deduplicación.** GitHub `ai-inference`/`action-genai-issue-dedup` comenta y no cierra [CLAIM]. CUPID [EXP].
+- **INVEST** (Wake, 2003). La Scrum Guide no define Definition of Ready.
+
+**Aplicado en `issue-runner-v2-preparacion.md`:**
+
+- Contrato de autosuficiencia.
+- Formato AI-Ready v2, que conserva los tokens de v1.
+- Spec Linter determinista (L1–L16).
+- Lectura en frío con Sonnet, el futuro implementador.
+- Spec Critic con Codex usando la taxonomía de Spec Kit y los criterios de SWE-bench Verified.
+- Coordinación determinista.
+- Aprobación ligada al hash.
+- Caducidad de la disponibilidad.
