@@ -1,5 +1,7 @@
 # Issue Runner v2: fase de preparación (de la petición a la issue AI-Ready)
 
+> **Nombre provisional.** "Issue Runner v2", "IR" y el comando `ir` son nombres de trabajo: habrá un cambio de marca y el nombre definitivo está pendiente. Se usan aquí solo como marcadores; los nombres de etiquetas (`ir:*`), comandos y ficheros se renombrarán de forma mecánica cuando se decida.
+
 Estado: **propuesta de diseño**, 2026-10-19. No hay código.
 
 Este documento completa [`issue-runner-v2-spec.md`](issue-runner-v2-spec.md), que cubre lo que pasa desde que una issue tiene `ir:ai-ready` hasta el merge. Aquí se diseña todo lo anterior. Usa la misma leyenda (**[A]** acuerdo, **[P]** propuesta, **[H]** hipótesis, **[Q]** pregunta, **[F]** hecho comprobado) y la misma infraestructura: coordinator determinista, SQLite, `gh` con el token del usuario, agentes como procesos acotados y sin hooks.

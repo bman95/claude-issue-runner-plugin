@@ -1,5 +1,7 @@
 # Cómo construye y revisa código la industria (octubre de 2026): lecciones para Issue Runner v2
 
+> **Nombre provisional.** "Issue Runner v2", "IR" y el comando `ir` son nombres de trabajo: habrá un cambio de marca y el nombre definitivo está pendiente. Se usan aquí solo como marcadores; los nombres de etiquetas (`ir:*`), comandos y ficheros se renombrarán de forma mecánica cuando se decida.
+
 Fecha: 2026-10-19. Es un trabajo de investigación: no se ha hecho ningún experimento ni se ha contratado ningún servicio.
 
 El documento sintetiza siete investigaciones paralelas sobre fuentes primarias, con foco especial en **la revisión de código y en cómo se valida el merge final**.

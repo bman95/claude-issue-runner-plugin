@@ -1,5 +1,7 @@
 # Issue Runner v2: especificación de diseño (DOMO21 / Sicma21)
 
+> **Nombre provisional.** "Issue Runner v2", "IR" y el comando `ir` son nombres de trabajo: habrá un cambio de marca y el nombre definitivo está pendiente. Se usan aquí solo como marcadores; los nombres de etiquetas (`ir:*`), comandos y ficheros se renombrarán de forma mecánica cuando se decida.
+
 Estado: **propuesta de diseño, revisión 2** (2026-10-19), que incorpora la fase de investigación de [`research-log.md`](research-log.md). No hay código. Este documento se compara después con otro diseño independiente.
 Ámbito: de issue de GitHub a PR fusionado, con agentes Claude Code y Codex, para los repositorios de DOMO21/Sicma21.
 Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c1d2989` (`origin/main`).
@@ -1391,7 +1393,11 @@ Ejemplos:
 ### 12.4 Reglas de higiene
 
 - Ningún cambio de valores por defecto sin un claim en estado `supported`, o una decisión humana explícita registrada como tal ("decisión sin evidencia"). Se permiten, pero quedan marcadas.
-- Los informes se exportan cada semana a Markdown (y CSV) en un repo privado de la organización, `domo21/issue-runner-evidence` **[Q8]**, para que sobrevivan al host y se puedan revisar.
+- **[A, Q8] Repo privado central de evidencia**, separado de los repos de proyecto (nombre por decidir con el cambio de marca).
+  - Cada runner, que es local a cada desarrollador, exporta cada semana con `ir evidence push` un JSONL/CSV **sin código**: métricas, metadatos de hallazgos (ruta, categoría, revisor, desenlace), hipótesis y decisiones.
+  - Así la evidencia sobrevive al portátil y se agrega entre proyectos y personas.
+  - Las decisiones de política, como el paso de `shadow` a `enforcing` o el cambio de modelo, se toman con los datos agregados y se registran ahí con su revisión humana.
+  - No va en los repos de proyecto: mezclaría el proceso con el producto, expondría datos internos en repos de clientes y daría muestras demasiado pequeñas.
 
 ---
 
@@ -1553,7 +1559,8 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 5. **Q5. Resuelta [A]: independiente del plan**, como Q1.
 6. **Q6. Resuelta [A]:** la preparación reescribe el cuerpo de la issue con el formato AI-Ready y conserva el texto original (`issue-runner-v2-preparacion.md`).
 7. **Q7. Resuelta [A]: Python.**
-8. **Q8. Pendiente:** repo central de evidencia (en discusión, ver §12.4).
+8. **Q8. Resuelta [A]: repo privado central de evidencia**, separado de los proyectos, que reúne la de todos los repos y desarrolladores. El nombre se decidirá con el cambio de marca. Cada runner exporta un resumen semanal con `ir evidence push`, sin código: solo métricas y metadatos. Ver §12.4.
+16. **Nombre del producto [Q].** Pendiente de cambio de marca; "Issue Runner" e `ir` son provisionales.
 9. **Q9. Resuelta [A]: Codex con `gpt-6.1-sol`** (configurable) para el revisor y para el Fixer.
    - **Herramientas al día:** `ir doctor` compara las versiones instaladas de `claude` y `codex` con las últimas publicadas y comprueba que los modelos configurados aparecen en sus catálogos. Un CLI desactualizado puede no cargar modelos nuevos.
    - `ir update` actualiza los CLI **solo entre ítems, nunca a mitad**. Una actualización cambia `environment_digest` e invalidaría las revisiones en curso (**H-25**).
