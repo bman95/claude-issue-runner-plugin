@@ -1,0 +1,938 @@
+<title>Fase 2 paso a paso</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a swimlane map of the whole phase on top (one lane per actor), then a step inspector that shows one step, or all of them stacked. */
+:root {
+  --bg: #f5f6f4;
+  --surface: #ffffff;
+  --sunk: #eceeea;
+  --fg: #1c2321;
+  --muted: #5d6763;
+  --line: #d3d8d4;
+  --edge: #7d8783;
+  --edge-hi: #1c2321;
+
+  --coord: #0e6b64;   --coord-bg: #ddefec;
+  --claude: #a85a17;  --claude-bg: #f6e6d6;
+  --codex: #4b52a3;   --codex-bg: #e3e4f5;
+  --gh: #56606b;      --gh-bg: #e4e7ea;
+  --human: #a3346a;   --human-bg: #f5dfe9;
+
+  --ok: #2f7a3d; --ok-bg: #e0f0e2;
+  --loop: #8a6400; --loop-bg: #f7ecd0;
+  --wait: #4b52a3; --wait-bg: #e3e4f5;
+  --stop: #a63a2c; --stop-bg: #f6dfdb;
+
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #131816; --surface: #1b211f; --sunk: #222a27; --fg: #e4e9e6; --muted: #9aa6a1; --line: #323c38; --edge: #7f8b86; --edge-hi: #f1f5f3;
+  --coord: #4fc2b5; --coord-bg: #17312d; --claude: #e59a57; --claude-bg: #3a2817; --codex: #9aa0ec; --codex-bg: #23264a;
+  --gh: #a8b2bc; --gh-bg: #262c31; --human: #ec7fb1; --human-bg: #3d1c2c;
+  --ok: #73c483; --ok-bg: #1b3220; --loop: #e2b54a; --loop-bg: #382c0e; --wait: #9aa0ec; --wait-bg: #23264a; --stop: #f08a7b; --stop-bg: #3e1d18;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #131816; --surface: #1b211f; --sunk: #222a27; --fg: #e4e9e6; --muted: #9aa6a1; --line: #323c38; --edge: #7f8b86; --edge-hi: #f1f5f3;
+  --coord: #4fc2b5; --coord-bg: #17312d; --claude: #e59a57; --claude-bg: #3a2817; --codex: #9aa0ec; --codex-bg: #23264a;
+  --gh: #a8b2bc; --gh-bg: #262c31; --human: #ec7fb1; --human-bg: #3d1c2c;
+  --ok: #73c483; --ok-bg: #1b3220; --loop: #e2b54a; --loop-bg: #382c0e; --wait: #9aa0ec; --wait-bg: #23264a; --stop: #f08a7b; --stop-bg: #3e1d18;
+  color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 22px; font-weight: 600; }
+h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+p { margin: 0; }
+code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+code { background: var(--sunk); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+
+header.top { display: grid; gap: 12px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+.lede { max-width: 72ch; color: var(--fg); }
+.io { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 14px; color: var(--muted); }
+.io b { color: var(--fg); font-weight: 600; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 14px; height: 14px; border-radius: 3px; border: 2px solid; display: inline-block; }
+.sw.coord { border-color: var(--coord); background: var(--coord-bg); }
+.sw.claude { border-color: var(--claude); background: var(--claude-bg); }
+.sw.codex { border-color: var(--codex); background: var(--codex-bg); }
+.sw.gh { border-color: var(--gh); background: var(--gh-bg); }
+.sw.human { border-color: var(--human); background: var(--human-bg); }
+.ln { width: 26px; height: 0; border-top: 2px solid var(--edge); display: inline-block; }
+.ln.dash { border-top-style: dashed; }
+
+.mapbox { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.mapbox svg { display: block; min-width: 1850px; width: 100%; height: auto; }
+.maphint { font-size: 13px; color: var(--muted); }
+
+svg .band { fill: var(--surface); }
+svg .band.alt { fill: var(--sunk); opacity: 0.55; }
+svg .lanelabel { font-family: var(--f-mono); font-size: 11px; fill: var(--muted); letter-spacing: 0.06em; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; }
+svg .edge { fill: none; stroke: var(--edge); stroke-width: 1.6; }
+svg .edge.dash { stroke-dasharray: 5 4; }
+svg .edge.hi { stroke: var(--edge-hi); stroke-width: 2.4; }
+svg .arrow { fill: var(--edge); }
+svg .arrow.hi { fill: var(--edge-hi); }
+svg .elabel { font-family: var(--f-mono); font-size: 10.5px; fill: var(--muted); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+svg .elabel.hi { fill: var(--fg); font-weight: 500; }
+svg .node { cursor: pointer; }
+svg .node rect { stroke-width: 1.6; }
+svg .node.coord rect { fill: var(--coord-bg); stroke: var(--coord); }
+svg .node.claude rect { fill: var(--claude-bg); stroke: var(--claude); }
+svg .node.codex rect { fill: var(--codex-bg); stroke: var(--codex); }
+svg .node.gh rect { fill: var(--gh-bg); stroke: var(--gh); }
+svg .node.human rect { fill: var(--human-bg); stroke: var(--human); }
+svg .node text { font-family: var(--f-display); fill: var(--fg); pointer-events: none; }
+svg .node .t1 { font-size: 12.5px; font-weight: 600; }
+svg .node .t2 { font-size: 11px; fill: var(--muted); }
+svg .node.sel rect { stroke-width: 3.2; }
+svg .node.sel.coord rect { fill: var(--coord); } svg .node.sel.claude rect { fill: var(--claude); }
+svg .node.sel.codex rect { fill: var(--codex); } svg .node.sel.gh rect { fill: var(--gh); } svg .node.sel.human rect { fill: var(--human); }
+svg .node.sel text, svg .node.sel .t2 { fill: var(--surface); }
+svg .node:focus-visible rect { outline: none; stroke-width: 3.2; stroke-dasharray: 3 2; }
+svg .node:hover rect { stroke-width: 2.6; }
+svg .note rect { fill: none; stroke: var(--human); stroke-dasharray: 4 4; stroke-width: 1.2; opacity: 0.8; }
+svg .note text { font-family: var(--f-body); font-size: 12px; fill: var(--muted); }
+
+.stepnav { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--f-display); font-size: 13px; font-weight: 500; border: 1.5px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 4px 11px 4px 8px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.chip i { font-style: normal; width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.chip[aria-current="true"] { border-color: var(--fg); background: var(--fg); color: var(--bg); }
+.chip:focus-visible, .btn:focus-visible, .seg button:focus-visible { outline: 2px solid var(--coord); outline-offset: 2px; }
+.dot-coord { background: var(--coord); } .dot-claude { background: var(--claude); } .dot-codex { background: var(--codex); } .dot-gh { background: var(--gh); } .dot-human { background: var(--human); }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: 500 13px var(--f-body); background: var(--surface); color: var(--muted); border: 0; padding: 6px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+.btns { display: flex; gap: 8px; }
+.btn { font: 500 13px var(--f-body); background: var(--surface); color: var(--fg); border: 1.5px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 22px; display: grid; gap: 18px; scroll-margin-top: 16px; }
+.step + .step { margin-top: 18px; }
+.shead { display: grid; gap: 8px; }
+.srow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
+.snum { font-family: var(--f-mono); font-size: 13px; color: var(--muted); }
+.actor { font-family: var(--f-mono); font-size: 12px; border-radius: 4px; padding: 2px 7px; border: 1.5px solid; }
+.actor.coord { color: var(--coord); border-color: var(--coord); background: var(--coord-bg); }
+.actor.claude { color: var(--claude); border-color: var(--claude); background: var(--claude-bg); }
+.actor.codex { color: var(--codex); border-color: var(--codex); background: var(--codex-bg); }
+.actor.gh { color: var(--gh); border-color: var(--gh); background: var(--gh-bg); }
+.actor.human { color: var(--human); border-color: var(--human); background: var(--human-bg); }
+.state { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.summary { max-width: 80ch; font-size: 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px 22px; }
+.cell { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.cell ul { font-size: 14px; }
+.cell.ctx { background: var(--sunk); border-radius: 8px; padding: 14px; }
+.cell.not ul li::marker { content: "✕  "; color: var(--stop); }
+
+.dec { display: grid; gap: 8px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+th { font-family: var(--f-mono); font-size: 11.5px; font-weight: 500; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+td.then { white-space: nowrap; }
+.pill { font-family: var(--f-mono); font-size: 12px; border-radius: 4px; padding: 1px 7px; display: inline-block; }
+.pill.ok { color: var(--ok); background: var(--ok-bg); }
+.pill.loop { color: var(--loop); background: var(--loop-bg); }
+.pill.wait { color: var(--wait); background: var(--wait-bg); }
+.pill.stop { color: var(--stop); background: var(--stop-bg); }
+.pill.human { color: var(--human); background: var(--human-bg); }
+td .pill { white-space: normal; }
+
+.agents { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.agent { border: 1.5px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 8px; align-content: start; min-width: 0; font-size: 14px; }
+.agent.claude { border-color: var(--claude); } .agent.codex { border-color: var(--codex); } .agent.gh { border-color: var(--gh); } .agent.coord { border-color: var(--coord); }
+.agent h4 { margin: 0; font-family: var(--f-display); font-size: 16px; font-weight: 600; }
+.agent dl { margin: 0; display: grid; gap: 6px; }
+.agent dt { font-family: var(--f-mono); font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.agent dd { margin: 0; }
+pre.pseudo { margin: 0; background: var(--sunk); border-radius: 8px; padding: 12px 14px; font-family: var(--f-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; }
+.callout { border-left: 3px solid var(--coord); padding: 4px 0 4px 12px; font-size: 14px; color: var(--muted); max-width: 90ch; }
+
+.always { display: grid; gap: 14px; }
+.cards3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; font-size: 14px; }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--f-mono); font-size: 13px; white-space: nowrap; }
+footer { font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .step { transition: border-color .2s; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Software factory v2 · nombre provisional · diseño, no implementación</div>
+    <h1>Fase 2 paso a paso: de <code>ai-ready</code> al merge</h1>
+    <p class="lede">Un coordinador determinista (Python y SQLite, sin LLM) conduce cada issue por 17 pasos. Los agentes solo trabajan cuando él los lanza, con un contexto cerrado y unos permisos mínimos, y le devuelven JSON. Todas las decisiones de avance, vuelta atrás, escalada o merge las toma el coordinador en código, a partir de esa salida y de evidencia que él mismo ejecuta.</p>
+    <div class="io">
+      <span><b>Entra:</b> una issue <code>ai-ready</code> aprobada, con su spec congelada por hash</span>
+      <span><b>Sale:</b> un PR fusionado y vigilado, o una escalada a una persona con un informe accionable</span>
+    </div>
+  </header>
+
+  <section style="display:grid;gap:12px">
+    <div class="legend" aria-label="Leyenda">
+      <span><i class="sw coord"></i>Coordinador determinista</span>
+      <span><i class="sw claude"></i>Agente Claude</span>
+      <span><i class="sw codex"></i>Agente Codex</span>
+      <span><i class="sw gh"></i>GitHub y CI (vía <code>gh</code>)</span>
+      <span><i class="sw human"></i>Persona</span>
+      <span><i class="ln"></i>Camino principal</span>
+      <span><i class="ln dash"></i>Vuelta atrás</span>
+    </div>
+    <div class="mapbox"><svg id="map" viewBox="0 0 1850 530" role="img" aria-label="Mapa de la fase 2 por carriles: coordinador, Claude, Codex, GitHub y persona"></svg></div>
+    <p class="maphint">Pulsa una caja del mapa o un paso de la lista para ver su detalle. Con las flechas ← → del teclado avanzas o retrocedes.</p>
+  </section>
+
+  <section style="display:grid;gap:14px">
+    <nav class="stepnav" id="stepnav" aria-label="Pasos"></nav>
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="Vista">
+        <button type="button" id="v-one" aria-pressed="true">Paso a paso</button>
+        <button type="button" id="v-all" aria-pressed="false">Todos los pasos</button>
+      </div>
+      <div class="btns">
+        <button type="button" class="btn" id="prev">← Anterior</button>
+        <button type="button" class="btn" id="next">Siguiente →</button>
+      </div>
+    </div>
+    <div id="detail"></div>
+  </section>
+
+  <section class="always">
+    <h2>Lo que el coordinador vigila en todo momento</h2>
+    <div class="cards3">
+      <div class="box">
+        <h3>Contadores por ítem</h3>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Contador</th><th>Límite</th><th>Al agotarse</th></tr></thead>
+          <tbody>
+            <tr><td><code>impl_rounds</code></td><td class="num">4</td><td>STALLED</td></tr>
+            <tr><td><code>validation_retries_per_round</code></td><td class="num">2</td><td>Ronda fallida; MUST_FIX</td></tr>
+            <tr><td><code>adjudications</code></td><td class="num">3</td><td>AWAITING_HUMAN</td></tr>
+            <tr><td><code>codex_fix</code></td><td class="num">1</td><td>El Judge no puede volver a elegirlo</td></tr>
+            <tr><td><code>base_refresh</code></td><td class="num">3</td><td>Lock y luego humano</td></tr>
+            <tr><td><code>infra_retries_per_attempt</code></td><td class="num">1</td><td>FAILED_INFRA</td></tr>
+            <tr><td>Coste de referencia</td><td class="num">40 USD</td><td>AWAITING_HUMAN</td></tr>
+            <tr><td>Tiempo activo</td><td class="num">24 h</td><td>AWAITING_HUMAN</td></tr>
+          </tbody>
+        </table></div>
+        <p class="maphint">Solo una persona reinicia un contador (<code>ir answer</code>, <code>ir approve --extend</code> o una etiqueta), y queda registrado.</p>
+      </div>
+      <div class="box">
+        <h3>Suspensiones (guardan el estado y vuelven a él)</h3>
+        <ul>
+          <li><code>WAITING_QUOTA</code>: cuota de la suscripción agotada. Espera sin gastar contadores y sin cambiar de modelo ni de credencial.</li>
+          <li><code>WAITING_BASE</code>: la rama base está en rojo por algo ajeno al PR.</li>
+          <li><code>PAUSED_SPEC_DRIFT</code>: la spec cambió después de aprobarse.</li>
+          <li><code>PAUSED_OPERATOR</code>: pausa manual.</li>
+          <li><code>CONTRACT_FIRST_STOP</code>: depende de otro repo; se abre un draft PR de contrato con <code>Refs</code>, nunca <code>Closes</code>.</li>
+          <li><code>auth_error</code>: credencial caducada. Pausa toda la línea, no solo el ítem.</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Reglas de fondo</h3>
+        <ul>
+          <li><b>Snapshot de evaluación.</b> Cada revisión, validación y aprobación queda ligada a seis valores: <code>spec_hash</code>, <code>base_sha</code>, <code>head_sha</code>, <code>policy_hash</code>, <code>validation_manifest_hash</code> y <code>environment_digest</code>. Si cambia uno, se repite lo que dependía de él.</li>
+          <li><b>Fencing token.</b> Solo el intento vigente puede hacer avanzar el estado. Un resultado tardío se archiva y se ignora.</li>
+          <li><b>Outbox.</b> Todo efecto en GitHub se anota antes de hacerse, así que tras un corte se reintenta sin duplicar.</li>
+          <li><b>Recuperación.</b> Si el portátil se duerme, los intentos caducan por lease y <code>ir recover</code> los retoma.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>Fuente: <code>docs/v2/issue-runner-v2-spec.md</code> (§4–§8 y §10). Los umbrales marcados como hipótesis en la spec (H-28, H-29, H-31) se calibran en el piloto.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Step content ----------
+  const P = (k, t) => '<span class="pill ' + k + '">' + t + '</span>';
+
+  const STEPS = [
+    {
+      n: 1, short: "Reclamo", actor: "coord", actorLabel: "Coordinador", states: "READY → IMPLEMENTING",
+      title: "Reclamo y cola",
+      summary: "El coordinador elige el siguiente ítem que se puede empezar, comprueba que hay cuota y capacidad, reclama la issue en GitHub y congela el snapshot con el que se va a trabajar.",
+      does: [
+        "Toma del DAG un ítem cuyas dependencias (<code>## Blocked by</code>) ya están fusionadas y que no choca por <code>Files likely touched</code> con otro en curso.",
+        "Comprueba la cuota de la suscripción y, si el ítem va a necesitar aprobación humana, que el repo tiene menos de 3 PR esperando a una persona.",
+        "Reclama la issue: la asigna al usuario que ejecuta el runner, añade la etiqueta <code>ir:in-progress</code> y un comentario marcador.",
+        "Congela el snapshot: hash de la spec, SHA de la base, hash de la política, del manifiesto de validación y del entorno.",
+        "En v2.0 trabaja un solo ítem a la vez (<code>max_parallel = 1</code>)."
+      ],
+      ctx: ["Base de datos SQLite (estados, contadores, claims)", "DAG de dependencias", "Issue aprobada y su hash", "<code>policy.yml</code> del repo", "Contabilidad de cuota (<code>rate_limit_event</code>)"],
+      not: ["No usa ningún LLM", "No reclama una issue que ya tiene otro runner"],
+      perms: ["<code>gh</code> con el token de la persona que lo ejecuta: asignar, etiquetar y comentar", "Nada más en GitHub en este paso"],
+      out: "El ítem pasa a IMPLEMENTING con su snapshot guardado y el claim publicado.",
+      decide: [
+        ["Una dependencia del DAG aún no está fusionada", P("wait", "Sigue en READY")],
+        ["Dependencia en otro repo", P("human", "Persona elige run-elsewhere, override, drop o contract-first")],
+        ["La issue ya está reclamada por otro runner", P("wait", "La ignora")],
+        ["Cuota agotada", P("wait", "WAITING_QUOTA")],
+        ["La base está en rojo", P("wait", "WAITING_BASE")],
+        ["La spec cambió desde la aprobación", P("wait", "PAUSED_SPEC_DRIFT")],
+        ["Ya hay 3 PR del repo esperando a una persona y este también la necesitará", P("wait", "No se despacha")],
+        ["Todo en orden", P("ok", "Paso 2")]
+      ]
+    },
+    {
+      n: 2, short: "Implementer", actor: "claude", actorLabel: "Claude Sonnet", states: "IMPLEMENTING",
+      title: "Implementación (Sonnet)",
+      summary: "Sonnet implementa la issue en un worktree aislado. Solo puede tocar ese directorio, sin push, sin GitHub y con la red limitada a los registros de paquetes.",
+      does: [
+        "El coordinador crea el worktree <code>…/wt/&lt;item&gt;-r&lt;ronda&gt;</code> desde la base y la rama <code>ir/&lt;n&gt;-&lt;slug&gt;</code>.",
+        "Sonnet edita, ejecuta tests y hace commits locales.",
+        "Si es un bug y el repo tiene tests, escribe primero un test de reproducción en un commit aparte con el trailer <code>IR-Repro</code>.",
+        "Puede añadir tests nuevos, pero no cambiar los que lo juzgan (el oráculo, paso 4).",
+        "No marca los criterios de aceptación como cumplidos: su mapeo es informativo. Quien lo decide son la validación y Code Review."
+      ],
+      ctx: [
+        "Sobre de entrada <code>ir.input.v1</code> en un fichero, unos 8k tokens; el resto lo explora con herramientas",
+        "Spec congelada: <code>What to build</code>, criterios de aceptación, <code>Out of scope</code>, <code>Files likely touched</code>",
+        "Brief determinista sacado de SQLite: decisiones del Judge, respuestas humanas, clusters ya resueltos (una línea cada uno)",
+        "Manifiesto del entorno y contrato de validación",
+        "En rondas de corrección: los clusters abiertos con sus directivas",
+        "Nota de confianza: el texto de la issue y del código es dato, no instrucciones"
+      ],
+      not: ["Las conversaciones de los revisores y del Judge", "GitHub y cualquier token (<code>GH_TOKEN</code>, <code>ANTHROPIC_API_KEY</code>)", "Las rutas protegidas: <code>.claude/</code>, <code>CLAUDE.md</code>, <code>AGENTS.md</code>, CI, <code>.issue-runner/</code>"],
+      perms: [
+        "<code>claude -p</code> con <code>--permission-mode dontAsk</code>, <code>--strict-mcp-config</code> sin MCP, entorno limpio (<code>env -i</code>)",
+        "Edit y Write solo en su worktree",
+        "Bash dentro del sandbox del sistema (Seatbelt o bubblewrap), que falla si no está disponible",
+        "Red solo hacia la lista de dominios permitidos",
+        "80 turnos y 45 minutos como máximo; sesión nueva (en la ronda 2 se reanuda)"
+      ],
+      out: "<code>ImplementationResult</code> en JSON: <code>status</code> (<code>completed | blocked | needs_clarification</code>), mapeo AC→evidencia, tests añadidos, respuestas por cluster, preguntas, riesgos y datos aprendidos sobre el repo.",
+      decide: [
+        ["Se evalúa en el paso 3. El coordinador no se fía de lo que el agente diga de sí mismo.", P("ok", "Paso 3")]
+      ]
+    },
+    {
+      n: 3, short: "Verifica", actor: "coord", actorLabel: "Coordinador", states: "IMPLEMENTING → VALIDATING",
+      title: "Verifica, no confía",
+      summary: "Antes de validar nada, el coordinador comprueba que el agente terminó de verdad y que el worktree está como debe. Un exit code 0 no basta.",
+      does: [
+        "Éxito del proceso, con cuatro condiciones a la vez: código de salida 0; <code>subtype = success</code> e <code>is_error = false</code>; más de 0 tokens de salida; y un <code>structured_output</code> que valide contra el esquema (el coordinador lo vuelve a validar).",
+        "Comprueba que el fencing token es el vigente.",
+        "Comprueba el worktree: limpio, con commits nuevos, sin cambios en rutas protegidas, sin hooks desactivados (<code>core.hooksPath</code>, <code>--no-verify</code>) y con el diff dentro de 600 líneas.",
+        "Si hay test de reproducción, lo ejecuta en la base (debe fallar) y en el candidato (debe pasar)."
+      ],
+      ctx: ["Stream JSON del agente (línea final <code>result</code>, <code>modelUsage</code>, <code>permission_denials</code>)", "Git del worktree", "Política y lista de rutas protegidas"],
+      not: ["No interpreta el texto libre del modelo para decidir: el error de autenticación se lee de la salida del CLI, nunca del contenido"],
+      perms: ["Lectura del worktree y ejecución del test de reproducción en un worktree temporal, sin red"],
+      out: "Un candidato listo para validar, o hallazgos deterministas para la siguiente ronda.",
+      decide: [
+        ["Crash, timeout o JSON inválido", P("loop", "1 reintento") + " " + P("stop", "luego FAILED_INFRA")],
+        ["Fallo de autenticación", P("wait", "Pausa toda la línea")],
+        ["Resultado con un fencing token antiguo", P("stop", "Se archiva como tardío y se ignora")],
+        ["<code>needs_clarification</code> con pregunta de producto", P("human", "AWAITING_INPUT, sin gastar contadores")],
+        ["<code>blocked</code> por el entorno", P("stop", "FAILED_INFRA") + " o " + P("human", "AWAITING_HUMAN")],
+        ["<code>blocked</code> por dependencia de contrato", P("wait", "CONTRACT_FIRST_STOP")],
+        ["Toca rutas protegidas", P("human", "AWAITING_HUMAN antes de cualquier revisión")],
+        ["Diff de más de 600 líneas", P("human", "AWAITING_HUMAN con propuesta de corte")],
+        ["El test de reproducción no falla en la base", P("loop", "Hallazgo repro_invalid")],
+        ["Otra comprobación falla", P("loop", "Hallazgo determinista para la siguiente ronda")],
+        ["Todo correcto", P("ok", "Paso 4")]
+      ]
+    },
+    {
+      n: 4, short: "Validación", actor: "coord", actorLabel: "Coordinador (Validator)", states: "VALIDATING",
+      title: "Validación determinista",
+      summary: "Se ejecutan los comandos de validación de la base, los criterios Verify y una pasada de herramientas estáticas. Aquí no decide ningún modelo.",
+      does: [
+        "Ejecuta <code>preflight</code> del contrato de validación de la <b>base</b>, nunca el del candidato, con timeout y salida guardada.",
+        "Ejecuta cada línea <code>Verify (http|cli|browser)</code> de la spec: arranca el servicio con la receta del repo en un worktree temporal y anota <code>passed | failed | error</code> por criterio.",
+        "Pasada estática sobre el diff: linters del proyecto, <code>semgrep</code>/<code>opengrep</code>, reglas <code>ast-grep</code> de la base, <code>gitleaks</code> y <code>osv-scanner</code>, más dependencias sin versión fija.",
+        "Protege el oráculo: los tests de reproducción y de Verify, los que la spec cita como cobertura y los de la base que ya pasaban.",
+        "Detecta debilitamiento de tests: tests borrados, <code>skip</code>/<code>xfail</code>/<code>.only</code> añadidos, asserts eliminados, cobertura reducida."
+      ],
+      ctx: ["Contrato <code>.issue-runner/validation</code> y manifiesto de validación de la base", "Diff base…candidato", "Spec congelada con sus líneas Verify"],
+      not: ["Nunca ejecuta scripts de validación que el candidato haya modificado; eso es plano de control y va a una persona"],
+      perms: ["Ejecución en worktrees temporales con timeout", "Herramientas estáticas con versión fijada en el manifiesto del entorno"],
+      out: "Resultado de validación y hallazgos sintéticos (<code>validation</code>, <code>spec_mismatch</code>, <code>tests</code>, estáticos). El resumen de la pasada estática se pasa luego a los revisores como contexto.",
+      decide: [
+        ["<code>preflight</code> en rojo y quedan reintentos (máx. 2)", P("loop", "Vuelve al paso 2 con las últimas 200 líneas del log")],
+        ["Reintentos agotados", P("loop", "Ronda fallida; hallazgo validation MUST_FIX")],
+        ["Un Verify da <code>failed</code>", P("loop", "spec_mismatch confirmado: MUST_FIX")],
+        ["Un Verify da <code>error</code> (no arranca el servicio)", P("loop", "1 reintento") + " " + P("stop", "luego FAILED_INFRA, sugiere ir doctor --full")],
+        ["Secreto nuevo, dependencia vulnerable alta o sin versión fija", P("stop", "MUST_FIX directo (R1b), no se discute")],
+        ["Se toca un test del oráculo sin que la spec lo pida", P("stop", "Debilitamiento de tests, severidad blocker")],
+        ["Todo en verde", P("ok", "Paso 5")]
+      ]
+    },
+    {
+      n: 5, short: "Push y PR", actor: "gh", actorLabel: "GitHub vía gh", states: "VALIDATING → REVIEWING",
+      title: "Push y draft PR",
+      summary: "El coordinador, no el agente, publica la rama y crea un draft PR. Registra el candidato como inmutable: cualquier commit nuevo será otro candidato.",
+      does: [
+        "Push con <code>--force-with-lease=&lt;rama&gt;:&lt;sha esperado&gt;</code>.",
+        "La primera vez crea un draft PR (<code>gh pr create</code>) con la spec y la tarjeta de estado.",
+        "Registra el candidato: rama, <code>head_sha</code>, <code>base_sha</code> y candidato anterior.",
+        "Arranca la espera de CI en paralelo con las revisiones."
+      ],
+      ctx: ["Outbox de efectos externos", "Estado del candidato"],
+      not: ["Ningún agente hace push ni usa <code>gh</code>: es exclusivo del coordinador"],
+      perms: ["<code>gh</code> y <code>git push</code> con el token de la persona que ejecuta el runner"],
+      out: "Candidato registrado y PR en borrador visible en GitHub.",
+      decide: [
+        ["El push hace timeout", P("loop", "Consulta git ls-remote")],
+        ["…y el remoto tiene el SHA esperado", P("ok", "Llegó; sigue")],
+        ["…y sigue el SHA anterior", P("loop", "Reintenta")],
+        ["…y hay otro SHA", P("stop", "Conflicto: se para")],
+        ["Push correcto", P("ok", "Paso 6")]
+      ]
+    },
+    {
+      n: 6, short: "Revisiones", actor: "multi", actorLabel: "Claude + Codex + CI", states: "REVIEWING",
+      title: "Revisiones independientes en paralelo",
+      summary: "Tres revisores y CI trabajan a la vez sobre el mismo head_sha. Ninguno ve la conversación del implementador ni la de los demás revisores. Ninguno puede escribir.",
+      does: [
+        "“Sin hallazgos” es una respuesta válida y esperada, y se dice así en el prompt.",
+        "Pueden abstenerse en lo que no pueden evaluar. No poder verificar algo no es un defecto.",
+        "Todo hallazgo <code>major</code> o superior debe traer un escenario de fallo concreto y, si puede, un test de reproducción que ejecutará el coordinador.",
+        "No se les pide propuesta de arreglo: pedir explicación y arreglo aumenta los rechazos falsos.",
+        "Desde la segunda ronda reciben el delta y sus clusters abiertos, y dicen de cada uno <code>resolved | still_present | regressed</code>. Si el delta supera el 40 % del diff, revisión completa.",
+        "Perfil solo-documentación: si todos los ficheros son documentación y ninguno es protegido, no se lanza Security Review."
+      ],
+      agents: [
+        { a: "claude", h: "Code Review", eng: "<code>claude -p</code>; Sonnet si el riesgo es bajo o medio, Opus si es alto",
+          sees: "Criterios de aceptación, <code>Out of scope</code>, <code>Files likely touched</code>, diff <code>-U15</code> contra la base, lista de ficheros, resultado de <code>preflight</code>, resumen de la pasada estática, reglas por ruta y lectura del repo",
+          notsee: "Las notas y la conversación del implementador",
+          perm: "Read, Grep, Glob; Bash solo <code>git diff/log/show</code> y <code>rg</code>. Sin Edit/Write, sin red, sin <code>gh</code>, sin persistencia de sesión. 40 turnos, 15 min",
+          out: "<code>ReviewReport</code> con hallazgos y <code>acceptance[]</code>: estado de cada criterio con evidencia. Señala lo que el PR hace sin que la spec lo pida (<code>scope</code>)" },
+        { a: "claude", h: "Security Review", eng: "<code>claude -p</code>; prompt derivado de <code>claude-code-security-review</code>. Sonnet si el riesgo es bajo; Opus si es medio, alto o toca rutas sensibles",
+          sees: "Diff, spec y lectura del repo",
+          notsee: "La conversación del implementador y los otros informes",
+          perm: "Solo lectura, como Code Review. 40 turnos, 15 min",
+          out: "Hallazgos <code>security</code> con CWE y escenario de explotación" },
+        { a: "codex", h: "Codex Reviewer", eng: "<code>codex exec --sandbox read-only --ephemeral</code>, con stdin cerrado",
+          sees: "Spec, diff y lectura del repo",
+          notsee: "Todo lo de Claude: es la segunda familia de modelo",
+          perm: "Sandbox de solo lectura, sin red, sin persistencia. 20 min",
+          out: "Solo defectos graves (P0/P1). Bloque <code>direction</code>: <code>agree | concerns | disagree</code>; solo si discrepa puede proponer una alternativa, que nunca se aplica sola" },
+        { a: "gh", h: "CI", eng: "Checks requeridos por la protección de rama",
+          sees: "El <code>head_sha</code> publicado",
+          notsee: "—",
+          perm: "Lo que defina el repo",
+          out: "Verde o rojo. Un rojo se convierte en hallazgo <code>ci</code> de severidad blocker" }
+      ],
+      decide: [
+        ["Un informe no valida contra el esquema", P("loop", "1 reintento del revisor con el error")],
+        ["Falta algún revisor requerido para este head_sha", P("wait", "No se puede aceptar (invariante de cobertura)")],
+        ["Todos los informes recibidos", P("ok", "Paso 7")]
+      ]
+    },
+    {
+      n: 7, short: "Filtra", actor: "coord", actorLabel: "Coordinador", states: "COORDINATING",
+      title: "Normaliza y filtra",
+      summary: "Antes de gastar un token en juzgar, el coordinador limpia los hallazgos con reglas baratas. Todo lo descartado queda registrado con su motivo.",
+      does: [
+        "Normaliza rutas y líneas, y calcula si cada hallazgo cae en código introducido por el PR (<code>introduced = true | false | unknown</code>).",
+        "Convierte CI y validación en rojo en hallazgos sintéticos de severidad blocker.",
+        "Aplica el filtro en este orden:"
+      ],
+      extra: '<div class="tablewrap"><table><thead><tr><th>#</th><th>Filtro</th><th>Se descarta si…</th></tr></thead><tbody>' +
+        '<tr><td class="num">1</td><td>Rango de líneas</td><td>No apunta a líneas añadidas o modificadas (salvo <code>security</code> y <code>scope</code>)</td></tr>' +
+        '<tr><td class="num">2</td><td>Cita fiel</td><td>Cita código que no existe en el candidato: se trata como alucinación</td></tr>' +
+        '<tr><td class="num">3</td><td>Categorías sin valor</td><td>Docstrings, tipos, imports, “asegúrate de que…” sin defecto concreto, estilo que el linter no exige</td></tr>' +
+        '<tr><td class="num">4</td><td>Tope por revisor</td><td>Pasa de 5 hallazgos <code>minor</code> o menores por ronda</td></tr>' +
+        '<tr><td class="num">5</td><td>Aprendizajes</td><td>Se parece a 3 o más hallazgos ya rechazados en el repo. Nunca suprime seguridad con evidencia ni R1/R1b</td></tr>' +
+        '</tbody></table></div>' +
+        '<p class="callout">Revisores, categorías o prompts nuevos empiezan en <b>modo sombra</b>: sus hallazgos se muestran como aviso y solo bloquean si los respalda evidencia ejecutable o una herramienta determinista. Pasan a bloquear cuando demuestran precisión con nuestros datos.</p>',
+      ctx: ["Los <code>ReviewReport</code> validados", "Resultados de CI y validación", "Respuestas del implementador", "Clusters abiertos de rondas anteriores", "Tabla de aprendizajes del repo"],
+      not: ["No usa ningún LLM"],
+      perms: ["Solo su base de datos"],
+      out: "Hallazgos limpios y un registro de supresiones consultable con <code>ir trace</code>.",
+      decide: [["Siempre", P("ok", "Paso 8")]]
+    },
+    {
+      n: 8, short: "Clasifica", actor: "coord", actorLabel: "Coordinador", states: "COORDINATING",
+      title: "Repro, agrupa y clasifica",
+      summary: "El coordinador ejecuta los tests de reproducción de los revisores, agrupa hallazgos parecidos y aplica una tabla de reglas fija. Una objeción solo razonada nunca bloquea por sí sola.",
+      does: [
+        "<b>Filtro contrafactual:</b> ejecuta cada <code>repro</code> en un worktree temporal, sin red, sobre el candidato y, si el hallazgo dice que lo introdujo el PR, también sobre la base.",
+        "Asigna la evidencia: <code>confirmed</code> (el repro falla como se dijo), <code>refuted</code> (pasa), <code>concrete</code> (entrada o traza sin ejecutar) o <code>static</code> (solo razonamiento).",
+        "Agrupa en clusters: misma ruta, categoría compatible, a ≤ 5 líneas y texto parecido (Jaccard ≥ 0,3). Cada cluster tiene una huella estable entre rondas.",
+        "Cuenta familias de modelo (Claude es una, Codex otra). Que coincidan sube la confianza un nivel como máximo, pero nunca sustituye a la evidencia.",
+        "Solo pueden bloquear <code>security</code>, <code>correctness</code>, <code>data</code>, <code>spec_mismatch</code>, <code>scope</code> y <code>tests</code>. Rendimiento solo con benchmark. Mantenibilidad y docs, nunca."
+      ],
+      extra: '<h3>Tabla de reglas (gana la primera que aplica)</h3><div class="tablewrap"><table><thead><tr><th>Regla</th><th>Condición</th><th>Clase</th></tr></thead><tbody>' +
+        '<tr><td class="num">R0</td><td>El repro pasa: evidencia <code>refuted</code></td><td>' + P("ok", "DROP") + ' falso positivo registrado</td></tr>' +
+        '<tr><td class="num">R1</td><td>CI o validación en rojo, o <code>confirmed</code> con severidad ≥ major</td><td>' + P("stop", "MUST_FIX") + '</td></tr>' +
+        '<tr><td class="num">R1b</td><td>Pasada estática: secreto nuevo, dependencia vulnerable alta, dependencia sin versión fija</td><td>' + P("stop", "MUST_FIX") + ' sin supresión ni Judge</td></tr>' +
+        '<tr><td class="num">R2</td><td>Seguridad ≥ major introducida</td><td>' + P("stop", "MUST_FIX") + ' con evidencia concreta, o si el riesgo es alto; si no ' + P("wait", "VERIFY") + '</td></tr>' +
+        '<tr><td class="num">R3</td><td>Seguridad ≥ major preexistente</td><td>' + P("human", "DEFER_PRIVATE") + ' aviso privado</td></tr>' +
+        '<tr><td class="num">R4</td><td>Blocker introducido</td><td>' + P("stop", "MUST_FIX") + ' con evidencia concreta; si no ' + P("wait", "VERIFY") + '</td></tr>' +
+        '<tr><td class="num">R5</td><td>Major introducido, evidencia concreta, confianza ≥ media</td><td>' + P("stop", "MUST_FIX") + '</td></tr>' +
+        '<tr><td class="num">R6</td><td>Major solo estático, de baja confianza o de origen dudoso</td><td>' + P("wait", "VERIFY") + ' el Judge debe aportar contraejemplo</td></tr>' +
+        '<tr><td class="num">R7</td><td>Criterio de aceptación <code>not_met</code></td><td>' + P("stop", "MUST_FIX") + ' si Code Review trae evidencia; si no ' + P("wait", "VERIFY") + '</td></tr>' +
+        '<tr><td class="num">R8</td><td>Minor introducido</td><td>' + P("loop", "SHOULD_FIX") + ' nunca abre ronda por sí solo</td></tr>' +
+        '<tr><td class="num">R9</td><td>Preexistente, no de seguridad</td><td>' + P("ok", "DEFER") + ' propuesta de follow-up</td></tr>' +
+        '<tr><td class="num">R10</td><td>Nit</td><td>' + P("ok", "DROP") + '</td></tr>' +
+        '</tbody></table></div>' +
+        '<p class="callout">Además: un MUST_FIX que el implementador disputa pasa a VERIFY; un <code>disagree</code> de Codex abre un caso DIRECTION; “requisito añadido” o “spec mal leída” van al Judge como disputa de spec, nunca directo a MUST_FIX.</p>',
+      ctx: ["Hallazgos filtrados", "Repros escritos como fichero (nunca pasan por una shell)", "Comando de tests permitido por el contrato de la base"],
+      not: ["No usa ningún LLM"],
+      perms: ["Ejecución de tests en worktree desechable, con timeout y sin red"],
+      out: "Cada cluster con su clase: MUST_FIX, SHOULD_FIX, VERIFY, DEFER o DROP.",
+      decide: [["Siempre", P("ok", "Paso 9")]]
+    },
+    {
+      n: 9, short: "Decide", actor: "coord", actorLabel: "Coordinador", states: "COORDINATING",
+      title: "Decisión del coordinador",
+      summary: "Con los clusters clasificados, el siguiente estado sale de un algoritmo de cuatro líneas. El Judge se llama como mucho una vez por coordinación.",
+      extra: '<pre class="pseudo">si hay VERIFY, DIRECTION o disputas nuevas  → ADJUDICATING  (paso 10, una sola llamada)\nsi no, si hay MUST_FIX:\n      si el detector de estancamiento salta → STALLED       (paso 12)\n      si no                                 → FIXING        (paso 11)\nsi no                                       → ACCEPTED      (paso 13)</pre>' +
+        '<h3>Detector de estancamiento (salta con cualquiera)</h3><ul>' +
+        '<li>El mismo cluster sigue en MUST_FIX después de 2 intentos de corrección.</li>' +
+        '<li>El número de MUST_FIX no baja en 2 rondas seguidas.</li>' +
+        '<li>El mismo test falla en 2 validaciones seguidas.</li>' +
+        '<li><code>impl_rounds</code> llega a 4.</li>' +
+        '<li>Una disputa ya juzgada vuelve con los mismos argumentos.</li></ul>' +
+        '<p class="callout">Tras el Judge se aplican sus disposiciones y se repite este algoritmo sin volver a llamarlo. El Judge no puede reclasificar un CI o una validación en rojo: eso se arregla, o se demuestra que la base está rota (WAITING_BASE).</p>',
+      ctx: ["Clusters clasificados", "Historial de rondas y contadores"],
+      not: ["No usa ningún LLM"],
+      perms: ["Solo su base de datos"],
+      out: "El siguiente estado del ítem.",
+      decide: [
+        ["Hay VERIFY, DIRECTION o disputas nuevas", P("wait", "Paso 10 · Judge")],
+        ["Hay MUST_FIX y no hay estancamiento", P("loop", "Paso 11 · Fix")],
+        ["Hay MUST_FIX y hay estancamiento", P("stop", "Paso 12 · Estancado")],
+        ["No queda nada bloqueante", P("ok", "Paso 13 · Puertas")]
+      ]
+    },
+    {
+      n: 10, short: "Judge", actor: "claude", actorLabel: "Claude Opus", states: "ADJUDICATING",
+      title: "Judge (Opus)",
+      summary: "Opus resuelve en una sola llamada todos los casos dudosos. Para confirmar una objeción tiene que aportar un escenario de fallo, y a ser posible un test que el coordinador ejecuta.",
+      does: [
+        "Recibe todos los casos VERIFY, DIRECTION y disputas de spec juntos, y devuelve una disposición por caso.",
+        "Para confirmar un MUST_FIX debe dar <code>failure_scenario</code> y, si puede, un <code>repro</code> que el coordinador ejecuta como los de los revisores.",
+        "Si adopta la alternativa de Codex, no la implementa él: genera una directiva para que la implemente Sonnet en la siguiente ronda.",
+        "Hasta calibrarse contra decisiones humanas está en modo sombra: un MUST_FIX confirmado solo con razonamiento va a una persona en vez de forzar otra ronda.",
+        "Tiene reservado el 25 % de la cuota de Opus."
+      ],
+      ctx: ["Casos con fragmentos de código de ±30 líneas", "Hallazgos originales y respuestas del implementador", "Criterios de aceptación de la spec congelada", "Unos 20k tokens en total"],
+      not: ["El diff completo y las conversaciones de los agentes", "Ningún permiso de escritura"],
+      perms: ["<code>claude -p</code>, sesión nueva, solo lectura, sin red", "30 turnos, 15 min"],
+      out: "<code>JudgeDecision</code>: por caso <code>MUST_FIX | SHOULD_FIX | DEFER | DROP | NEEDS_HUMAN</code> con directiva, razón y escenario de fallo.",
+      decide: [
+        ["Disposiciones aplicadas", P("loop", "Vuelve al paso 9 sin nueva llamada")],
+        ["Es una decisión de producto", P("human", "AWAITING_HUMAN")],
+        ["Riesgo alto y el Judge descarta un blocker de seguridad", P("human", "AWAITING_HUMAN")],
+        ["Confirmación sin contraejemplo mientras está en sombra", P("human", "AWAITING_HUMAN")],
+        ["Más de 3 adjudicaciones en el ítem", P("human", "AWAITING_HUMAN")]
+      ]
+    },
+    {
+      n: 11, short: "Fix", actor: "claude", actorLabel: "Claude Sonnet", states: "FIXING",
+      title: "Correcciones (Sonnet)",
+      summary: "Sonnet corrige los clusters MUST_FIX y responde por cada uno. Que diga “arreglado” no cierra nada: el cierre exige evidencia sobre el nuevo SHA de alguien distinto del autor del arreglo.",
+      does: [
+        "Recibe los MUST_FIX, los SHOULD_FIX (solo porque ya hay ronda en marcha) y las directivas del Judge.",
+        "Responde por cluster: <code>fixed</code> con su commit, <code>disputed</code> con su razón o <code>cannot_fix</code>.",
+        "Ronda 2: reanuda su sesión. Desde la ronda 3, sesión nueva con un brief determinista, para no arrastrar un contexto degradado.",
+        "El nuevo commit es un candidato nuevo: vuelve a pasar por verificación (3), validación (4), push (5) y revisión incremental (6)."
+      ],
+      extra: '<h3>Ciclo de vida de un cluster</h3><pre class="pseudo">reported → classified → assigned (ronda N) → addressed (“fixed”, aún abierto)\naddressed → verified_closed   repro antes rojo y ahora verde, o el revisor lo da por\n                                resuelto sobre el nuevo SHA citando el código actual\n          → reopened          still_present o regressed: cuenta para el estancamiento</pre>',
+      ctx: ["Como en el paso 2, más los clusters asignados con su escenario y su repro", "Directivas del Judge"],
+      not: ["Los informes completos de los revisores: solo los clusters", "GitHub, push y rutas protegidas"],
+      perms: ["Los mismos que en el paso 2"],
+      out: "<code>ImplementationResult</code> con <code>cluster_responses</code>.",
+      decide: [
+        ["Hay commits nuevos", P("loop", "Vuelve a los pasos 3 → 4 → 5 → 6")],
+        ["Un MUST_FIX en <code>disputed</code>", P("wait", "Pasa a VERIFY y lo ve el Judge")],
+        ["Todos <code>cannot_fix</code> o sin progreso", P("stop", "Lo detecta el paso 9 como estancamiento")]
+      ]
+    },
+    {
+      n: 12, short: "Estancado", actor: "codex", actorLabel: "Judge (stall) + Codex Fixer + Opus Reviewer", states: "STALLED → CODEX_FIXING → OPUS_REVIEWING",
+      title: "Estancamiento y salidas excepcionales",
+      summary: "El Judge, en modo stall, elige una sola salida entre las que la política permite en ese momento. El coordinador rechaza cualquier elección no permitida y la trata como “humano”.",
+      does: [
+        "El Judge recibe un historial compacto: clusters y respuestas por ronda, sin diffs completos.",
+        "Opciones: <code>codex_fix</code> (máx. 1 por ítem), <code>alt_impl</code> (apagado por defecto), <code>respecify</code> (vuelve a la fase 1 con el diagnóstico) o <code>human</code> (informe accionable)."
+      ],
+      agents: [
+        { a: "codex", h: "Codex Fixer (excepcional)", eng: "<code>codex exec --sandbox workspace-write</code>, sin red, en un worktree propio",
+          sees: "Solo los clusters asignados con sus repros, y la spec",
+          notsee: "Las conversaciones de Sonnet, del Judge y de los revisores",
+          perm: "Escribe en su worktree; <code>.git</code> es de solo lectura, así que el commit lo hace el coordinador con <code>IR-Role: codex_fixer</code>. 30 min",
+          out: "Un parche mínimo que conserva la estructura" },
+        { a: "coord", h: "Puerta contrafactual", eng: "Coordinador",
+          sees: "Repros asignados y suite de validación, antes y después del parche",
+          notsee: "—",
+          perm: "Ejecución de tests sin red",
+          out: "Rechaza el parche si no cambia ningún repro asignado o si rompe algo que pasaba. Rechazado: AWAITING_HUMAN sin gastar el Opus Reviewer" },
+        { a: "claude", h: "Opus Reviewer independiente", eng: "<code>claude -p</code> Opus, ejecución nueva, sin <code>--resume</code>",
+          sees: "Spec, diff completo, delta del Fixer y clusters que lo motivaron",
+          notsee: "La conversación del Judge y la del implementador",
+          perm: "Solo lectura. 40 turnos, 20 min. Además, Security Review sobre el delta",
+          out: "Aprueba o rechaza. El <code>agree</code> de Codex Reviewer no cuenta como aprobación del cambio de otro Codex" }
+      ],
+      ctx: ["Historial compacto del ítem", "Lista de opciones que la política permite ahora"],
+      not: ["Ninguna opción fuera de la lista: se comprueba en código"],
+      perms: ["Ver cada agente arriba"],
+      out: "Un parche aprobado, una vuelta a la fase 1, o una persona con el informe.",
+      decide: [
+        ["Opus Reviewer aprueba", P("loop", "Vuelve al paso 9")],
+        ["Opus Reviewer rechaza", P("loop", "1 ronda de Sonnet con sus notas") + " " + P("human", "luego AWAITING_HUMAN")],
+        ["La puerta contrafactual rechaza el parche", P("human", "AWAITING_HUMAN")],
+        ["<code>respecify</code>", P("wait", "PREPARING (fase 1), conserva los contadores")],
+        ["<code>human</code> o elección no permitida", P("human", "AWAITING_HUMAN con informe")]
+      ]
+    },
+    {
+      n: 13, short: "Puertas", actor: "coord", actorLabel: "Coordinador", states: "ACCEPTED",
+      title: "Puertas previas al merge",
+      summary: "Aceptado no significa fusionable. Todas estas condiciones se comprueban en código sobre el head_sha exacto; si falla una, se repite solo lo que dependía de ella.",
+      extra: '<div class="tablewrap"><table><thead><tr><th>#</th><th>Puerta</th></tr></thead><tbody>' +
+        '<tr><td class="num">1</td><td>CI en verde sobre <code>head_sha</code>, con los checks requeridos</td></tr>' +
+        '<tr><td class="num">2</td><td><code>preflight</code> (y <code>full</code> si existe) en verde sobre <code>head_sha</code> mezclado con la base actual</td></tr>' +
+        '<tr><td class="num">3</td><td>Los revisores requeridos cubren cada commit hasta <code>head_sha</code>, completo o por delta</td></tr>' +
+        '<tr><td class="num">4</td><td>Ningún cluster bloqueante fuera de <code>verified_closed</code>, <code>rejected_with_reason</code>, <code>dropped</code>, <code>duplicate</code> o <code>deferred_authorized</code></td></tr>' +
+        '<tr><td class="num">5</td><td>Todos los criterios pasan: Verify en <code>passed</code> y los de inspección en <code>met</code> en el último Code Review</td></tr>' +
+        '<tr><td class="num">5b</td><td>Si el repo declara un comando <code>status:</code>, devuelve <code>green</code></td></tr>' +
+        '<tr><td class="num">6</td><td>Rutas protegidas intactas, o autorización humana registrada</td></tr>' +
+        '<tr><td class="num">7</td><td>Si hubo Codex Fixer, aprobación del Opus Reviewer</td></tr>' +
+        '<tr><td class="num">8</td><td>El snapshot es el mismo para todo lo que cuenta (spec, política, validación, entorno)</td></tr>' +
+        '<tr><td class="num">9</td><td>Se cumple el nivel de autonomía del repo (paso 15)</td></tr>' +
+        '</tbody></table></div>' +
+        '<p class="callout">Con riesgo alto, un Opus Reviewer nuevo hace además una lectura final de los criterios frente al diff. Con riesgo bajo o medio no se gasta.</p>',
+      ctx: ["Base de datos completa del ítem", "Estado de CI y del PR leído de GitHub"],
+      not: ["No usa ningún LLM salvo la lectura final con riesgo alto"],
+      perms: ["Lectura de GitHub con <code>gh</code>"],
+      out: "Todas las puertas en verde, o la lista de lo que hay que repetir.",
+      decide: [
+        ["Cambió la política", P("loop", "Reevalúa reglas y repite revisiones")],
+        ["Cambió la validación o el entorno", P("loop", "Repite la validación")],
+        ["Cambió la spec", P("wait", "PAUSED_SPEC_DRIFT")],
+        ["Todas en verde", P("ok", "Paso 14")]
+      ]
+    },
+    {
+      n: 14, short: "Merge prep", actor: "coord", actorLabel: "Coordinador (+ Sonnet si hay conflictos)", states: "MERGE_PREP",
+      title: "Preparación del merge",
+      summary: "Se toma el lock de merge del repo, se integra la base con merge (nunca rebase) y se ejecuta la suite completa. Si la integración cambió algo, se revisa ese delta.",
+      does: [
+        "Toma el lock de merge del repo: una fila en SQLite con lease.",
+        "Si <code>origin/&lt;base&gt;</code> avanzó, hace merge de la base, siempre, aunque no se solapen ficheros.",
+        "Ejecuta <code>changed</code>, <code>preflight</code> y la suite completa (<code>full</code>), nunca un subconjunto.",
+        "Si hubo conflictos, los resuelve Sonnet como una ronda más. Si la integración cambió ficheros del diff, Code Review y Security Review revisan ese delta.",
+        "Push con <code>--force-with-lease</code> y publica el commit status <code>issue-runner/gate</code> sobre el <code>head_sha</code>."
+      ],
+      ctx: ["Candidato aceptado y base actual"],
+      not: ["Merge queue y auto-merge de GitHub: no fijan el SHA revisado"],
+      perms: ["<code>git</code> y <code>gh</code> con el token de la persona"],
+      out: "Un candidato integrado, probado entero y con el status en verde.",
+      decide: [
+        ["La integración crea un candidato nuevo", P("loop", "Revisión del delta y vuelve al paso 13")],
+        ["Más de 3 refrescos de base", P("human", "Lock estricto y luego AWAITING_HUMAN")],
+        ["La base está en rojo sin relación con el PR", P("wait", "WAITING_BASE")],
+        ["El nivel de autonomía exige persona", P("human", "Paso 15")],
+        ["El nivel permite merge sin persona", P("ok", "Paso 16")]
+      ]
+    },
+    {
+      n: 15, short: "Aprobación", actor: "human", actorLabel: "Persona (solo si el nivel lo exige)", states: "AWAITING_MERGE_APPROVAL",
+      title: "Aprobación según autonomía",
+      summary: "No se leen todos los PR. Cada repo tiene un nivel de autonomía que se gana con evidencia, y solo lo que el nivel no cubre llega a una persona, con una tarjeta que se lee en un minuto.",
+      extra: '<div class="tablewrap"><table><thead><tr><th>Nivel</th><th>Se fusiona sin persona</th><th>Siempre pasa por persona</th></tr></thead><tbody>' +
+        '<tr><td class="num">L0</td><td>Nada (<code>merge_mode: request_only</code>, repos que despliegan solos)</td><td>Todo</td></tr>' +
+        '<tr><td class="num">L1</td><td>Riesgo bajo</td><td>Medio, alto y plano de control</td></tr>' +
+        '<tr><td class="num">L2</td><td>Bajo y medio</td><td>Alto y plano de control</td></tr>' +
+        '<tr><td class="num">L3</td><td>Bajo, medio y alto</td><td>Plano de control e invariantes <code>human_required</code></td></tr>' +
+        '</tbody></table></div>' +
+        '<ul><li>Un repo sin tests ni CI no pasa de L1: la verificación solo es tan fuerte como sus tests.</li>' +
+        '<li>Se sube tras 15 merges automáticos limpios; se baja al instante ante un escape (paso 17).</li></ul>',
+      ctx: ["Tarjeta de aprobación generada desde la base de datos: intención y criterios, riesgo por fichero, decisiones tomadas sin consulta, hallazgos descartados con motivo, evidencia de los Verify", "Un único resumen de una llamada a Sonnet"],
+      not: ["No se le pide revisar línea a línea: se revisa la intención"],
+      perms: ["<code>ir approve &lt;item&gt;</code> o comentario <code>/ir approve</code> de alguien con permiso <code>write</code> (puede ser quien lanzó el runner)"],
+      out: "Una autorización registrada y ligada al snapshot.",
+      decide: [
+        ["Aprobado", P("ok", "Paso 16")],
+        ["El repo exige además reviews de GitHub", P("wait", "Espera visible a que otra persona apruebe en GitHub")],
+        ["Ya hay 3 PR esperando a una persona en el repo", P("wait", "El paso 1 deja de despachar ítems de este tipo")]
+      ]
+    },
+    {
+      n: 16, short: "Merge", actor: "gh", actorLabel: "GitHub vía gh", states: "MERGING → MERGED → DONE",
+      title: "Merge con SHA fijado",
+      summary: "El merge se pide fijando el SHA revisado. Si alguien empujó entre medias, GitHub lo cancela. El resultado se comprueba de forma independiente al código de respuesta.",
+      does: [
+        "Relee el PR para confirmar <code>head.sha</code> y <code>base.sha</code>.",
+        "<code>PUT /pulls/{n}/merge-async</code> con <code>sha=&lt;head_sha&gt;</code> y squash por defecto. Guarda el UUID en el outbox antes de seguir.",
+        "Consulta el resultado (<code>pending | merged | failed</code>) y comprueba que el PR está MERGED y que existe el SHA del merge.",
+        "Libera el lock, limpia el worktree, borra la rama solo con prueba de merge y desbloquea las dependencias del DAG."
+      ],
+      ctx: ["Outbox y estado del PR"],
+      not: ["Nunca reintenta sin <code>sha</code>"],
+      perms: ["<code>gh api</code> con el token de la persona"],
+      out: "Issue cerrada por el merge, prueba de merge registrada.",
+      decide: [
+        ["Timeout o resultado incierto", P("loop", "Repite la misma llamada: 409 = pendiente, 200 = ya fusionado")],
+        ["“Base branch was modified”", P("loop", "Relee y reintenta con el mismo sha, máx. 3")],
+        ["La base avanzó y la rama ya no la contiene", P("loop", "Vuelve al paso 14")],
+        ["MERGED verificado", P("ok", "DONE · paso 17")]
+      ]
+    },
+    {
+      n: 17, short: "Vigilancia", actor: "coord", actorLabel: "Coordinador", states: "Después de DONE",
+      title: "Vigilancia tras el merge",
+      summary: "La fiabilidad no depende de que alguien lea cada PR, sino de detectar y deshacer rápido lo que se escapa. Cada merge alimenta el nivel de autonomía del repo.",
+      does: [
+        "Observa el CI de la rama base después de cada merge automático.",
+        "Cada semana, una persona revisa una muestra de los merges hechos sin aprobación humana (20 %, mínimo 2), ponderada por riesgo.",
+        "Registra en el Evaluation & Evidence Registry: rondas, hallazgos atendidos, falsos positivos, coste y escapes."
+      ],
+      ctx: ["CI de la base", "Historial de merges del repo", "Resultados del muestreo"],
+      not: ["No toma por bueno un merge solo porque el PR se cerró"],
+      perms: ["<code>gh</code> para abrir y fusionar el PR de revert"],
+      out: "Nivel de autonomía actualizado y evidencia registrada.",
+      decide: [
+        ["El primer CI rojo de la base es atribuible a su merge", P("stop", "PR de revert por la vía rápida, reabre el ítem y baja de nivel")],
+        ["El muestreo encuentra un defecto grave", P("stop", "Baja de nivel y desactiva el merge automático de bajo riesgo")],
+        ["15 merges automáticos limpios en el nivel actual", P("ok", "Sube un nivel, hasta el máximo que permite su oráculo")]
+      ]
+    }
+  ];
+
+  // ---------- Map geometry ----------
+  const LANES = [
+    { k: "human", y: 70, top: 22, h: 96, label: "PERSONA" },
+    { k: "coord", y: 170, top: 118, h: 104, label: "COORDINADOR (SIN LLM)" },
+    { k: "claude", y: 270, top: 222, h: 92, label: "CLAUDE" },
+    { k: "codex", y: 360, top: 314, h: 90, label: "CODEX" },
+    { k: "gh", y: 450, top: 404, h: 92, label: "GITHUB Y CI" }
+  ];
+  const LY = Object.fromEntries(LANES.map(l => [l.k, l.y]));
+  const H = 44;
+  const NODES = [
+    { id: "n1", s: 1, lane: "coord", x: 70, t: ["1 · Reclamo", "y cola"] },
+    { id: "n2", s: 2, lane: "claude", x: 190, t: ["2 · Implementer", "Sonnet"], w: 108 },
+    { id: "n3", s: 3, lane: "coord", x: 310, t: ["3 · Verifica", "no confía"] },
+    { id: "n4", s: 4, lane: "coord", x: 430, t: ["4 · Validación", "determinista"] },
+    { id: "n5", s: 5, lane: "gh", x: 550, t: ["5 · Push", "draft PR"] },
+    { id: "n6a", s: 6, lane: "claude", x: 680, t: ["6 · Code Review", "+ Security Review"], w: 120 },
+    { id: "n6b", s: 6, lane: "codex", x: 680, t: ["6 · Codex", "Reviewer (P0/P1)"], w: 120 },
+    { id: "n6c", s: 6, lane: "gh", x: 680, t: ["6 · CI", "checks requeridos"], w: 120 },
+    { id: "n7", s: 7, lane: "coord", x: 810, t: ["7 · Normaliza", "y filtra"] },
+    { id: "n8", s: 8, lane: "coord", x: 930, t: ["8 · Repro y", "reglas R0–R10"] },
+    { id: "n9", s: 9, lane: "coord", x: 1050, t: ["9 · Decisión", "COORDINATING"] },
+    { id: "n11", s: 11, lane: "claude", x: 1050, t: ["11 · Fix", "Sonnet"] },
+    { id: "n10", s: 10, lane: "claude", x: 1170, t: ["10 · Judge", "Opus"] },
+    { id: "n12", s: 12, lane: "codex", x: 1170, t: ["12 · Estancado", "Codex Fixer + Opus"], w: 116 },
+    { id: "n13", s: 13, lane: "coord", x: 1295, t: ["13 · Puertas", "pre-merge"] },
+    { id: "n14", s: 14, lane: "coord", x: 1415, t: ["14 · Merge", "prep"] },
+    { id: "n15", s: 15, lane: "human", x: 1535, t: ["15 · Aprobación", "según nivel"], w: 104 },
+    { id: "n16", s: 16, lane: "gh", x: 1655, t: ["16 · Merge", "sha fijado"] },
+    { id: "n17", s: 17, lane: "coord", x: 1775, t: ["17 · Vigilancia", "post-merge"], w: 100 }
+  ];
+  const N = {};
+  NODES.forEach(n => { n.w = n.w || 92; n.y = LY[n.lane]; N[n.id] = n; });
+  const R = n => n.x + n.w / 2, Lf = n => n.x - n.w / 2, T = n => n.y - H / 2, B = n => n.y + H / 2;
+
+  function elbow(a, b, mx) {
+    const x1 = R(a), x2 = Lf(b);
+    if (a.y === b.y) return "M" + x1 + " " + a.y + " H" + x2;
+    const m = mx != null ? mx : (x1 + x2) / 2;
+    return "M" + x1 + " " + a.y + " H" + m + " V" + b.y + " H" + x2;
+  }
+  const E = [
+    { f: "n1", t: "n2" }, { f: "n2", t: "n3" }, { f: "n3", t: "n4" }, { f: "n4", t: "n5" },
+    { f: "n5", t: "n6a" }, { f: "n5", t: "n6b" }, { f: "n5", t: "n6c" },
+    { f: "n6a", t: "n7" }, { f: "n6b", t: "n7" }, { f: "n6c", t: "n7" },
+    { f: "n7", t: "n8" }, { f: "n8", t: "n9" },
+    { f: "n9", t: "n13", lab: ["ACCEPTED", 1172, 162] },
+    { f: "n9", t: "n10", mx: 1106, both: true, lab: ["VERIFY · disputa", 1170, 238] },
+    { f: "n9", t: "n12", mx: 1113, both: true, dash: true, lab: ["estancado", 1170, 330] },
+    { f: "n9", t: "n11", d: "M1050 " + B(N.n9) + " V" + T(N.n11), lab: ["MUST_FIX", 1042, 226, "end"] },
+    { f: "n11", t: "n4", dash: true, d: "M1050 " + B(N.n11) + " V318 H440 V" + B(N.n4), lab: ["nuevo candidato → 3, 4, 5, 6", 930, 322] },
+    { f: "n4", t: "n2", dash: true, d: "M420 " + B(N.n4) + " V212 H200 V" + T(N.n2), lab: ["rojo: reintento (≤ 2)", 312, 208] },
+    { f: "n13", t: "n14" },
+    { f: "n14", t: "n15", mx: 1475 },
+    { f: "n14", t: "n16", mx: 1482, lab: ["auto (nivel)", 1490, 330, "start"] },
+    { f: "n15", t: "n16" },
+    { f: "n16", t: "n17" },
+    { f: "n17", t: "n1", dash: true, d: "M1775 " + B(N.n17) + " V512 H58 V" + B(N.n1), lab: ["escape: PR de revert, reabre el ítem y baja de nivel", 900, 516] }
+  ];
+
+  const svg = document.getElementById("map");
+  const NS = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs, parent) => { const el = document.createElementNS(NS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); (parent || svg).appendChild(el); return el; };
+
+  const defs = mk("defs", {});
+  ["a", "ah"].forEach(id => {
+    const m = mk("marker", { id: id, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse" }, defs);
+    mk("path", { d: "M0 0 L10 5 L0 10 z", class: "arrow" + (id === "ah" ? " hi" : "") }, m);
+  });
+
+  LANES.forEach((l, i) => {
+    mk("rect", { x: 0, y: l.top, width: 1850, height: l.h, class: "band" + (i % 2 ? " alt" : "") });
+  });
+
+  const note = mk("g", { class: "note" });
+  mk("rect", { x: 150, y: 44, width: 1250, height: 52, rx: 8 }, note);
+  const nt = mk("text", { x: 170, y: 66 }, note);
+  nt.textContent = "Escalada a una persona (AWAITING_HUMAN o AWAITING_INPUT) posible desde los pasos 3, 4, 10, 12 y 14, y al agotar cualquier contador.";
+  const nt2 = mk("text", { x: 170, y: 84 }, note);
+  nt2.textContent = "Siempre con un informe de qué falla, qué se intentó y qué opciones hay. Nunca se queda esperando en silencio.";
+
+  const edgeEls = [];
+  E.forEach(e => {
+    const d = e.d || elbow(N[e.f], N[e.t], e.mx);
+    const p = mk("path", { d: d, class: "edge" + (e.dash ? " dash" : ""), "marker-end": "url(#a)" });
+    if (e.both) p.setAttribute("marker-start", "url(#a)");
+    let lab = null;
+    if (e.lab) {
+      lab = mk("text", { x: e.lab[1], y: e.lab[2], class: "elabel", "text-anchor": e.lab[3] || "middle" });
+      lab.textContent = e.lab[0];
+    }
+    edgeEls.push({ e, p, lab });
+  });
+
+  LANES.forEach(l => {
+    const t = mk("text", { x: 72, y: l.top + 16, class: "lanelabel" });
+    t.textContent = l.label;
+  });
+
+  const nodeEls = [];
+  NODES.forEach(n => {
+    const g = mk("g", { class: "node " + n.lane, tabindex: "0", role: "button", "aria-label": "Paso " + n.s + ": " + STEPS[n.s - 1].title });
+    mk("rect", { x: Lf(n), y: T(n), width: n.w, height: H, rx: 7 }, g);
+    const t1 = mk("text", { x: n.x, y: n.y - 3, "text-anchor": "middle", class: "t1" }, g); t1.textContent = n.t[0];
+    const t2 = mk("text", { x: n.x, y: n.y + 13, "text-anchor": "middle", class: "t2" }, g); t2.textContent = n.t[1];
+    g.addEventListener("click", () => select(n.s, true));
+    g.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); select(n.s, true); } });
+    nodeEls.push({ n, g });
+  });
+
+  // ---------- Detail rendering ----------
+  const dotFor = a => a === "multi" ? "claude" : a;
+  const list = arr => "<ul>" + arr.map(x => "<li>" + x + "</li>").join("") + "</ul>";
+
+  function stepHTML(s) {
+    let h = '<article class="step" id="p' + s.n + '">';
+    h += '<div class="shead"><div class="srow"><span class="snum">Paso ' + s.n + ' de 17</span>';
+    if (s.actor === "multi") {
+      h += '<span class="actor claude">Claude</span><span class="actor codex">Codex</span><span class="actor gh">CI</span>';
+    } else {
+      h += '<span class="actor ' + s.actor + '">' + s.actorLabel + '</span>';
+    }
+    h += '<span class="state">' + s.states + '</span></div>';
+    h += '<h2>' + s.title + '</h2><p class="summary">' + s.summary + '</p></div>';
+    if (s.does) h += '<div class="cell"><h3>Qué pasa</h3>' + list(s.does) + '</div>';
+    if (s.extra) h += '<div class="cell">' + s.extra + '</div>';
+    if (s.agents) {
+      h += '<div class="cell"><h3>Contexto y permisos de cada agente</h3><div class="agents">';
+      s.agents.forEach(a => {
+        h += '<div class="agent ' + a.a + '"><h4>' + a.h + '</h4><dl>' +
+          '<dt>Motor</dt><dd>' + a.eng + '</dd>' +
+          '<dt>Ve</dt><dd>' + a.sees + '</dd>' +
+          '<dt>No ve</dt><dd>' + a.notsee + '</dd>' +
+          '<dt>Permisos</dt><dd>' + a.perm + '</dd>' +
+          '<dt>Devuelve</dt><dd>' + a.out + '</dd></dl></div>';
+      });
+      h += '</div></div>';
+    }
+    if (!s.agents || s.ctx) {
+      h += '<div class="grid2">';
+      if (s.ctx) h += '<div class="cell ctx"><h3>Contexto que recibe</h3>' + list(s.ctx) + '</div>';
+      h += '<div class="cell" style="gap:14px">';
+      if (s.not) h += '<div class="cell not"><h3>No ve / no puede</h3>' + list(s.not) + '</div>';
+      if (s.perms) h += '<div class="cell"><h3>Permisos y límites</h3>' + list(s.perms) + '</div>';
+      h += '</div>';
+      if (s.out) h += '<div class="cell"><h3>Salida</h3><p style="font-size:14px">' + s.out + '</p></div>';
+      h += '</div>';
+    }
+    h += '<div class="dec"><h3>Cómo decide el coordinador</h3><div class="tablewrap"><table><thead><tr><th>Si…</th><th>Entonces</th></tr></thead><tbody>';
+    s.decide.forEach(d => { h += '<tr><td>' + d[0] + '</td><td>' + d[1] + '</td></tr>'; });
+    h += '</tbody></table></div></div></article>';
+    return h;
+  }
+
+  const nav = document.getElementById("stepnav");
+  STEPS.forEach(s => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "chip"; b.dataset.s = s.n;
+    b.innerHTML = '<i class="dot-' + dotFor(s.actor) + '"></i>' + s.n + ' ' + s.short;
+    b.addEventListener("click", () => select(s.n, true));
+    nav.appendChild(b);
+  });
+
+  const detail = document.getElementById("detail");
+  const prev = document.getElementById("prev"), next = document.getElementById("next");
+  const vOne = document.getElementById("v-one"), vAll = document.getElementById("v-all");
+  let cur = 1, mode = "one";
+
+  function highlight() {
+    const ids = new Set(NODES.filter(n => n.s === cur).map(n => n.id));
+    nodeEls.forEach(({ n, g }) => g.classList.toggle("sel", n.s === cur));
+    edgeEls.forEach(({ e, p, lab }) => {
+      const on = ids.has(e.f) || ids.has(e.t);
+      p.classList.toggle("hi", on);
+      p.setAttribute("marker-end", on ? "url(#ah)" : "url(#a)");
+      if (e.both) p.setAttribute("marker-start", on ? "url(#ah)" : "url(#a)");
+      if (lab) lab.classList.toggle("hi", on);
+    });
+    nav.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-current", String(+c.dataset.s === cur)));
+    prev.disabled = cur === 1; next.disabled = cur === 17;
+  }
+
+  function render() {
+    if (mode === "one") detail.innerHTML = stepHTML(STEPS[cur - 1]);
+    else detail.innerHTML = STEPS.map(stepHTML).join("");
+  }
+
+  function select(n, fromUser) {
+    cur = Math.max(1, Math.min(17, n));
+    highlight();
+    if (mode === "one") render();
+    else if (fromUser) { const el = document.getElementById("p" + cur); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+    try { history.replaceState(null, "", "#p" + cur); } catch (e) {}
+  }
+
+  function setMode(m) {
+    mode = m;
+    vOne.setAttribute("aria-pressed", String(m === "one"));
+    vAll.setAttribute("aria-pressed", String(m === "all"));
+    try { localStorage.setItem("fase2-mode", m); } catch (e) {}
+    render();
+  }
+
+  prev.addEventListener("click", () => select(cur - 1, true));
+  next.addEventListener("click", () => select(cur + 1, true));
+  vOne.addEventListener("click", () => setMode("one"));
+  vAll.addEventListener("click", () => setMode("all"));
+  document.addEventListener("keydown", ev => {
+    if (ev.target.closest && ev.target.closest("input, textarea, select")) return;
+    if (ev.key === "ArrowRight") select(cur + 1, true);
+    if (ev.key === "ArrowLeft") select(cur - 1, true);
+  });
+
+  let start = 1;
+  const m = /^#p(\d{1,2})$/.exec(location.hash || "");
+  if (m) start = +m[1];
+  try { if (localStorage.getItem("fase2-mode") === "all") mode = "all"; } catch (e) {}
+  vOne.setAttribute("aria-pressed", String(mode === "one"));
+  vAll.setAttribute("aria-pressed", String(mode === "all"));
+  cur = Math.max(1, Math.min(17, start));
+  highlight();
+  render();
+})();
+</script>
