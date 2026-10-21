@@ -645,3 +645,14 @@ Consolidada en [`industria-revision.md`](industria-revision.md), a partir de sie
 - CodeRabbit: comprar o construir.
 
 Las propuestas A1–A15 están incorporadas en la especificación (revisión 3). La recomendación sobre CodeRabbit es copiar sus ideas, con una prueba opcional en modo sombra en un repo interno, y no comprarlo por ahora.
+
+## 14. Metodologías de trabajo con agentes (2026-10-21)
+
+Se revisaron GSD (`gsd-build/get-shit-done` @ `bdcaab2`, archivado; `open-gsd/gsd-core` @ `812ddb5`), Superpowers (`obra/superpowers` @ `2ce8aa1`, v7.0.1), Spec Kit (main, v1.2.3.dev0), OpenSpec (v1.14.3) y BMAD (v6.12.4). Todos tienen licencia MIT. Se leyeron como datos y no se ejecutaron.
+
+Conclusión: no se adopta ninguno como dependencia. Son metodologías aplicadas mediante prompts en sesiones interactivas, y sus propias fuentes documentan los fallos que un coordinador determinista evita:
+
+- En Superpowers, el agente se saltaba el design doc en 24 de 24 ejecuciones.
+- GSD reconoce que "the orchestrator cannot verify semantic correctness".
+
+Se proponen B0–B12 (`metodologias-absorcion.md` §3), pendientes de decisión. Las hipótesis nuevas son H-32 (mapa del repo) y H-33 (última ronda con Opus).
