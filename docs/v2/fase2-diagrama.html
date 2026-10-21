@@ -255,7 +255,7 @@ footer { font-size: 13px; color: var(--muted); }
     </div>
   </section>
 
-  <footer>Fuente: <code>docs/v2/faktory21-spec.md</code> (§4–§8 y §10). Los umbrales marcados como hipótesis en la spec (H-28, H-29, H-31) se calibran en el piloto.</footer>
+  <footer>Fuente: <code>docs/v2/faktory21-spec.md</code>, revisión 4 (§4–§8 y §10). Los umbrales marcados como hipótesis en la spec (H-28, H-29, H-31) se calibran en el piloto.</footer>
 </div>
 
 <script>
@@ -544,7 +544,7 @@ footer { font-size: 13px; color: var(--muted); }
       ctx: ["Casos con fragmentos de código de ±30 líneas", "Hallazgos originales y respuestas del implementador", "Criterios de aceptación de la spec congelada", "Unos 20k tokens en total"],
       not: ["El diff completo y las conversaciones de los agentes", "Ningún permiso de escritura"],
       perms: ["<code>claude -p</code>, sesión nueva, solo lectura, sin red", "30 turnos, 15 min"],
-      out: "<code>JudgeDecision</code>: por caso <code>MUST_FIX | SHOULD_FIX | DEFER | DROP | NEEDS_HUMAN</code> con directiva, razón y escenario de fallo.",
+      out: "<code>JudgeDecision</code>: por caso <code>MUST_FIX | SHOULD_FIX | DEFER | DROP | NEEDS_HUMAN | SPEC_GAP</code> con directiva, razón y escenario de fallo.",
       decide: [
         ["Disposiciones aplicadas", P("loop", "Vuelve al paso 9 sin nueva llamada")],
         ["Es una decisión de producto", P("human", "AWAITING_HUMAN")],
