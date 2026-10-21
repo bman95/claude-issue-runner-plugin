@@ -2,7 +2,7 @@
 
 > **Nombre.** El producto se llama **Faktory21** (decidido el 2026-10-21) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
 
-Estado: **propuesta de diseño, revisión 2** (2026-10-19), que incorpora la fase de investigación de [`research-log.md`](research-log.md). No hay código. Este documento se compara después con otro diseño independiente.
+Estado: **propuesta de diseño, revisión 4** (2026-10-21), que incorpora la fase de investigación de [`research-log.md`](research-log.md). No hay código. Este documento se compara después con otro diseño independiente.
 Ámbito: de issue de GitHub a PR fusionado, con agentes Claude Code y Codex, para los repositorios de DOMO21/Sicma21.
 Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c1d2989` (`origin/main`).
 
@@ -42,6 +42,29 @@ Cada cambio enlaza con la sección del registro de investigación que lo justifi
 | A14 Muestreo de merges automáticos | §5.11 |
 | A15 Revisión incremental sin "resuelto" por LLM | §6.5b |
 
+**Revisión 4 (metodologías de agentes, [`metodologias-absorcion.md`](metodologias-absorcion.md) §3b, validada de forma independiente):**
+
+| Propuesta | Estado | Sección |
+|---|---|---|
+| B0 Home de los agentes sin plugins, skills ni hooks | Adoptada | §3.1 |
+| B1 `Review focus` opcional en la issue | Adoptada con cambios | §5.6; preparación §1.2 |
+| B2 Interfaces `Produces`/`Consumes` entre slices | Adoptada con cambios | Preparación §1.2, §3.2, §4 (L17) |
+| B3 `multiple_goals` en la lectura en frío | Adoptada con cambios | Preparación §5 |
+| B5 Reglas del implementador y `blocker.kind = architecture` | Adoptada con cambios | §5.4, §7.3 |
+| B7 Barrido anti-stub como ruleset `ast-grep` | Adoptada con cambios | §5.5 |
+| B8 Reglas del revisor y del Judge; `spec_defect` | Adoptada con cambios | §5.6, §5.7, §7.4 |
+| B9 Hallazgos nuevos fuera del delta | Adoptada con cambios | §6.4 |
+| B10 Enmienda de spec desde cualquier ronda | Adoptada con cambios | §4.2, §4.3, §5.7, §7.5, §14.2 |
+| B12 Regla de redacción de prompts | Adoptada con cambios | §12.4 |
+| A7 Prueba diferencial ligera | **Adelantada a v2.0** (sustituye a B6) | §5.5 |
+| C1 Los límites de una decisión van dentro del AC (dev-harness #11) | Adoptada | Preparación §6.1, L18; §5.7 |
+| C2 Receta de `doctor --full` en el mismo entorno que el Validator (#9) | Adoptada | §3.1, §5.5 |
+| C3 Aviso si la configuración local no está en la base (#3) | Adoptada como aviso | §3.1, §11 |
+| C4 Resumen de fin de tanda y evento por cada salto en cascada (#4) | Adoptada | §11; F1 y F7 |
+| C5 Modelo y esfuerzo siempre explícitos (#1) | Adoptada | §8.1, §8.2 |
+| C6 Evidencia de la corrida de `almacen21` (19 de octubre) | Solo documentación | `research-log.md` §11; H-26 |
+| B4, B11 y las evaluaciones de presión de B12 | Aplazadas a v2.1 | §16 |
+
 **Ideas adoptadas del diseño independiente Sol 6.1** (2026-10-19), cada una marcada en su sección:
 
 - Snapshot de evaluación con seis campos (§4.1, §5.11).
@@ -64,6 +87,7 @@ Cada cambio enlaza con la sección del registro de investigación que lo justifi
 - `Verify:` por criterio, ejecutado por el Validator (§5.1, §5.5).
 - `fak doctor` (§3.1).
 - `merge_mode` y contrato de integración con `status` (§5.12).
+- Revisados de nuevo el 2026-10-21: no hay código nuevo después de `6499769`. Los issues #1–#4 y #8–#11 del 19 de octubre, que incluyen una tercera corrida real en `almacen21`, dan lugar a C1–C6 (tabla de la revisión 4).
 
 **No adoptado de ese diseño:** PostgreSQL, API con RBAC y Context Engine con grafo de procedencia, porque son excesivos para 1–2 ítems por host. Tampoco el contenedor por attempt, que queda aplazado (§16).
 
@@ -258,12 +282,15 @@ Puntos de entrada:
     - Binarios y versiones del manifiesto (§8.2).
     - Variables de entorno que exige `required_env` (solo nombres).
     - Contrato de validación de la base, válido.
+    - **Modelo y esfuerzo resueltos [P; C5].** Ninguna celda de la tabla de roles (§8.1) queda sin un valor explícito de modelo y esfuerzo.
+    - **Configuración local frente a la base [P; C3].** Si `.faktory21/*` o `policy.yml` tienen cambios locales sin commitear o no coinciden con `origin/<base>`, da `WARN config-not-on-base`. No bloquea, porque el runner siempre lee la configuración de la base, pero avisa de que el cambio local no está en vigor. `fak status` muestra el `policy_hash` vigente.
+    - **Aislamiento del home de los agentes [P; B0]. `$FAK_AGENT_HOME/.claude` no contiene `plugins/`, `skills/`, `hooks/`, un `CLAUDE.md` de usuario ni un `settings.json` con hooks. `$FAK_CODEX_HOME` no tiene configuración ni `AGENTS.md` globales ajenos. El motivo es que `--setting-sources user` carga `$FAK_AGENT_HOME/.claude/settings.json` (§8.2), y metodologías como Superpowers se activan con un hook `SessionStart` que inyecta instrucciones en cada sesión. Si ese home se contaminara, cambiaría el comportamiento de los roles sin que nadie lo viera. Los ficheros de esas metodologías que vivan **en el repo** (`.planning/`, `docs/superpowers/`, `openspec/`) son contenido del repo: el implementador puede leerlos como datos, nunca como instrucciones de rol.
   - **Nivel caro, con `fak doctor --full`, bajo demanda.** Cuesta tokens y minutos, así que lo invoca una persona al cambiar de máquina, de CLI o de configuración. También se lanza solo cuando cambia `environment_digest` (§4.1).
     - Una llamada real mínima a `claude -p` y a `codex exec` con esquema, comprobando tokens de salida mayores que 0.
     - Si el sandbox de Codex permite abrir sockets cuando la verificación lo necesita.
-    - La receta `verification` del repo: arrancar el servicio, esperar a que esté listo y apagarlo.
+    - La receta `verification` del repo: arrancar el servicio, esperar a que esté listo y apagarlo. **Se ejecuta en las mismas condiciones que el Validator** [P; C2]: el mismo `env -i`, el mismo sandbox, stdin cerrado, sin TTY y `TMPDIR` dentro del worktree (§5.5). En `vela91/dev-harness` (#9), `doctor --full` dio verde fuera del sandbox y la receta falló dentro, porque `$TMPDIR` quedaba fuera del workspace y `pnpm install` no tenía TTY.
     - Los tests de base en verde.
-  - **`fak doctor --init`.** Prepara un proyecto nuevo, fuera de cualquier ejecución y con una persona delante. Detecta la rama destino y la pide confirmar. Propone `.faktory21/validation`, `policy.yml` y el bloque `verification`, y los escribe como **un PR para revisión humana**, nunca directamente en la rama base. Crea las etiquetas `ir:*`.
+  - **`fak doctor --init`.** Prepara un proyecto nuevo, fuera de cualquier ejecución y con una persona delante. Detecta la rama destino y la pide confirmar. Propone `.faktory21/validation`, `policy.yml` y el bloque `verification` (con recetas no interactivas: `--frozen-lockfile` y nada fuera del workspace, C2), y los escribe como **un PR para revisión humana**, nunca directamente en la rama base. Crea las etiquetas `ir:*`.
 - Una skill de Claude Code muy fina (`/ir`) que solo llama al CLI, para uso interactivo **[P]**.
 - **[A] Sin hooks de Claude Code.** El coordinator es un programa determinista que lanza cada agente como proceso propio, así que nada depende de eventos como `SubagentStop` o `Stop`. Los hooks solo tendrían sentido si la orquestación viviera dentro de una sesión de Claude Code, como en v1 o en `vela91/dev-harness`, donde además resultaron frágiles: se disparaban con el directorio equivocado o no se disparaban (H8, H13).
   - Si v2 se distribuye como plugin de Claude Code, el plugin es solo una fachada: la skill `/ir` llama al CLI y muestra el estado. No incluye hooks ni orquesta nada.
@@ -356,6 +383,8 @@ WAITING_QUOTA · WAITING_BASE (base roja) · PAUSED_SPEC_DRIFT · PAUSED_OPERATO
 Terminales: DONE · ABANDONED (humano) · CLOSED_EXTERNALLY · FAILED_INFRA (tras reintentos; humano puede reabrir)
 ```
 
+**Enmienda de spec [P; B10].** Hay una vuelta atrás que no aparece en el diagrama: ADJUDICATING → PREPARING en **modo enmienda**, o → AWAITING_INPUT si el hueco es de producto. Ocurre cuando el Judge clasifica un caso como `SPEC_GAP` (§5.7). Esos casos llegan al Judge desde un hallazgo `spec_defect` o desde un `blocked` con `blocker.kind = architecture`. La vuelta consume `spec_amendments` (§4.3), y la salida `respecify` del modo stall sigue el mismo camino.
+
 ### 4.3 Contadores y límites por defecto [P] (configurables en `policy.yml`)
 
 | Contador | Límite | Al agotarse |
@@ -365,6 +394,7 @@ Terminales: DONE · ABANDONED (humano) · CLOSED_EXTERNALLY · FAILED_INFRA (tra
 | `adjudications` | 3 | AWAITING_HUMAN |
 | `codex_fix` | 1 | El Judge no puede volver a elegir el Fixer |
 | `alt_impl` | 1 | Igual que la fila anterior |
+| `spec_amendments` (enmiendas de spec tras la aprobación, B10, incluido `respecify`) | 2 | AWAITING_HUMAN. `impl_rounds` no se reinicia con una enmienda |
 | `base_refresh` | 3 | Se toma el lock de merge antes del refresco (serialización estricta) y después AWAITING_HUMAN |
 | `infra_retries_per_attempt` (crash, timeout, salida inválida) | 1 | FAILED_INFRA |
 | `item_reference_cost_usd` | 40 USD (**H-3**: calibrar) | AWAITING_HUMAN con el informe |
@@ -451,6 +481,8 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
 3. Salida `ImplementationResult` (§7.3): estado `completed|blocked|needs_clarification`, mapeo AC→evidencia, tests añadidos, notas de riesgo y `knowledge_candidates[]`.
    - `needs_clarification` con una pregunta de producto → AWAITING_INPUT. Los contadores no cambian.
    - `blocked` por el entorno → FAILED_INFRA, o AWAITING_HUMAN con el diagnóstico.
+   - `blocked` con `blocker.kind = architecture` [P; B5]: cumplir la spec exige un cambio de arquitectura que nadie previó, como una dependencia nueva, un módulo nuevo o un cambio de esquema. Va a ADJUDICATING, y el Judge decide si es un hueco de spec (`SPEC_GAP`, §5.7) o da una directiva.
+   - `blocked` con `blocker.kind = no_root_cause` [P; B5]: en un `bug`, tres hipótesis seguidas no explican el síntoma. Va a AWAITING_HUMAN con el diagnóstico. En las rondas de corrección, el equivalente es `cannot_fix` por cluster.
 4. El coordinator **verifica, no confía**:
    - El worktree está limpio.
    - Hay commits nuevos.
@@ -468,11 +500,19 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
    - Code Review audita expresamente que el test comprueba el comportamiento de la issue y no el del propio parche. En Agentless, más de la mitad de los tests que "reproducían" el bug eran incorrectos o demasiado específicos.
    - En issues vagas, no funcionales o sin harness se registra `repro: n/a` y no se fuerza.
    - El coste es solo ejecutar un test (**H-19**: medir si reduce rondas y escapes).
-6. **Los AC no los marca el implementador.** Su `ac_mapping` es informativo. El estado autoritativo de cada AC lo dan `acceptance[]` de Code Review y las puertas (`research-log.md` §2.2: el agente no debe validar sus propios criterios).
+6. **Reglas del prompt del implementador [P; B5, adaptadas de Superpowers y GSD, MIT].**
+   - Una tabla "afirmación → qué la demuestra → qué no basta". Por ejemplo: "los tests pasan → la salida del comando en esta ronda; no basta con haberlos ejecutado antes".
+   - "Un test en rojo que viste y no mencionas es un informe falseado por omisión".
+   - Parar está bien: "es mejor parar que entregar trabajo malo". No hay un estado nuevo. Se usan `blocked` y `needs_clarification`, y las dudas que no bloquean van a `risk_notes`. Esas notas llegan a la tarjeta y al Judge, **nunca a los revisores** (§5.6).
+   - En un `bug`: primero la causa raíz, una hipótesis cada vez.
+   - Un commit por AC o por paso lógico, para que la revisión del delta sea legible.
+   - Cualquier cambio de este texto cambia `policy_hash` y entra en modo sombra (A5).
+7. **Los AC no los marca el implementador.** Su `ac_mapping` es informativo. El estado autoritativo de cada AC lo dan `acceptance[]` de Code Review y las puertas (`research-log.md` §2.2: el agente no debe validar sus propios criterios).
 
 ### 5.5 Validación determinista
 
 - El Validator ejecuta `preflight` desde el contrato de la base, con timeout y salida guardada.
+- **Entorno fijo de ejecución [P; C2].** Todo lo que ejecuta el coordinator usa `env -i`, `TMPDIR=<worktree>/.tmp`, `CI=1`, stdin `</dev/null` y sin TTY: `preflight`, `full`, la receta `verification`, los `repro` y la prueba diferencial. Los tests que ejecuta el Codex Fixer en `workspace-write` siguen la misma regla. `fak doctor --full` reproduce exactamente este entorno.
   - En rojo: nueva ronda del implementador con el log recortado (las últimas 200 líneas más el resumen de fallos) como hallazgo `validation`, hasta `validation_retries_per_round`.
   - En verde: push (la primera vez se crea un **draft PR** con la especificación y la tarjeta de estado), se registra el Candidate y se pasa a REVIEWING.
 - `full` se ejecuta una vez por candidato aceptado, en MERGE_PREP.
@@ -493,6 +533,10 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
   Sus resultados se usan de dos formas:
   1. **Como hallazgos propios** (`reviewer: static`, `ev = concrete`). Los secretos nuevos, las dependencias con vulnerabilidad conocida de severidad alta y las dependencias sin versión fija en manifiestos son **MUST_FIX directos** (R1b, §6.4). La revisión, humana o con IA, pasó por alto el 81 % de las credenciales filtradas en PR de agentes. El resto de hallazgos estáticos entra en la clasificación normal.
   2. **Como contexto** para los revisores LLM, en un resumen recortado. Así no repiten lo que ya se sabe y se centran en lo que una herramienta no ve.
+- **Barrido anti-stub y de cableado (B7)** [P; GSD `gsd-verifier`]. Es un ruleset `ast-grep` **por defecto**, dentro de la pasada A1. El repo puede ampliarlo o desactivar reglas sueltas en `.faktory21/rules/`. No se usan regex fijas, porque un `return null` como única sentencia también aparece en código correcto. Se aplica sobre el diff, a código que no es de test:
+  - Cuerpos vacíos o de relleno nuevos (`pass`, `NotImplementedError`, `throw new Error("not implemented")`): `category: spec_mismatch`, `major`, `ev = concrete`, que lleva a R5.
+  - `TODO`/`FIXME`/`TBD`/`XXX` nuevos sin referencia a una issue: `maintainability`, `minor`, SHOULD_FIX.
+  - Un símbolo exportado nuevo que no se usa en ningún sitio, ni siquiera en un test: `nit`, como aviso. Admite exclusiones por repo, por ejemplo para APIs públicas.
 - **Oráculo de tests intocable (A6)** [P; ImpossibleBench, dotnet/runtime].
   - Forman el **oráculo** del ítem:
     - los tests de reproducción y de `Verify` que crea o valida el coordinator;
@@ -501,8 +545,10 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
   - Si el implementador o el Codex Fixer modifican, borran o marcan para omitir un test del oráculo, se genera un debilitamiento de tests (§8.3, regla 5) de severidad `blocker`, salvo que la spec lo pida de forma explícita.
   - El implementador **puede añadir** tests nuevos, pero no hacer pasar el candidato cambiando los que lo juzgan.
   - En MERGE_PREP se ejecuta **la suite completa** del contrato (`full`, o `preflight` si no hay `full`), nunca un subconjunto.
-- **Prueba diferencial ligera (A7, v2.1)** [P; PatchDiff, UTBoost]. Los tests **añadidos** por el candidato se ejecutan también sobre la base.
-  - Si un test que dice probar comportamiento nuevo **pasa en la base**, no prueba nada: hallazgo `tests`, `major`.
+- **Prueba diferencial ligera (A7, adelantada a v2.0; sustituye a B6)** [P; PatchDiff, UTBoost]. El coordinator ejecuta también sobre la base los tests **añadidos** por el candidato, con el mismo ejecutor que los `repro`.
+  - Si un test que dice probar comportamiento nuevo **pasa en la base**, no prueba nada: hallazgo determinista `tests`, `major`, `ev = confirmed`.
+  - Quedan fuera los tests que cubren `Unchanged behavior` y los ítems `refactor`, que deben pasar en la base.
+  - No se pide al implementador que declare su evidencia RED/GREEN (B6): la comparación entre la base y el candidato no depende de lo que diga.
   - Más adelante, comparar el comportamiento entre base y candidato en los ficheros tocados.
 
 ### 5.6 Revisiones en paralelo [A]
@@ -543,6 +589,12 @@ Notas:
   Con prompts propios, el alcance es el diff entre la base y el candidato que fija el coordinator, el resultado es JSON con esquema, y el coste es acotado y atribuible.
 - **Codex Reviewer solo reporta P0/P1 (A9)** [P; documentación de Codex]. Su prompt le pide señalar solo defectos graves, de corrección, seguridad o datos, que se correspondan con nuestras severidades `blocker` y `major`. El resto lo cubren la pasada estática y Code Review. Su evidencia pesa igual que la de Claude, y ninguno de los dos bloquea sin prueba (§6.4).
 - **Comprobación de alcance y duplicados (A11)** [P; AIDev, Spotify]. Code Review recibe `Out of scope` y los `Files likely touched` de la spec, y señala con `category: scope` lo que el PR hace y la spec no pide. Las funcionalidades no pedidas y los duplicados son la primera causa de rechazo de los PR de agentes. Un hallazgo `scope` con cita del diff es MUST_FIX si añade comportamiento observable, y SHOULD_FIX si es solo código sobrante.
+- **Qué llega al revisor y qué no [P; B1, B8].** Al revisor solo le llegan la spec aprobada, la base, el diff y las reglas de ruta de `policy.yml`.
+  - Nada del implementador: ni `risk_notes` ni su justificación.
+  - Ninguna instrucción por ítem del coordinator, como "no marques X" o "como mucho minor". Es un test del coordinator: prompt = rol fijo + reglas de ruta + datos.
+  - Si la spec trae la sección opcional `Review focus` (preparación §1.2), llega dentro de `spec` como dato. **No cambia R6**: un hallazgo sobre un foco sigue necesitando `failure_scenario`.
+  - Los desajustes con la spec se clasifican con campos que ya existen: lo que falta es un AC `not_met`, lo que sobra es `scope` (A11) y lo malinterpretado es `misread_spec`.
+  - Si el código hace lo que pide la spec pero eso es incorrecto, el revisor lo reporta como `objection_type: spec_defect`. Ese hallazgo va siempre a VERIFY y lo decide el Judge (§5.7). Nunca llega directamente al implementador.
 - **Reglas por ruta (path instructions)** [P; CodeRabbit, Amp]. `policy.yml` puede asociar *globs* a instrucciones o *checks* concretos, por ejemplo `migrations/**`: "comprobar reversibilidad". Se añaden al prompt del revisor solo cuando el diff toca esas rutas. Cada *check* crítico puede ejecutarse como subagente propio (patrón Amp) cuando el riesgo es alto.
 - **Re-revisión incremental [P]**. A partir de la segunda ronda, cada revisor recibe el diff completo contra la base, el **delta** respecto al último candidato que revisó y la lista de sus clusters abiertos, y declara para cada uno `resolved|still_present|regressed`. Se fuerza una revisión completa cuando el delta supera el 40 % del diff total o toca rutas sensibles (**H-7**).
 
@@ -554,6 +606,14 @@ El algoritmo está en §6.
 - Clusters en VERIFY, disputas del implementador o un `direction: disagree` de Codex: ADJUDICATING. El Judge (Opus) recibe todos los casos en **una sola llamada** y devuelve una disposición por cada uno (§7.5).
 - Si el Judge adopta la alternativa de Codex, la **implementa Sonnet**, con una directiva explícita en la siguiente ronda. El Fixer no la implementa: es excepcional y no sirve para cambiar de dirección.
 - Si la disputa es una decisión de producto, o el riesgo es high y el Judge discrepa de un hallazgo `blocker` de seguridad: AWAITING_HUMAN.
+- **La justificación del autor no baja la severidad [P; B8].** En el prompt del Judge, un `disputed` del implementador solo rebaja un hallazgo si aporta evidencia: un repro, una cita de la spec o del código actual. La argumentación sola no basta.
+- **Hueco de spec (`SPEC_GAP`) [P; B10, adaptado de BMAD `bad_spec`].** El Judge puede clasificar un caso como `SPEC_GAP`, con `gap_kind: product|technical`. Llegan casos de tres sitios: un hallazgo `spec_defect`, un `blocked` con `blocker.kind = architecture` y el modo stall (`respecify`).
+  - Si es de **producto**, el ítem pasa a AWAITING_INPUT con la pregunta para el humano.
+  - Si es **técnico**, pasa a PREPARING en **modo enmienda**. El Planner propone el cambio mínimo a la spec. Se repiten el lint, incluido L17 en los slices consumidores (preparación §4), y la lectura en frío.
+  - La enmienda **se vuelve a aprobar**, ligada al nuevo `spec_hash`, por un humano o por `auto_ready` si la política lo permite para ese riesgo.
+  - El candidato se conserva. El cambio de `spec_hash` invalida el snapshot (§4.1), así que se repite lo que dependía de él.
+  - Caso real que lo justifica (`vela91/dev-harness` #11, ALM-86, C1): `What to build` aceptaba que un límite de peticiones contara por worker, pero el AC decía sin más "más de 10 logins/min → 429". Codex rechazó la tarea por la contradicción, se gastó una iteración y hizo falta un humano. Con B10, ese rechazo es un `spec_defect` que acaba en enmienda. Con C1 (preparación §6.1), la contradicción se detecta antes de aprobar.
+  - Cada enmienda consume `spec_amendments` (§4.3), se registra como **escape de preparación** en el Registry y sirve para medir la calidad de la fase 1.
 
 ### 5.8 Correcciones (Sonnet)
 
@@ -588,7 +648,7 @@ Al activarse → STALLED. El Judge, en **modo stall**, recibe un historial compa
    - **[P]** **Codex Reviewer no cuenta como aprobación del cambio del Fixer.** Es una medida de precaución por autopreferencia: Panickssery et al. (2024) la midieron en resúmenes, no en código, así que es [H-20] para código. Si se ejecuta, sus hallazgos se tratan, pero su `agree` no satisface la puerta.
    - Si el Opus Reviewer rechaza el cambio, se hace como mucho 1 ronda de Sonnet con sus notas. Si sigue sin aprobarse, AWAITING_HUMAN.
 2. **`alt_impl`** [A: desactivado por defecto]. Solo si `multi_impl.enabled` está activo, o el ítem tiene riesgo `critical`, o la preparación declaró `alternatives` significativas. Véase §5.10.
-3. **`respecify`**: la especificación es ambigua o contradictoria. Se vuelve a PREPARING con el diagnóstico; los contadores de implementación se conservan.
+3. **`respecify`**: la especificación es ambigua o contradictoria. Se vuelve a PREPARING en modo enmienda con el diagnóstico, igual que con `SPEC_GAP` (§5.7). Consume `spec_amendments`, y los contadores de implementación se conservan.
 4. **`human`**: AWAITING_HUMAN, con un informe accionable (qué falla, qué se intentó y las opciones disponibles).
 
 ### 5.10 Varios implementadores (desactivado por defecto) [A]
@@ -855,6 +915,7 @@ Reglas adicionales:
 
 - **Disputas.** Un cluster MUST_FIX con respuesta `disputed` del implementador pasa a VERIFY. Si el mismo cluster ya pasó por el Judge y vuelve a disputarse con los mismos argumentos (huella y respuesta similares), no vuelve al Judge: se considera estancamiento.
 - **Dirección.** `direction = disagree` de Codex abre un caso `DIRECTION`. `concerns` se registra sin bloquear, salvo que traiga hallazgos que ya bloqueen por sí mismos.
+- **Hallazgos nuevos fuera del delta [P; B9, adaptado del `fix-loop` de Superpowers].** En una re-revisión delta, puede aparecer un hallazgo nuevo sobre código que el delta no toca y que caería en R6 (VERIFY solo estático). Ese hallazgo pasa a DEFER con el motivo registrado, sin llamar al Judge, y aparece en la tarjeta y en el muestreo (A14). Así se cortan los bucles en los que cada ronda descubre problemas nuevos sin relación con el cambio. R0, R1, R1b, R2 y R4 no cambian. Un DEFER de algo que bloquearía sigue necesitando `deferred_authorized` (§6.5b).
 - **Contraste con la especificación.** Las objeciones del tipo "requisito añadido" o "especificación mal leída" (un 26 % de las objeciones falsas en Jin y Chen) se marcan como `spec_dispute` y van al Judge con los AC del SpecSnapshot. Nunca se convierten directamente en MUST_FIX.
 - **Juez con evidencia.** Cuando el Judge confirma un caso VERIFY como MUST_FIX, debe aportar `failure_scenario` y, si puede, un `repro`, que el coordinator ejecuta igual que los de los revisores. Una confirmación sin contraejemplo se registra como `judge_static` y se mide en el Registry (**H-21**: tasa de confirmaciones estáticas del Judge que acaban siendo `fixed_verified`).
 
@@ -958,6 +1019,8 @@ Campos:
 }
 ```
 
+`blocker`, si no es `null`, tiene la forma `{"kind": "environment|contract_first|architecture|no_root_cause", "detail": "…", "proposal": "…"}`. `contract_first` lleva el contrato propuesto (§5.3), y `architecture` el cambio que haría falta (§5.4).
+
 ### 7.4 `ReviewReport` (los tres revisores y el Opus Reviewer)
 
 ```json
@@ -973,7 +1036,7 @@ Campos:
     "claim": "…", "evidence": "…", "failure_scenario": "entrada/estado concretos → resultado erróneo",
     "evidence_kind": "test|input|trace|static",
     "repro": {"path": "tests/ir_repro_F1.test.ts", "content": "…", "command": "npx vitest run tests/ir_repro_F1.test.ts", "expect": "fail_on_candidate"},
-    "objection_type": "logic|boundary|added_requirement|misread_spec|security|design_alternative|question|other",
+    "objection_type": "logic|boundary|added_requirement|misread_spec|spec_defect|security|design_alternative|question|other",
     "cwe": null, "proposed_fix": null
   }],
   "abstain": [{"dimension": "performance", "reason": "…"}],
@@ -1001,7 +1064,7 @@ Reglas del esquema:
 ```json
 {
   "mode": "adjudicate|stall|select",
-  "dispositions": [{"case": "C-7|DIRECTION", "class": "MUST_FIX|SHOULD_FIX|DEFER|DROP|NEEDS_HUMAN", "directive": "instrucción concreta para Sonnet", "rationale": "…", "failure_scenario": "obligatorio si class = MUST_FIX", "repro": null, "confidence": "high|medium|low|unknown"}],
+  "dispositions": [{"case": "C-7|DIRECTION", "class": "MUST_FIX|SHOULD_FIX|DEFER|DROP|NEEDS_HUMAN|SPEC_GAP", "gap_kind": "product|technical|null", "directive": "instrucción concreta para Sonnet", "rationale": "…", "failure_scenario": "obligatorio si class = MUST_FIX", "repro": null, "confidence": "high|medium|low|unknown"}],
   "direction": {"keep": true, "adopt_alternative": false, "directive": null},
   "stall_choice": "codex_fix|alt_impl|respecify|human|null",
   "stall_assignment": {"clusters": ["C-7"]},
@@ -1023,11 +1086,11 @@ El coordinator **rechaza** cualquier `stall_choice` que la política no permita 
 | Implementer | claude, Sonnet | medium | Sí, solo en su worktree | Sí, en sandbox | Lista de dominios permitidos (registros de paquetes) | No | Reanudable en la ronda 2 | 80 turnos, 45 min |
 | Code Reviewer | claude, Sonnet/Opus | medium/high | No | Lectura (`git diff/log/show`, `rg`) | No | No | Nueva, sin persistencia | 40 turnos, 15 min |
 | Security Reviewer | claude, Sonnet/Opus | high | No | Lectura | No | No | Nueva | 40 turnos, 15 min |
-| Codex Reviewer | codex exec | config | No (`read-only`) | Sandbox de solo lectura | No | No | `--ephemeral` | 20 min |
+| Codex Reviewer | codex exec | explícito, por defecto high | No (`read-only`) | Sandbox de solo lectura | No | No | `--ephemeral` | 20 min |
 | Judge | claude, Opus | high | No | Lectura | No | No | Nueva | 30 turnos, 15 min |
-| Codex Fixer | codex exec | config | Sí, en un worktree propio (`workspace-write`; `.git` de solo lectura, así que el commit lo hace el coordinator) | Sí, en sandbox | No | No | `--ephemeral` | 30 min |
+| Codex Fixer | codex exec | explícito, por defecto high | Sí, en un worktree propio (`workspace-write`; `.git` de solo lectura, así que el commit lo hace el coordinator) | Sí, en sandbox | No | No | `--ephemeral` | 30 min |
 | Opus Reviewer | claude, Opus | high | No | Lectura | No | No | **Nueva, sin `--resume`** [A] | 40 turnos, 20 min |
-| Alt Implementer | Sonnet/Opus/Codex | config | Sí, en worktree propio | Sí | Lista permitida | No | Nueva | Como Implementer |
+| Alt Implementer | Sonnet/Opus/Codex | explícito, como Implementer | Sí, en worktree propio | Sí | Lista permitida | No | Nueva | Como Implementer |
 
 ### 8.2 Invocación tipo [P]
 
@@ -1057,7 +1120,7 @@ Para Codex Reviewer:
 ```bash
 env -i HOME="$FAK_CODEX_HOME" PATH="$SAFE_PATH" \
   codex exec --sandbox read-only --ask-for-approval never --ephemeral \
-    --ignore-user-config -C "$WT" -m "$CODEX_MODEL" \
+    --ignore-user-config -C "$WT" -m "$CODEX_MODEL" -c model_reasoning_effort="$CODEX_EFFORT" \
     --output-schema review.v1.json -o out.json --json \
     - < prompt.md
 ```
@@ -1068,6 +1131,7 @@ Detalles de la invocación:
 - **`--bare`** no se usa con suscripción, porque solo lee API key [F]. Para neutralizar la configuración del proyecto se combinan `--strict-mcp-config`, `--settings` del rol y la protección de rutas (§8.3).
 - **`--max-budget-usd`** actúa sobre el coste estimado. Aquí no es un presupuesto, sino un **disyuntor** contra bucles desbocados (§10). Al reanudar, los totales anteriores no cuentan para este límite, y el coste que informa es **acumulado**: el ledger guarda la diferencia con el último valor de esa sesión.
 - **Siempre `--permission-mode` explícito.** El modo por defecto puede ser `auto` [F].
+- **Modelo y esfuerzo siempre explícitos [P; C5].** Cada invocación pasa `--model` y `--effort`. En Codex se pasan `-m` y `-c model_reasoning_effort`, nunca el `config.toml` del usuario. Ningún parámetro de coste se hereda de estado externo: en `vela91/dev-harness` (#1), `/code-review` sin nivel heredaba el último esfuerzo que la persona había tecleado a mano. El ledger registra el valor efectivo.
 - **`--session-id`** lo asigna el coordinator (un UUID por attempt), así que un attempt perdido se puede reanudar sin depender del stdout.
 - **stream-json** da la vivacidad y las señales de límite:
   - `tool_progress` con `heartbeat: true` cada 30 s mientras corre una herramienta, aunque no dentro de subagentes.
@@ -1314,6 +1378,14 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
 
 - **`fak status`**: tabla de ítems (estado, ronda, clusters abiertos, esperando a quién o a qué, coste de referencia y estado de cada línea de cuota).
 - **`fak report --since 7d`**: Markdown con resultados por ítem, tiempos de ciclo, rondas, distribución de clusters por revisor y clase, *unique catches* por familia, coste en las tres contabilidades, eventos de límite, `knowledge_candidates` pendientes y follow-ups DEFER (para que un humano decida: la regla de v1 se mantiene).
+- **`fak report --run <id>`** [P; C4]: resumen de fin de tanda, que también se genera solo cuando se vacía la cola. Tiene cinco secciones, todas sacadas de SQLite:
+  - fusionados;
+  - esperando un merge humano (`request_only`);
+  - bloqueados, con su motivo;
+  - saltados por dependencias;
+  - pausados por cuota.
+
+  Para que esto funcione, cuando el Scheduler salta un ítem en cascada porque falló una dependencia, escribe un evento por cada ítem saltado. En `vela91/dev-harness` (#4), esos saltos no dejaban ningún registro.
 - **Tarjeta de estado en el PR** y etiquetas en la issue.
 - **Notificaciones**: en v2.0, una mención a `owners` (de `policy.yml`) en el comentario cuando un ítem entra en AWAITING_*. En v2.1, correo o Slack.
 - **Logs**: `events` en SQLite más `artifacts/` (`stdout.jsonl` íntegro de cada agente).
@@ -1392,6 +1464,7 @@ Ejemplos:
 
 ### 12.4 Reglas de higiene
 
+- **Redacción de los prompts de rol [P; B12, hallazgo de Superpowers `writing-skills`].** Para la forma de la salida se usa un contrato positivo (esquema JSON o receta), no prohibiciones. Las prohibiciones sirven contra la indisciplina, pero empeoran la forma. Se evitan las cláusulas de matiz ("salvo que…", "en general…"), que vuelven ruidosa la salida. Las evaluaciones con escenarios de presión van a v2.1, con A13.
 - Ningún cambio de valores por defecto sin un claim en estado `supported`, o una decisión humana explícita registrada como tal ("decisión sin evidencia"). Se permiten, pero quedan marcadas.
 - **[A, Q8] Repo privado central de evidencia**, separado de los repos de proyecto (nombre propuesto: `faktory21-evidence`).
   - Cada runner, que es local a cada desarrollador, exporta cada semana con `fak evidence push` un JSONL/CSV **sin código**: métricas, metadatos de hallazgos (ruta, categoría, revisor, desenlace), hipótesis y decisiones.
@@ -1426,6 +1499,7 @@ Cada arista que vuelve hacia atrás en §4.2 consume un contador de §4.3:
 - ALT consume `alt_impl`.
 - El refresco consume `base_refresh`.
 - El reintento consume `infra_retries`.
+- La enmienda de spec (`SPEC_GAP` o `respecify`, B10) consume `spec_amendments`.
 
 Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pero **tienen un tiempo máximo y escalan a un humano**. Solo un humano reinicia contadores. Por tanto, sin intervención humana, todo ítem llega en un número finito de pasos a DONE, AWAITING_HUMAN, FAILED_INFRA o una espera con aviso.
 
@@ -1447,6 +1521,8 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | D12 | El implementador devuelve `completed` sin commits | Ronda vacía | Hallazgo determinista `no_changes`, que consume ronda. A la segunda vez, estancamiento. |
 | D14 | Dos usuarios ejecutan el runner sobre el mismo repo, cada uno con su base de datos | Doble trabajo sobre la misma issue, o dos PR | Reclamo en GitHub (asignación, `faktory21:in-progress` y comentario marcador) antes de IMPLEMENTING; los demás runners lo respetan. Un reclamo inactivo más de 24 h lo libera un humano con `/faktory21 release`, nunca de forma automática |
 | D15 | La política exige aprobación humana pero el repo también exige una review de GitHub, y el único humano disponible es el autor del PR | AWAITING_MERGE_APPROVAL sin fin | No es un bloqueo oculto: la tarjeta indica "falta una review de otra persona" y se avisa a los `owners`. Es una regla del repo, no del runner |
+| D16 | Enmiendas de spec en bucle: cada ronda descubre otro hueco (B10) | Bucle sin contador | `spec_amendments` (2), y después AWAITING_HUMAN. `impl_rounds` no se reinicia con una enmienda |
+| D17 | Una enmienda cambia una firma `Produces` o los `Files likely touched` de un slice del que dependen otros ya preparados | Consumidores preparados contra una interfaz que ya no existe | La enmienda vuelve a pasar L17 y L12 en los consumidores. Los que fallan vuelven a preparación y no se despachan. Si alguno ya está en curso, PAUSED_SPEC_DRIFT |
 | D13 | Varios ítems en paralelo agotan juntos la cuota de Opus | Preparaciones nuevas dejan sin Judge a los ítems en curso | Reserva del 25 % para Judge y Opus Reviewer (§10.3), y prioridad del Scheduler: los ítems más avanzados primero |
 
 ### 14.3 Contradicciones revisadas en el propio diseño
@@ -1485,6 +1561,15 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 - Evidence Registry en modo observacional (§12.1) e `fak report`.
 - Recuperación: `fak recover`, reconciliación del outbox y backup de `ir.db`.
 - Rutas protegidas y el entorno `env -i`.
+- Metodologías absorbidas (revisión 4):
+  - B0 en `fak doctor`;
+  - B1 (opcional), B2 y B3 en la preparación;
+  - reglas del implementador (B5), del revisor y del Judge (B8);
+  - ruleset anti-stub (B7);
+  - hallazgos fuera del delta (B9);
+  - enmienda de spec con `spec_amendments` (B10);
+  - regla de redacción (B12);
+  - **A7 adelantada**.
 
 **Excluido**: lo que lista §16.
 
@@ -1493,13 +1578,13 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | Fase | Entregable | Criterio de aceptación | Esfuerzo orientativo |
 |---|---|---|---|
 | F0 | *Spike* de verificación: **las 10 pruebas locales** de `research-log.md` §3 (autenticación OAuth sin API key y aislamiento sin `--bare`; fallos de esquema en Claude y en Codex; señales y códigos de salida; precedencia de credenciales en Codex; aprobaciones en `exec`; qué carga Codex de un repo; bloqueo real de escritura en revisores; heartbeat y `rate_limit_event`; uso al reanudar), más H-1, H-2 y H-16 y las preguntas Q1, Q2, Q5, Q10 y Q11 | Documento con las salidas reales, ejecutado contra un repo *sandbox* desechable y nunca contra repos de producto | 2–3 días |
-| F1 | Núcleo: esquema SQLite, state machine pura, outbox, **fencing tokens, snapshot de evaluación y RuntimeResultEnvelope**, GitHub Gateway (solo lectura y etiquetas), `fak status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
+| F1 | Núcleo: esquema SQLite, state machine pura, outbox, **fencing tokens, snapshot de evaluación y RuntimeResultEnvelope**, GitHub Gateway (solo lectura y etiquetas), `fak status`. **Evento por cada salto en cascada del Scheduler (C4)**. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
 | F2 | Agent Runner: contratos, perfiles de permisos, `env -i`, validación de esquemas, ledger, timeouts y detección de cuelgue, detección de `rate_limit` | Ejecuciones simuladas (un *fake* `claude`/`codex` que emite JSON grabado) cubren éxito, esquema inválido, cuelgue y límite | 3–4 días |
-| F3 | Implementación y validación: worktrees, Implementer, Validator (incluidas las líneas `Verify:` y la receta `verification`), **pasada estática A1 (linters, semgrep, ast-grep, gitleaks, osv-scanner) y oráculo de tests A6**, **`fak doctor` en sus dos niveles**, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
-| F4 | Revisiones y coordinación: tres revisores (Codex solo P0/P1, alcance y reglas por ruta), **filtro barato A2, aprendizajes A3, modo sombra A5, taxonomía A8, revisión incremental A15**, Coordinator (tests de tabla para R0–R10 y R1b, clustering, cobertura, **ciclo de vida de clusters**), **manifiesto de validación transitivo y detector de debilitamiento de tests**, **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
-| F5 | Preparación y aprobación: lint AI-Ready (con `Verify:` por criterio), `fak doctor --init`, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
+| F3 | Implementación y validación: worktrees, Implementer, Validator (incluidas las líneas `Verify:` y la receta `verification`), **pasada estática A1 (linters, semgrep, ast-grep, gitleaks, osv-scanner) y oráculo de tests A6**, **`fak doctor` en sus dos niveles con el aislamiento del home (B0)**, **ruleset anti-stub (B7) y prueba diferencial (A7)**, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
+| F4 | Revisiones y coordinación: tres revisores (Codex solo P0/P1, alcance y reglas por ruta), **filtro barato A2, aprendizajes A3, modo sombra A5, taxonomía A8, revisión incremental A15**, Coordinator (tests de tabla para R0–R10 y R1b, clustering, cobertura, **ciclo de vida de clusters**), **manifiesto de validación transitivo y detector de debilitamiento de tests**, **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento, **`spec_defect`, `SPEC_GAP` y enmienda con `spec_amendments` (B8, B10), hallazgos fuera del delta (B9)** | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
+| F5 | Preparación y aprobación: lint AI-Ready (con `Verify:` por criterio, **L17 y `provided_by` de B2**), **`multiple_goals` en la lectura en frío (B3), `Review focus` opcional (B1)**, `fak doctor --init`, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
 | F6 | Merge y verificación: **tarjeta de aprobación, límites de PR esperando a un humano y de tamaño (A10), muestreo de merges automáticos (A14)**, Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `faktory21/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
-| F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `fak report`, captura de evidencia, **métricas de hallazgos atendidos por revisor y categoría (A12), propuestas de reglas a partir de hallazgos repetidos (A4)** | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
+| F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `fak report` (incluido `--run`, C4), captura de evidencia, **métricas de hallazgos atendidos por revisor y categoría (A12), propuestas de reglas a partir de hallazgos repetidos (A4)** | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
 | F8 | Piloto: 10–20 issues reales de riesgo low en un repo de DOMO21, sin merge automático (`auto_merge: none`) | Métricas base en el Registry: tasa de éxito sin humano, rondas, tasa de `rejected_by_judge`, coste de referencia por ítem | 2 semanas de calendario |
 
 Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistencia de agentes (la revisión 2 añade F0 ampliado, fallos inyectados y el filtro contrafactual). **[H]**: es una estimación sin datos de velocidad del equipo.
@@ -1507,7 +1592,9 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 ### 15.3 Después de v2.0
 
 - **v2.1**:
-  - Prueba diferencial ligera (A7) y evaluación propia de revisores con bugs inyectados (A13).
+  - Evaluación propia de revisores con bugs inyectados (A13) y evaluaciones de presión de los prompts de rol (B12).
+  - Mapa del repo como sección curada de CLAUDE.md (B4, **H-32**).
+  - Última ronda con un modelo superior, como variante secuencial de `alt_impl` y apagada por defecto (B11, **H-33**).
   - Codex Fixer, con el Opus Reviewer y la ronda reservada.
   - Varios implementadores (desactivado).
   - `max_parallel` mayor que 1.
@@ -1544,6 +1631,8 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | **Temporal / multi-host** | Sobredimensionado | **H-13** |
 | **RAG / memoria vectorial** | Opaco y caro; CLAUDE.md más el brief bastan | Ítems que fallan por desconocer convenciones que no estaban en CLAUDE.md |
 | **gh-aw como backend** | Credenciales de suscripción en Actions y bucles con estado | Necesidad de ejecutar sin host, o política que exija API key de todas formas |
+| **Mapa del repo (B4)** | Choca con §9.3 (reutilizar CLAUDE.md y AGENTS.md, sin almacén nuevo) y con el presupuesto de contexto del implementador (§8.5) | **H-15** (ítems que fallan por convenciones ausentes), o un Registry en el que dominen los tokens de exploración. Entonces, como sección curada de CLAUDE.md mediante el Opus curator |
+| **Última ronda con modelo superior (B11)** | Solapa con `alt_impl` ([A] desactivado), gasta la reserva de Opus del Judge (§10.3) y "activado por defecto" no tiene un claim que lo respalde (§12.4) | La misma señal que el Codex Fixer: más del 10 % de los ítems del piloto en STALLED con el mismo cluster persistente |
 | **Planner de slices (`/issue-plan` v2)** | El Preparer cubre una issue a la vez; partir épicas sigue con el `/issue-plan` de v1, que ya funciona | Épicas frecuentes |
 
 ---
@@ -1671,7 +1760,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | H-16 | Ponderación de la caché en la cuota | F0 y piloto |
 | H-17 | Calibración de capacidad por eventos de `rate_limit` | Piloto |
 | H-18 | Aportación única de Codex Reviewer. Primer indicio anecdótico: en `vela91/dev-harness` (EFI-101), Codex encontró un defecto real que Code Review no vio | 50 ítems |
-| H-26 | El límite de 4 rondas es adecuado. Indicio: en un proyecto real de `vela91/dev-harness`, dos tareas necesitaron 3 rondas, todas por defectos reales, y no por perfeccionismo | Piloto |
+| H-26 | El límite de 4 rondas es adecuado. Indicios: en un proyecto real de `vela91/dev-harness`, dos tareas necesitaron 3 rondas, todas por defectos reales y no por perfeccionismo. En la corrida de `almacen21` (19 de octubre), ALM-86 gastó 3 iteraciones, y una se debió a un defecto de la spec que B10 y C1 habrían evitado | Piloto |
 | H-19 | El test de reproducción previo reduce rondas y escapes en issues de tipo bug | Piloto |
 | H-20 | Hay autopreferencia de Codex al revisar su propio fix (medida en resúmenes, no en código) | v2.1 |
 | H-21 | Las confirmaciones estáticas del Judge (`judge_static`) acaban siendo `fixed_verified` | Piloto |
@@ -1683,4 +1772,6 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 | H-29 | La supresión por ≥ 3 rechazos parecidos reduce el ruido sin perder hallazgos confirmados (en Greptile, los atendidos pasaron del 19 % al 55 %, dato no trasladable) | Piloto |
 | H-30 | La pasada estática A1 reduce los hallazgos LLM redundantes y detecta secretos y dependencias que los LLM pasan por alto | Piloto |
 | H-31 | Los umbrales de ascenso de autonomía (15 merges sin escapes) y el descenso inmediato mantienen una tasa de *reverts* ≤ a la de PR humanos | Piloto |
+| H-32 | Un mapa del repo curado reduce los tokens de exploración y las rondas sin empeorar la calidad (B4) | v2.1 |
+| H-33 | Una última ronda con un modelo superior reduce STALLED y AWAITING_HUMAN más de lo que cuesta (B11) | v2.1 |
 | H-23 | Con Sonnet como escritor, Codex como revisor de solo lectura aporta más de lo que daña (Xiang et al. midió Opus 4.7 escribiendo y revisores que reescriben; no es trasladable) | 50 ítems |

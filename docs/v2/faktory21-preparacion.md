@@ -82,6 +82,7 @@ Objetivo y por qué, en 2–6 líneas. Describe el resultado, no las capas.
 ## Context
 - Pattern to follow: `src/api/users.ts` (validación con zod + error unificado `ApiError`).
 - Interface: `function listTasks(filter: TaskFilter): Promise<Task[]>` en `src/api/tasks.ts:42`.
+- Consumes (provided_by: #118): `function archiveTask(id: number): Promise<void>` en `src/api/tasks.ts` (new).
 - Decision (2026-10-12, #120 Decisions Q3): los ids no numéricos devuelven 400, no 404.
 - From external doc "API errores v2" (Drive, 2026-10-01, resumido): formato `{error, code}`.
 
@@ -125,6 +126,8 @@ Files likely touched: `src/api/tasks.ts`, `src/api/tasks.test.ts`
 | `Acceptance criteria` | Sí | Ids `AC-n`. Forma EARS (While / When / Where / If…then / The … shall) o Given/When/Then. **Cada criterio lleva su `Verify (http\|cli\|browser\|inspection)`** |
 | `Unchanged behavior` | Sí en `bug` y `refactor` | Protege contra regresiones. Se adapta del `bugfix.md` de Kiro |
 | `Constraints` | Si hay requisitos no funcionales | Rendimiento, seguridad, compatibilidad, i18n, accesibilidad o migraciones, **con umbral numérico y cómo se mide**. "Rápido" sin número no pasa el lint |
+| `Context`: `Produces` / `Consumes` [P; B2] | Si el slice tiene dependencias (`Blocked by`) o dependientes | El productor declara la firma exacta que expone (`Produces:`) y el consumidor la que usa (`Consumes (provided_by: #N):`). Lo comprueba L17 |
+| `Review focus` [P; B1] | No (opcional) | De 2 a 5 modos de fallo que la spec implica y que ningún AC ejercita todavía. Cada uno se convierte, si se puede, en un AC con `Verify`. Lo que queda llega a los revisores como dato y no cambia la regla de evidencia (spec §5.6) |
 | `Out of scope` | Sí | Al menos una línea, o `None` |
 | `Assumptions` | Sí | Cada supuesto queda confirmado (con su fuente) o pendiente. Si hay alguno pendiente, la issue no está lista |
 | `Test data & environment` | Sí | Fixtures, cuentas de prueba, servicios. Las variables de entorno solo por **nombre**. Si exige algo que la receta `verification` del repo no da, no está lista |
@@ -242,7 +245,7 @@ nunca se cierra de forma automática)
      - que el **hash del cuerpo actual coincida con el que pasó la puerta**.
    - Si no coincide (alguien editó después), se retira la etiqueta, se explica en un comentario y se vuelve a pasar la puerta.
 10. **Caducidad de la disponibilidad [P].** Antes de despachar, el runner hace dos cosas:
-    - vuelve a pasar el lint (es barato): rutas y símbolos de `Context` existentes, y `Blocked by` resueltos;
+    - vuelve a pasar el lint (es barato): rutas y símbolos de `Context` existentes, y `Blocked by` resueltos. Las entradas `Consumes` (B2) ya no están exentas de L8: tras el merge del productor, su firma tiene que existir en la base, y si no, el consumidor vuelve a preparación;
     - si la base acumuló más de N commits en los `Files likely touched` desde la puerta (**H-P5**), repite la lectura en frío.
 
     Si aparecen preguntas bloqueantes, el ítem vuelve a preparación y no se despacha. En v2.0 solo se repite el lint.
@@ -260,7 +263,7 @@ nunca se cierra de forma automática)
 | L5 | Léxico vago sin número: "rápido", "robusto", "intuitivo", "fácil", "adecuado", "como se espera", "etc." (lista por idioma en `policy.yml`) | Bloqueante si aparece en un criterio o restricción; aviso en el resto |
 | L6 | Ningún `TODO`, `TBD`, `[NEEDS CLARIFICATION`, `???` ni supuesto pendiente | Bloqueante |
 | L7 | Las rutas de `Context` y `Files likely touched:` existen en la base (`git ls-files` / `git cat-file`), salvo las marcadas `(new)` | Bloqueante |
-| L8 | Los símbolos citados con `ruta:línea` existen (`git grep -n` en la base) | Aviso; bloqueante si están en una `Interface` |
+| L8 | Los símbolos citados con `ruta:línea` existen (`git grep -n` en la base) | Aviso; bloqueante si están en una `Interface`, salvo las entradas `Consumes` con `provided_by` mientras el productor no esté fusionado (L17) |
 | L9 | `Blocked by` apunta a issues abiertas del mismo repo que no son de seguimiento, y el DAG no tiene ciclos | Bloqueante |
 | L10 | Sin URLs externas fuera de bloques `From external doc` | Bloqueante: hay que resumir o descartar |
 | L11 | Tamaño del cuerpo ≤ el presupuesto (**H-P1**) y `Size` coherente con `Files likely touched` | Bloqueante, con propuesta de corte |
@@ -269,6 +272,8 @@ nunca se cierra de forma automática)
 | L14 | Si es `bug`: reproducción (pasos o test) o `no_repro_reason` | Bloqueante |
 | L15 | Sin patrones de instrucción dirigida a agentes ni secretos (escáner de secretos y patrones de inyección) | Bloqueante, con aviso privado a los `owners` |
 | L16 | `Risk` presente. Las reglas de ruta de `policy.yml` lo **suben** si hace falta, nunca lo bajan | Se corrige solo, con aviso |
+| L17 | Si un slice declara `Consumes` con `provided_by: #N` (B2), la firma coincide, **normalizada** (espacios y genéricos), con el `Produces` del slice #N, y #N está en `Blocked by`. Estas entradas quedan exentas de L8 hasta que se fusiona el productor | Bloqueante |
+| L18 | Heurística de C1: frases como "is accepted", "se acepta", "per worker" o "por instancia" fuera de los AC, sin un AC que recoja ese límite | Aviso para el Spec Critic |
 
 El lint corre en tres momentos: en cada borrador, en el cuerpo publicado antes de la aprobación y otra vez antes de despachar.
 
@@ -285,7 +290,8 @@ El lint corre en tres momentos: en cada borrador, en el cuerpo publicado antes d
   "blocking_questions": [{"id": "CQ-1", "question": "…", "why_blocking": "sin esto no puedo decidir X", "spec_ref": "AC-2"}],
   "assumptions_i_would_make": [{"text": "…", "spec_ref": null}],
   "verify_feasibility": [{"ac": "AC-1", "status": "clear|unclear|impossible", "note": "…"}],
-  "contradictions": [{"between": ["AC-1", "Constraints#2"], "note": "…"}]
+  "contradictions": [{"between": ["AC-1", "Constraints#2"], "note": "…"}],
+  "multiple_goals": false
 }
 ```
 
@@ -298,6 +304,9 @@ El lint corre en tres momentos: en cada borrador, en el cuerpo publicado antes d
 - Los ficheros del `plan_sketch` difieren de `Files likely touched`. Si el lector toca ficheros no declarados, falta un fichero o el alcance no está claro.
 - Algún criterio tiene `verify_feasibility` en `unclear` o `impossible`.
 - Hay `contradictions`.
+- `multiple_goals: true` [P; B3, BMAD]: el `What to build` persigue más de un resultado. Se trata como una propuesta de corte, igual que L11.
+
+Las `blocking_questions` se ordenan por "cambiaría el plan", primero las que más lo cambiarían (B3).
 
 **Por qué Sonnet y no Opus.** La pregunta es si **este** implementador tiene lo que necesita. Ambig-SWE midió que Sonnet 4 detecta especificaciones incompletas con un 0,74 de acierto (prompt neutro) a un 0,89 (prompt explícito) cuando se le pide. Eso se aprovecha aquí, antes de implementar, que es justo cuando no lo haría solo. Cuesta una ejecución de solo lectura por slice, mucho menos que una implementación fallida (**H-P2**).
 
@@ -318,6 +327,9 @@ Un `codex exec --sandbox read-only` con salida JSON por esquema. Recibe el cuerp
 - Cada hallazgo **cita el texto** de la spec al que se refiere y la consecuencia para la implementación.
 - Severidad `blocking|major|minor`, con un máximo de 10 hallazgos.
 - Se excluye explícitamente el estilo.
+- **Decisiones dentro del criterio [P; C1, `vela91/dev-harness` #11].** El Spec Critic comprueba de forma explícita que ninguna decisión de `What to build`, `Context` o `Assumptions` contradiga un AC o lo acote sin estar escrita en él. Si una decisión acota o relaja un criterio, por ejemplo con "se acepta que…", un alcance, una precisión o "por proceso" frente a "por instancia", ese límite se escribe **en el texto del AC**, porque los revisores validan contra el criterio y no contra la descripción. El prompt incluye el caso ALM-86 antes y después:
+  - Antes: `What to build` aceptaba que el límite contara por worker, y el AC decía "más de 10 logins/min → 429".
+  - Después: "AC-1: WHEN un mismo worker recibe más de 10 logins/min THE API SHALL responder 429 (el límite es por worker, no global; decisión D-2)".
 
 ### 6.2 Por qué dos revisores
 
@@ -349,7 +361,8 @@ La evidencia de revisión de requisitos con LLM indica baja exhaustividad por mo
 - **`ReconcileResult`** (Opus): lista de `{ref, outcome ∈ covered|extend|depends|supersedes|conflict|new, reason}`.
 - **`InterviewRound`**: preguntas `{id, question, options[], recommended, kind: product|technical, affects: [slice]}`.
 - **`PlanDraft`** (Opus): `slices[]`, cada uno con un `IssueSpec`:
-  - `what`, `context[]` (cada uno `{type: pattern|interface|decision|external, text, source}`);
+  - `what`, `context[]` (cada uno `{type: pattern|interface|produces|consumes|decision|external, text, source, provided_by}`; `provided_by` solo en `consumes`);
+  - `review_focus[]` (opcional, B1);
   - `acceptance[]` (`{id, text, form: ears|gwt|free, verify: {kind, check, expected}}`);
   - `unchanged[]`, `constraints[]` (`{text, threshold, how_measured}`), `out_of_scope[]`;
   - `assumptions[]` (`{id, text, status: confirmed|pending, source}`);

@@ -589,6 +589,17 @@ Se leyó como datos, sin cargar sus skills ni ejecutar nada.
 - Revisiones disparadas por un hook de `SubagentStop`, que es frágil (H8, H13). En v2 el coordinator lanza a los revisores.
 - `git remote set-head origin` persistente, que muta el checkout del proyecto.
 
+**Actualización del 2026-10-21 (C1–C6).** No hay código nuevo después de `6499769`, que sigue siendo la punta de `master`. Hay 8 issues nuevos del 19 de octubre. Los #8–#11 salen de una **tercera corrida real** sobre `almacen21` (GitHub, `target_branch: develop`, `merge_mode: auto`, paralelismo 2) [EXP, n pequeño]:
+
+- El hook `SubagentStop` no se disparó en **ninguno** de los 4 finales de Implementer (#8, H13 reabierto). Refuerza la decisión de no usar hooks.
+- Los Implementers escriben las entradas del log al final, todas con la misma hora (#10). Refuerza I11: el estado y las horas los escribe el coordinator.
+- Un orquestador que vive dentro de una sesión no puede detectar Implementers colgados (#2). Refuerza `hang_s`, `deadline_s` y el lease.
+- La receta de verificación falló dentro del sandbox de Codex (`$TMPDIR` fuera del workspace, `pnpm install` sin TTY), aunque `doctor --full` había dado verde fuera (#9). Da lugar a C2.
+- Codex rechazó ALM-86 porque `What to build` y el AC se contradecían. Se gastó una iteración y hizo falta un humano (#11). Da lugar a C1 y es el primer caso real que justifica B10.
+- Además: configuración local que no llega a los worktrees (#3, C3), falta de un informe de fin de tanda y saltos sin registro (#4, C4), y un esfuerzo heredado del último valor tecleado (#1, C5).
+
+Adoptadas en la spec, revisión 4: C1–C5. C6 es esta misma actualización de la evidencia, más H-26. Fuente: `/mnt/project-files/dev-harness/propuestas-C.md`.
+
 ## 12. Investigación para la fase de preparación (2026-10-19)
 
 **Mecanismos existentes:**
@@ -652,7 +663,21 @@ Se revisaron GSD (`gsd-build/get-shit-done` @ `bdcaab2`, archivado; `open-gsd/gs
 
 Conclusión: no se adopta ninguno como dependencia. Son metodologías aplicadas mediante prompts en sesiones interactivas, y sus propias fuentes documentan los fallos que un coordinador determinista evita:
 
-- En Superpowers, el agente se saltaba el design doc en 24 de 24 ejecuciones.
-- GSD reconoce que "the orchestrator cannot verify semantic correctness".
+- En Superpowers, una ejecución del flujo con subagentes cuesta unos 13 USD, y el controlador se lleva la mitad.
+- GSD reconoce que "the orchestrator cannot verify semantic correctness" (`references/context-budget.md`).
 
-Se proponen B0–B12 (`metodologias-absorcion.md` §3), pendientes de decisión. Las hipótesis nuevas son H-32 (mapa del repo) y H-33 (última ronda con Opus).
+Se propusieron B0–B12 (`metodologias-absorcion.md` §3). Las hipótesis nuevas son H-32 (mapa del repo) y H-33 (última ronda con un modelo superior).
+
+**Validación independiente (2026-10-21).** Una revisión con otro modelo (Fable) volvió a comprobar las fuentes y encontró afirmaciones que no se pudieron verificar en los ficheros citados:
+
+- el "24 de 24" de Superpowers;
+- que Superpowers retirara un segundo revisor por "expensive and easy to game";
+- que `writing-plans` ya no use pasos de 2–5 minutos, cuando sigue usándolos.
+
+Se corrigieron en `metodologias-absorcion.md`. Veredictos:
+
+- B6 descartada, porque la sustituye A7, adelantada a v2.0;
+- B4 y B11 aplazadas a v2.1;
+- el resto adoptadas con cambios (§3b de ese documento).
+
+Aplicadas en la spec, revisión 4.

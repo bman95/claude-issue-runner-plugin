@@ -4,11 +4,13 @@
 
 Fecha: 2026-10-21. Modo: investigación y diseño. No se instaló ni ejecutó nada de estos repos; se leyeron como datos.
 
+**Revisión 2 (2026-10-21).** Una revisión independiente (Fable) volvió a comprobar las fuentes y el encaje con la spec. Se corrigen afirmaciones de fuente que no se pudieron verificar (§1), y los veredictos finales están en **§3b**. Donde §3 y §3b difieran, manda §3b. Lo adoptado ya está en la spec (revisión 4).
+
 ## 0. Resumen para humanos
 
 - **Ninguno sustituye a nuestro diseño.** Los cinco son metodologías **escritas en prompts** para sesiones interactivas: un humano delante y un agente que sigue skills o comandos. Nuestro producto es una tubería desatendida con un coordinador determinista. Sus propias fuentes admiten los fallos que el coordinador evita:
-  - En Superpowers, el agente se saltaba el design doc en 24 de 24 ejecuciones, y en 3 de 24 después del arreglo. Cuesta unos 13 USD por ejecución.
-  - GSD reconoce que "the orchestrator cannot verify semantic correctness of agent output — only structural completeness". Su orquestación son 1.415 líneas de prosa parcheadas issue a issue, y depende de hooks.
+  - En Superpowers, una ejecución de su flujo con subagentes cuesta unos 13 USD, y el controlador se lleva la mitad (`strict-cost-sdd-design.md`). Una puerta impuesta solo por prompt depende de que el agente obedezca.
+  - GSD reconoce que "the orchestrator cannot verify semantic correctness of agent output — only structural completeness" (`references/context-budget.md`). Su orquestación (`workflows/execute-phase.md`, unas 1.380 líneas en main) es prosa parcheada issue a issue.
 - **Sí tienen técnicas valiosas a nivel de prompt y de formato.** Las meteríamos en nuestros prompts de rol, en el formato AI-Ready y en el Review Coordinator. Las propongo como **B1–B12** (§3).
 - **Mucho ya lo teníamos.** La taxonomía `clarify` y los "unit tests for English" de Spec Kit, la congelación de la spec al aprobar, la lectura en frío, worktrees aislados, el test de reproducción que falla en la base, las waves con conflicto por ficheros y la espera por cuota ya estaban en el diseño. Lo marco para no duplicar.
 - **Recomendación:** no adoptar ninguno como dependencia ni combinarlos. Copiar las ideas (todas son MIT, así que se pueden copiar textos conservando el aviso) y medirlas con nuestro Registry.
@@ -19,7 +21,7 @@ Fecha: 2026-10-21. Modo: investigación y diseño. No se instaló ni ejecutó na
 |---|---|---|---|
 | Get Shit Done | `gsd-build/get-shit-done` @ `bdcaab2` (2026-05-31) | MIT | **Archivado** el 2026-06-26. Su README apunta a GSD Core, pero GSD Core no menciona al original. El original solo declaraba soporte para Claude Code; la lista amplia de agentes es de GSD Core |
 | GSD Core | `open-gsd/gsd-core` @ `812ddb5` (2026-10-21) | MIT | Instalación `npx @opengsd/gsd-core@latest` confirmada. Hay un paso opcional de UI entre discuss y plan. La verificación tiene dos partes: un agente verificador y una UAT con el usuario. Los "200k de contexto limpio" son una cifra de la documentación, no un límite que el sistema imponga |
-| Superpowers | `obra/superpowers` @ `2ce8aa1`, v7.0.1 (2026-10-21) | MIT | Ya **no** usa tareas de "2–5 minutos": ahora cada paso es "one action with a checkable result". Ya **no** tiene dos revisores por tarea: queda un revisor con dos veredictos (spec y calidad), porque dos eran "expensive and easy to game" |
+| Superpowers | `obra/superpowers` @ `2ce8aa1`, v7.0.1 (2026-10-21) | MIT | `writing-plans` **sigue** pidiendo pasos de "2-5 minutes" (la primera versión de este documento decía lo contrario, y era un error). El revisor por tarea da dos veredictos: spec y calidad. No se pudo verificar en las fuentes citadas que antes hubiera dos revisores ni el motivo de retirarlos |
 | Spec Kit | `github/spec-kit` main, v1.2.3.dev0 | MIT | Python 3.11+ y `uv` confirmados. Los comandos se escriben ahora `/speckit-specify` (con guion). Hay comandos nuevos: `converge` y `taskstoissues` |
 | OpenSpec | `Fission-AI/OpenSpec` v1.14.3 | MIT | Node ≥ 20.19.0 confirmado. Los comandos son `/opsx:explore\|propose\|apply\|archive` |
 | BMAD | `bmad-code-org/BMAD-METHOD` v6.12.4 (v7 en alfa) | MIT | Ya no hay agentes SM ni QA. Los *story files* son *shims* obsoletos. Las vías "quick/full" pasan a llamarse *planning paths* (Trivial / One session / Epic / Project). Las *QA gates* son un módulo enterprise aparte (TEA). No hay *sharding* en 6.12.4 |
@@ -33,7 +35,7 @@ El criterio final del resumen ("elegir uno según el problema y no combinarlos")
 | Taxonomía `clarify` y "unit tests for English" (Spec Kit) | Rúbrica del Spec Critic (preparación §6.1) |
 | Máx. 3 `[NEEDS CLARIFICATION]`, léxico vago (Spec Kit) | Lint L5 y L6: no se admite ninguno |
 | `frozen-after-approval` (BMAD) | Aprobación ligada al hash de la spec y PAUSED_SPEC_DRIFT. El hash es más fuerte |
-| Builder check: un subagente nuevo lee el diseño sin poder preguntar (Superpowers) | Lectura en frío con Sonnet (preparación §5) |
+| Builder check: un subagente nuevo lee el diseño y hace una ronda de preguntas (Superpowers) | Lectura en frío con Sonnet (preparación §5) |
 | Requisito con escenario verificable por un tercero (OpenSpec) | AC en forma EARS o GWT con línea `Verify` (L2, L4) |
 | Tope de preguntas y opción recomendada primero (Spec Kit, GSD) | Entrevista del Planner con un máximo de 5 preguntas por ronda |
 | Waves por dependencias y solape de ficheros (GSD) | DAG con `Blocked by` y aristas de conflicto por `Files likely touched` |
@@ -47,6 +49,8 @@ El criterio final del resumen ("elegir uno según el problema y no combinarlos")
 ## 3. Propuestas B1–B12
 
 Notación: **[P]** propuesta, **[H]** hipótesis que medir. La columna "coste" es el trabajo añadido en v2.0.
+
+> Este es el texto original de las propuestas. **Los veredictos y los cambios que se aplicaron están en §3b.** Varias atribuciones de fuente de esta sección se corrigieron allí.
 
 ### Preparación
 
@@ -188,6 +192,34 @@ Amplía A13:
   - si un PR los modifica, no es plano de control salvo que `policy.yml` lo declare.
 - Coste: muy bajo. Prioridad alta, porque es un fallo silencioso.
 
+## 3b. Validación independiente y veredictos (revisión 2)
+
+Fable revisó B0–B12 contra la spec rev. 3, el documento de preparación y A1–A15, y comprobó con WebFetch los ficheros citados. Bryan aprobó aplicar sus veredictos el 2026-10-21.
+
+| Prop. | Veredicto | Qué se cambió respecto a §3 | Dónde está en la spec |
+|---|---|---|---|
+| B0 | **Adoptada** | El checklist incluye también el `CLAUDE.md` de usuario en `$FAK_AGENT_HOME`. Va en el nivel barato de `fak doctor`. Los hooks PreCompact/Stop de GSD no se encontraron en los ficheros citados, y el argumento se apoya solo en el hook `SessionStart` de Superpowers, que sí se verificó | Spec §3.1 |
+| B1 | **Adoptada con cambios** | La sección "Review focus" **no existe** en `writing-plans` (lo más cercano es "Self-Review"), así que la idea es nuestra. La sección es **opcional**. Cada entrada se convierte, cuando se puede, en un AC con `Verify`. Lo que queda llega al revisor como dato de la spec y no cambia R6 | Preparación §1.2; spec §5.6 |
+| B2 | **Adoptada con cambios** | `provided_by: #N` en `context[]`. Esas entradas quedan exentas de L8 hasta que se fusiona el productor. L17 compara firmas normalizadas. La comprobación tras el merge amplía el lint previo al despacho, sin mecanismo nuevo | Preparación §1.2, §3.2, §4 y §7 |
+| B3 | **Adoptada con cambios** | Solo `multiple_goals` y el orden "cambiaría el plan". Se descarta la taxonomía de tres montones, que duplica `blocking_questions` y `assumptions_i_would_make`. En Superpowers, además, clasifica el agente principal, no el builder | Preparación §5 |
+| B4 | **Aplazada a v2.1** | Choca con §9.3 (reutilizar CLAUDE.md) y con el presupuesto de contexto (§8.5). Si entra, lo hará como sección curada de CLAUDE.md | Spec §16; H-32 |
+| B5 | **Adoptada con cambios** | Sin `completed_with_concerns`: `risk_notes` ya existe y va a la tarjeta y al Judge, **nunca a los revisores**. Se mantiene `blocker.kind = architecture`, que lleva a B10. Los 3 intentos fallidos en la implementación inicial se traducen en `blocked` (`no_root_cause`). En la regla 4 de GSD la fuente es `execute-plan.md`/`gsd-executor` | Spec §5.4 y §7.3 |
+| B6 | **Descartada** | La sustituye A7, adelantada a v2.0. Es más fuerte porque no depende de lo que declare el implementador | Spec §5.5 |
+| B7 | **Adoptada con cambios** | Se entrega como ruleset `ast-grep` por defecto, no como regex fijas. Severidades alineadas con A8: un stub pasa a `spec_mismatch`/`major`, un TODO sin issue a `minor` y un símbolo sin uso a `nit` | Spec §5.5 |
+| B8 | **Adoptada con cambios** | "La justificación nunca baja la severidad" va al prompt del **Judge**, porque los revisores no ven la justificación. No se añaden campos: se usan los existentes, más `objection_type: spec_defect`. No se verificó la deduplicación por causa raíz de BMAD, así que no se adopta | Spec §5.6, §5.7 y §7.4 |
+| B9 | **Adoptada con cambios** | Se mantiene el vocabulario de §6.5b (`resolved\|still_present\|regressed`); Superpowers no tiene `regressed`. La regla se limita a hallazgos nuevos fuera del delta que caerían en R6, que pasan a DEFER sin llamar al Judge. Un DEFER de algo bloqueante sigue exigiendo una Authorization humana | Spec §6.4 |
+| B10 | **Adoptada con cambios** | Contador `spec_amendments` (2). `spec_defect` y `architecture` pasan siempre por el Judge. Si el hueco es de producto, AWAITING_INPUT; si es técnico, enmienda. La enmienda se vuelve a aprobar ligada al nuevo hash. `SPEC_GAP` en `dispositions`. Se vuelve a pasar L17 a los consumidores. D16 y D17 | Spec §4.2, §4.3, §5.7, §7.5 y §14.2 |
+| B11 | **Aplazada a v2.1** | Solapa con `alt_impl`, gasta la reserva de Opus y "activado por defecto" choca con §12.4. Si entra, será como variante secuencial de `alt_impl`, apagada por defecto | Spec §16; H-33 |
+| B12 | **Adoptada con cambios** | La regla de redacción entra ya, con coste cero. Las evaluaciones de presión pasan a v2.1 con A13 | Spec §12.4 y §15.3 |
+
+**Problemas transversales que se resolvieron al integrar:**
+
+- **Cadena B5 → B8 → B10.** `architecture` y `spec_defect` solo tienen sentido con B10, así que entran juntas.
+- **Sesgo del revisor.** Al revisor solo le llegan la spec aprobada, la base y el diff. Nada del implementador (ni `risk_notes`) y ninguna instrucción por ítem del coordinador.
+- **Vocabulario de clusters.** Uno solo, el de §6.5b.
+- **Contadores.** Toda vuelta atrás nueva consume uno (`spec_amendments`).
+- **Enmiendas y slices dependientes.** Si una enmienda cambia una firma `Produces` o los `Files likely touched`, los consumidores vuelven a pasar el lint (D17).
+
 ## 4. Lo que se descarta
 
 | Idea | Motivo |
@@ -197,11 +229,11 @@ Amplía A13:
 | Personas multiagente: analista, PM, arquitecto (BMAD) | Ceremonia ajena a un coordinador de issues; nuestro Planner ya cubre la parte útil |
 | PRD, arquitectura y épicas como artefactos obligatorios (BMAD, Spec Kit) | Demasiado pesado por issue. La issue AI-Ready es el único artefacto |
 | UAT conversacional (GSD) | Nuestra verificación es `Verify` ejecutado por el coordinador |
-| "Borrar el código escrito antes del test" (Superpowers) | No se puede comprobar después. B6 contrasta la evidencia RED/GREEN, que sí se puede |
-| Gate de diseño impuesto solo por prompt | Superpowers lo incumplía 24 de 24 veces. Nuestras puertas son de código |
+| "Borrar el código escrito antes del test" (Superpowers) | No se puede comprobar después. A7 (adelantada a v2.0) compara los tests nuevos en la base y en el candidato, que sí se puede |
+| Gate de diseño impuesto solo por prompt | Depende de que el agente obedezca. Nuestras puertas son de código |
 | `verify` que no bloquea (OpenSpec) | Nuestro merge exige evidencia |
-| Dos revisores por tarea dentro del mismo modelo | Superpowers lo retiró por caro y fácil de engañar. Nuestros dos revisores son de familias distintas y con evidencia |
-| Instalar cualquiera de estos sistemas como dependencia | Duplicaría planes, preguntas y revisiones, y acoplaría el producto a prompts de terceros que cambian cada semana (Superpowers v7 cambió dos mecanismos centrales) |
+| Dos revisores por tarea dentro del mismo modelo | No aporta diversidad de familia. Nuestros revisores son de familias distintas y necesitan evidencia |
+| Instalar cualquiera de estos sistemas como dependencia | Duplicaría planes, preguntas y revisiones, y acoplaría el producto a prompts de terceros que cambian con frecuencia |
 
 ## 5. Aplazado
 
@@ -210,16 +242,18 @@ Amplía A13:
 
 ## 6. Dónde caería cada propuesta si se aprueba
 
+(Tabla original. El destino final de cada propuesta está en §3b.)
+
 | Propuesta | Documento y sección |
 |---|---|
-| B0 | Spec §8.2 y §8.4 (`fak doctor`), §13 |
+| B0 | Spec §3.1 (`fak doctor`, nivel barato), §8.2, §13 |
 | B1, B2, B3 | Preparación §1.2 (formato), §4 (lint L17), §5 (lectura en frío) |
 | B4 | Preparación §2, spec §8.5; H-32 |
 | B5, B6 | Spec §5.4 y §7.3 (`completed_with_concerns`, `concerns[]`, `tdd_evidence[]`, `blocker.kind = architecture`) |
 | B7 | Spec §5.5 (A1) |
 | B8, B9 | Spec §5.6, §6.4, §6.5b y §7.4 (`spec_defect`, `addressed\|not_addressed\|regressed`) |
-| B10 | Spec §4.2 (transición a PREPARING en modo enmienda), §5.7 y §7.5 (`SPEC_GAP`); preparación §3 |
-| B11 | Spec §4.3 y §5.8; H-33 |
+| B10 | Spec §4.2 (transición a PREPARING en modo enmienda), §4.3, §5.7, §7.5 (`SPEC_GAP`) y §14.2; preparación §3 |
+| B11 | Spec §5.9 y §15.1 (aplazada: §16); H-33 |
 | B12 | Spec §12.3 |
 
 ## Fuentes
