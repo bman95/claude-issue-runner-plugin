@@ -223,6 +223,7 @@ footer { font-size: 13px; color: var(--muted); }
             <tr><td><code>validation_retries_per_round</code></td><td class="num">2</td><td>Ronda fallida; MUST_FIX</td></tr>
             <tr><td><code>adjudications</code></td><td class="num">3</td><td>AWAITING_HUMAN</td></tr>
             <tr><td><code>codex_fix</code></td><td class="num">1</td><td>El Judge no puede volver a elegirlo</td></tr>
+            <tr><td><code>spec_amendments</code></td><td class="num">2</td><td>AWAITING_HUMAN</td></tr>
             <tr><td><code>base_refresh</code></td><td class="num">3</td><td>Lock y luego humano</td></tr>
             <tr><td><code>infra_retries_per_attempt</code></td><td class="num">1</td><td>FAILED_INFRA</td></tr>
             <tr><td>Coste de referencia</td><td class="num">40 USD</td><td>AWAITING_HUMAN</td></tr>
@@ -300,6 +301,7 @@ footer { font-size: 13px; color: var(--muted); }
         "Sonnet edita, ejecuta tests y hace commits locales.",
         "Si es un bug y el repo tiene tests, escribe primero un test de reproducción en un commit aparte con el trailer <code>Faktory21-Repro</code>.",
         "Puede añadir tests nuevos, pero no cambiar los que lo juzgan (el oráculo, paso 4).",
+        "Su prompt fija qué evidencia demuestra cada afirmación, le permite parar sin penalización y le pide parar (<code>blocked</code>, <code>architecture</code>) si cumplir la spec exige un cambio de arquitectura no previsto. Las dudas que no bloquean van a <code>risk_notes</code>, que ve el Judge y nunca los revisores.",
         "No marca los criterios de aceptación como cumplidos: su mapeo es informativo. Quien lo decide son la validación y Code Review."
       ],
       ctx: [
@@ -316,7 +318,8 @@ footer { font-size: 13px; color: var(--muted); }
         "Edit y Write solo en su worktree",
         "Bash dentro del sandbox del sistema (Seatbelt o bubblewrap), que falla si no está disponible",
         "Red solo hacia la lista de dominios permitidos",
-        "80 turnos y 45 minutos como máximo; sesión nueva (en la ronda 2 se reanuda)"
+        "80 turnos y 45 minutos como máximo; sesión nueva (en la ronda 2 se reanuda)",
+        "Modelo y esfuerzo siempre explícitos en la invocación; nunca heredados de la configuración del usuario. <code>fak doctor</code> comprueba que su home no tiene plugins, skills ni hooks"
       ],
       out: "<code>ImplementationResult</code> en JSON: <code>status</code> (<code>completed | blocked | needs_clarification</code>), mapeo AC→evidencia, tests añadidos, respuestas por cluster, preguntas, riesgos y datos aprendidos sobre el repo.",
       decide: [
@@ -344,6 +347,8 @@ footer { font-size: 13px; color: var(--muted); }
         ["<code>needs_clarification</code> con pregunta de producto", P("human", "AWAITING_INPUT, sin gastar contadores")],
         ["<code>blocked</code> por el entorno", P("stop", "FAILED_INFRA") + " o " + P("human", "AWAITING_HUMAN")],
         ["<code>blocked</code> por dependencia de contrato", P("wait", "CONTRACT_FIRST_STOP")],
+        ["<code>blocked</code> con <code>architecture</code>", P("wait", "Paso 10 · el Judge decide si es un hueco de spec")],
+        ["<code>blocked</code> con <code>no_root_cause</code> (bug sin causa tras 3 hipótesis)", P("human", "AWAITING_HUMAN con diagnóstico")],
         ["Toca rutas protegidas", P("human", "AWAITING_HUMAN antes de cualquier revisión")],
         ["Diff de más de 600 líneas", P("human", "AWAITING_HUMAN con propuesta de corte")],
         ["El test de reproducción no falla en la base", P("loop", "Hallazgo repro_invalid")],
@@ -360,7 +365,10 @@ footer { font-size: 13px; color: var(--muted); }
         "Ejecuta cada línea <code>Verify (http|cli|browser)</code> de la spec: arranca el servicio con la receta del repo en un worktree temporal y anota <code>passed | failed | error</code> por criterio.",
         "Pasada estática sobre el diff: linters del proyecto, <code>semgrep</code>/<code>opengrep</code>, reglas <code>ast-grep</code> de la base, <code>gitleaks</code> y <code>osv-scanner</code>, más dependencias sin versión fija.",
         "Protege el oráculo: los tests de reproducción y de Verify, los que la spec cita como cobertura y los de la base que ya pasaban.",
-        "Detecta debilitamiento de tests: tests borrados, <code>skip</code>/<code>xfail</code>/<code>.only</code> añadidos, asserts eliminados, cobertura reducida."
+        "Detecta debilitamiento de tests: tests borrados, <code>skip</code>/<code>xfail</code>/<code>.only</code> añadidos, asserts eliminados, cobertura reducida.",
+        "Barrido anti-stub (ruleset <code>ast-grep</code> por defecto): cuerpos de relleno nuevos, TODO sin issue y símbolos exportados sin uso.",
+        "Prueba diferencial: ejecuta sobre la base los tests añadidos. Si un test de comportamiento nuevo ya pasa allí, no prueba nada.",
+        "Todo se ejecuta en un entorno fijo: <code>env -i</code>, <code>TMPDIR</code> dentro del worktree, <code>CI=1</code>, sin stdin ni TTY. Es el mismo que comprueba <code>fak doctor --full</code>."
       ],
       ctx: ["Contrato <code>.faktory21/validation</code> y manifiesto de validación de la base", "Diff base…candidato", "Spec congelada con sus líneas Verify"],
       not: ["Nunca ejecuta scripts de validación que el candidato haya modificado; eso es plano de control y va a una persona"],
@@ -373,6 +381,8 @@ footer { font-size: 13px; color: var(--muted); }
         ["Un Verify da <code>error</code> (no arranca el servicio)", P("loop", "1 reintento") + " " + P("stop", "luego FAILED_INFRA, sugiere fak doctor --full")],
         ["Secreto nuevo, dependencia vulnerable alta o sin versión fija", P("stop", "MUST_FIX directo (R1b), no se discute")],
         ["Se toca un test del oráculo sin que la spec lo pida", P("stop", "Debilitamiento de tests, severidad blocker")],
+        ["Stub nuevo en código que no es de test", P("loop", "spec_mismatch major (R5)")],
+        ["Un test nuevo de comportamiento ya pasa en la base", P("loop", "Hallazgo tests major confirmado")],
         ["Todo en verde", P("ok", "Paso 5")]
       ]
     },
@@ -408,7 +418,9 @@ footer { font-size: 13px; color: var(--muted); }
         "Todo hallazgo <code>major</code> o superior debe traer un escenario de fallo concreto y, si puede, un test de reproducción que ejecutará el coordinador.",
         "No se les pide propuesta de arreglo: pedir explicación y arreglo aumenta los rechazos falsos.",
         "Desde la segunda ronda reciben el delta y sus clusters abiertos, y dicen de cada uno <code>resolved | still_present | regressed</code>. Si el delta supera el 40 % del diff, revisión completa.",
-        "Perfil solo-documentación: si todos los ficheros son documentación y ninguno es protegido, no se lanza Security Review."
+        "Perfil solo-documentación: si todos los ficheros son documentación y ninguno es protegido, no se lanza Security Review.",
+        "Solo reciben la spec aprobada, la base, el diff y las reglas por ruta. El coordinador nunca añade instrucciones por ítem. Si la spec trae <code>Review focus</code>, llega como dato y no rebaja la exigencia de evidencia.",
+        "Si el código hace lo que pide la spec pero la spec está mal, se reporta como <code>spec_defect</code>, que siempre decide el Judge."
       ],
       agents: [
         { a: "claude", h: "Code Review", eng: "<code>claude -p</code>; Sonnet si el riesgo es bajo o medio, Opus si es alto",
@@ -486,7 +498,7 @@ footer { font-size: 13px; color: var(--muted); }
         '<tr><td class="num">R9</td><td>Preexistente, no de seguridad</td><td>' + P("ok", "DEFER") + ' propuesta de follow-up</td></tr>' +
         '<tr><td class="num">R10</td><td>Nit</td><td>' + P("ok", "DROP") + '</td></tr>' +
         '</tbody></table></div>' +
-        '<p class="callout">Además: un MUST_FIX que el implementador disputa pasa a VERIFY; un <code>disagree</code> de Codex abre un caso DIRECTION; “requisito añadido” o “spec mal leída” van al Judge como disputa de spec, nunca directo a MUST_FIX.</p>',
+        '<p class="callout">Además: un MUST_FIX que el implementador disputa pasa a VERIFY; un <code>disagree</code> de Codex abre un caso DIRECTION; “requisito añadido”, “spec mal leída” o <code>spec_defect</code> van al Judge, nunca directo a MUST_FIX. En una re-revisión, un hallazgo nuevo solo estático (R6) sobre código que el delta no tocó pasa a DEFER con registro, sin Judge.</p>',
       ctx: ["Hallazgos filtrados", "Repros escritos como fichero (nunca pasan por una shell)", "Comando de tests permitido por el contrato de la base"],
       not: ["No usa ningún LLM"],
       perms: ["Ejecución de tests en worktree desechable, con timeout y sin red"],
@@ -525,6 +537,8 @@ footer { font-size: 13px; color: var(--muted); }
         "Para confirmar un MUST_FIX debe dar <code>failure_scenario</code> y, si puede, un <code>repro</code> que el coordinador ejecuta como los de los revisores.",
         "Si adopta la alternativa de Codex, no la implementa él: genera una directiva para que la implemente Sonnet en la siguiente ronda.",
         "Hasta calibrarse contra decisiones humanas está en modo sombra: un MUST_FIX confirmado solo con razonamiento va a una persona en vez de forzar otra ronda.",
+        "La justificación del implementador solo rebaja un hallazgo si trae evidencia: repro o cita de la spec o del código.",
+        "Puede clasificar un caso como <code>SPEC_GAP</code> (hueco de spec), de producto o técnico.",
         "Tiene reservado el 25 % de la cuota de Opus."
       ],
       ctx: ["Casos con fragmentos de código de ±30 líneas", "Hallazgos originales y respuestas del implementador", "Criterios de aceptación de la spec congelada", "Unos 20k tokens en total"],
@@ -534,6 +548,8 @@ footer { font-size: 13px; color: var(--muted); }
       decide: [
         ["Disposiciones aplicadas", P("loop", "Vuelve al paso 9 sin nueva llamada")],
         ["Es una decisión de producto", P("human", "AWAITING_HUMAN")],
+        ["<code>SPEC_GAP</code> de producto", P("human", "AWAITING_INPUT con la pregunta")],
+        ["<code>SPEC_GAP</code> técnico", P("loop", "PREPARING en modo enmienda; se aprueba de nuevo con el nuevo hash") + " " + P("human", "más de 2 enmiendas: AWAITING_HUMAN")],
         ["Riesgo alto y el Judge descarta un blocker de seguridad", P("human", "AWAITING_HUMAN")],
         ["Confirmación sin contraejemplo mientras está en sombra", P("human", "AWAITING_HUMAN")],
         ["Más de 3 adjudicaciones en el ítem", P("human", "AWAITING_HUMAN")]
@@ -566,7 +582,7 @@ footer { font-size: 13px; color: var(--muted); }
       summary: "El Judge, en modo stall, elige una sola salida entre las que la política permite en ese momento. El coordinador rechaza cualquier elección no permitida y la trata como “humano”.",
       does: [
         "El Judge recibe un historial compacto: clusters y respuestas por ronda, sin diffs completos.",
-        "Opciones: <code>codex_fix</code> (máx. 1 por ítem), <code>alt_impl</code> (apagado por defecto), <code>respecify</code> (vuelve a la fase 1 con el diagnóstico) o <code>human</code> (informe accionable)."
+        "Opciones: <code>codex_fix</code> (máx. 1 por ítem), <code>alt_impl</code> (apagado por defecto), <code>respecify</code> (enmienda de spec en la fase 1, consume <code>spec_amendments</code>) o <code>human</code> (informe accionable)."
       ],
       agents: [
         { a: "codex", h: "Codex Fixer (excepcional)", eng: "<code>codex exec --sandbox workspace-write</code>, sin red, en un worktree propio",
@@ -593,7 +609,7 @@ footer { font-size: 13px; color: var(--muted); }
         ["Opus Reviewer aprueba", P("loop", "Vuelve al paso 9")],
         ["Opus Reviewer rechaza", P("loop", "1 ronda de Sonnet con sus notas") + " " + P("human", "luego AWAITING_HUMAN")],
         ["La puerta contrafactual rechaza el parche", P("human", "AWAITING_HUMAN")],
-        ["<code>respecify</code>", P("wait", "PREPARING (fase 1), conserva los contadores")],
+        ["<code>respecify</code>", P("wait", "PREPARING en modo enmienda; consume spec_amendments y conserva los demás contadores")],
         ["<code>human</code> o elección no permitida", P("human", "AWAITING_HUMAN con informe")]
       ]
     },

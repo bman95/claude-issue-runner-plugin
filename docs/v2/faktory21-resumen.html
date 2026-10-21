@@ -76,9 +76,9 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
   <div class="eyebrow">DOMO21 / Sicma21 · Diseño final · comando <code>fak</code></div>
   <h1>Faktory21</h1>
   <p class="lead">De la petición del desarrollador al PR fusionado, con agentes Claude Code y Codex. Un programa determinista lleva el control, la evidencia decide y la autonomía se gana repo a repo.</p>
-  <p class="meta">19 de octubre de 2026 · Rama <code>ccr-a980ef6d-7el8ci</code> · Documentos: <code>docs/v2/faktory21-preparacion.md</code> (preparación), <code>docs/v2/faktory21-spec.md</code> (implementación, revisión y merge), <code>docs/v2/industria-revision.md</code> (industria), <code>docs/v2/research-log.md</code> (investigación). "Issue Runner" e <code>fak</code> son nombres de trabajo, pendientes del cambio de marca. Diseño sin implementar.</p>
+  <p class="meta">Revisión 4 · 21 de octubre de 2026 · Rama <code>ccr-a980ef6d-7el8ci</code> · Documentos: <code>docs/v2/faktory21-preparacion.md</code> (preparación), <code>docs/v2/faktory21-spec.md</code> (implementación, revisión y merge), <code>docs/v2/industria-revision.md</code> (industria), <code>docs/v2/metodologias-absorcion.md</code> (metodologías), <code>docs/v2/research-log.md</code> (investigación). "Issue Runner" designa solo a la v1. Diseño sin implementar.</p>
   <nav aria-label="Secciones">
-    <a href="#tesis">Tesis</a><a href="#decisiones">Decisiones</a><a href="#arquitectura">Arquitectura</a><a href="#preparacion">Preparación</a><a href="#implementacion">Implementación</a><a href="#revision">Revisión</a><a href="#autonomia">Autonomía y merge</a><a href="#agentes">Agentes</a><a href="#uso">Uso</a><a href="#evidencia">Evidencia</a><a href="#industria">Industria</a><a href="#plan">Plan</a><a href="#abierto">Abierto</a>
+    <a href="#tesis">Tesis</a><a href="#decisiones">Decisiones</a><a href="#arquitectura">Arquitectura</a><a href="#preparacion">Preparación</a><a href="#implementacion">Implementación</a><a href="#revision">Revisión</a><a href="#autonomia">Autonomía y merge</a><a href="#agentes">Agentes</a><a href="#uso">Uso</a><a href="#evidencia">Evidencia</a><a href="#industria">De fuera</a><a href="#plan">Plan</a><a href="#abierto">Abierto</a>
   </nav>
 </header>
 
@@ -118,7 +118,7 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
   <div class="diagram" role="img" aria-label="Dos fases sobre el mismo coordinator: preparación (planner Opus, lectura en frío Sonnet, crítico Codex) y ejecución (implementador Sonnet, validator, revisores Claude y Codex, review coordinator, merger). SQLite local y repo central de evidencia; el gateway gh es el único que escribe en GitHub.">
     <svg viewBox="0 0 760 340">
       <defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" class="svg-arrow"/></marker></defs>
-      <rect x="10" y="20" width="140" height="60" rx="8" class="svg-box2"/><text x="80" y="46" text-anchor="middle" class="svg-t">Desarrollador</text><text x="80" y="64" text-anchor="middle" class="svg-s">ir plan · issue</text>
+      <rect x="10" y="20" width="140" height="60" rx="8" class="svg-box2"/><text x="80" y="46" text-anchor="middle" class="svg-t">Desarrollador</text><text x="80" y="64" text-anchor="middle" class="svg-s">fak plan · issue</text>
       <rect x="10" y="230" width="140" height="60" rx="8" class="svg-box2"/><text x="80" y="256" text-anchor="middle" class="svg-t">GitHub</text><text x="80" y="274" text-anchor="middle" class="svg-s">issues · PRs · CI</text>
       <rect x="185" y="10" width="565" height="260" rx="10" class="svg-box" style="stroke-dasharray:5 4"/>
       <text x="200" y="30" class="svg-s">Coordinator determinista (CLI local)</text>
@@ -154,9 +154,10 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
     <li><strong>Slices y redacción.</strong> Slices verticales del tamaño de un PR. El coordinator escribe el cuerpo AI-Ready, en inglés, con estas secciones: contexto verificado, criterios <code>AC-n</code> con <code>Verify:</code> (http, cli, browser o inspection), comportamiento que no debe cambiar, restricciones con umbral, fuera de alcance, supuestos, datos y entorno, y pasos solo para humanos.</li>
     <li><strong>Puerta de autosuficiencia.</strong>
       <ul>
-        <li><em>Lint determinista</em> con 16 reglas: rutas que existen, Verify con receta, sin TBD, sin vaguedades sin número, sin enlaces sin resumir.</li>
-        <li><em>Lectura en frío</em>: Sonnet, el futuro implementador, intenta planificar solo con la issue. Si le quedan preguntas bloqueantes, no está lista.</li>
-        <li><em>Spec Critic</em> (Codex), que debe citar el texto que señala.</li>
+        <li><em>Lint determinista</em> con 18 reglas: rutas que existen, Verify con receta, sin TBD, sin vaguedades sin número, sin enlaces sin resumir, e interfaces <code>Produces</code>/<code>Consumes</code> coherentes entre slices dependientes.</li>
+        <li><em>Lectura en frío</em>: Sonnet, el futuro implementador, intenta planificar solo con la issue. Si le quedan preguntas bloqueantes, o la issue persigue más de un objetivo, no está lista.</li>
+        <li><em>Spec Critic</em> (Codex), que debe citar el texto que señala. Comprueba además que <strong>toda decisión que acote un criterio esté escrita dentro del criterio</strong>: en una corrida real, Codex rechazó una tarea porque la descripción y el AC se contradecían.</li>
+        <li>Opcional: una sección <code>Review focus</code> con los modos de fallo que ningún criterio cubre todavía.</li>
       </ul></li>
     <li><strong>Publicación y aprobación.</strong> Se publica como <code>faktory21:prepared</code> y se aprueba <code>faktory21:ai-ready</code> ligado al hash del cuerpo. Si alguien edita después, hay que volver a pasar la puerta. En repos con nivel L2 o superior, una issue de riesgo bajo que pasa la puerta limpia se auto-aprueba. Antes de despachar se vuelve a pasar el lint.</li>
   </ol>
@@ -165,8 +166,9 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
 <section id="implementacion">
   <h2>Fase 2 · Implementación y validación</h2>
   <ol class="flow">
-    <li><strong>Reclamo e implementación.</strong> La issue se asigna para que otro runner no la tome. Sonnet trabaja en un worktree, sin push ni <code>gh</code>. En bugs escribe primero un test que debe fallar en la base.</li>
-    <li><strong>Validación determinista.</strong> Se ejecuta el <code>preflight</code> del contrato de la base, las líneas <code>Verify:</code> y la <strong>pasada estática</strong>: linters, semgrep, ast-grep, gitleaks y osv-scanner. Los secretos nuevos y las dependencias vulnerables o sin versión fija bloquean siempre.</li>
+    <li><strong>Reclamo e implementación.</strong> La issue se asigna para que otro runner no la tome. Sonnet trabaja en un worktree, sin push ni <code>gh</code>, con modelo y esfuerzo siempre explícitos. En bugs escribe primero un test que debe fallar en la base. Puede parar sin penalización, y si cumplir la spec exige un cambio de arquitectura no previsto, para y lo decide el juez.</li>
+    <li><strong>Validación determinista.</strong> Se ejecuta el <code>preflight</code> del contrato de la base, las líneas <code>Verify:</code> y la <strong>pasada estática</strong>: linters, semgrep, ast-grep, gitleaks y osv-scanner. Los secretos nuevos y las dependencias vulnerables o sin versión fija bloquean siempre. Un ruleset de ast-grep detecta código a medio hacer (stubs, TODO sin issue). Todo se ejecuta en un entorno fijo (<code>TMPDIR</code> en el worktree, sin TTY), el mismo que comprueba <code>fak doctor --full</code>.</li>
+    <li><strong>Prueba diferencial.</strong> Los tests nuevos se ejecutan también sobre la base: si un test de comportamiento nuevo ya pasa allí, no prueba nada.</li>
     <li><strong>Oráculo intocable.</strong> El implementador no puede modificar los tests de validación, de reproducción ni los que cubren los criterios (los modelos hacen trampa así, según ImpossibleBench). Antes del merge se ejecuta la suite completa.</li>
     <li><strong>Plano de control protegido.</strong> Si un cambio toca <code>.claude/</code>, AGENTS.md, CI, el contrato de validación o los scripts que este ejecuta, lo revisa un humano antes de que corra ningún agente.</li>
   </ol>
@@ -176,12 +178,13 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
   <h2>Revisión: precisión primero</h2>
   <p>La industria coincide en un punto: <strong>el problema es la precisión</strong>. En un estudio real se rechazó el 56 % de los comentarios de CodeRabbit, el mejor benchmark de revisión ronda un 20 % de F1, y la severidad que se asigna el propio modelo es casi aleatoria. Por eso el flujo es:</p>
   <ol class="flow">
-    <li><strong>Revisores independientes en paralelo sobre el mismo SHA.</strong> Code Review (Claude), Security Review (Claude) y Codex, este último solo para fallos graves P0/P1. Ninguno ve la conversación del implementador. Reciben la spec, el diff y el resultado de la pasada estática. Se comprueba además el alcance: lo que el PR hace sin que se lo pidan.</li>
+    <li><strong>Revisores independientes en paralelo sobre el mismo SHA.</strong> Code Review (Claude), Security Review (Claude) y Codex, este último solo para fallos graves P0/P1. Ninguno ve la conversación ni las notas del implementador, y el coordinator nunca les da instrucciones por ítem. Reciben la spec, el diff y el resultado de la pasada estática. Se comprueba además el alcance: lo que el PR hace sin que se lo pidan.</li>
     <li><strong>Filtro barato.</strong> Solo cuentan hallazgos sobre líneas cambiadas y con una cita del código que coincida con el real. Se descartan categorías sin valor, hay un máximo de 5 hallazgos menores por revisor, y se suprime lo parecido a 3 o más hallazgos ya rechazados. Todo lo descartado queda registrado con su motivo.</li>
     <li><strong>Evidencia ejecutable.</strong> Los revisores pueden aportar un test de reproducción que ejecuta el coordinator. Si pasa sobre el candidato, la objeción queda refutada. Una objeción solo estática no bloquea: la confirma Opus con un contraejemplo.</li>
     <li><strong>Qué puede bloquear.</strong> Solo seguridad, corrección, datos, desajuste con la spec, alcance y tests debilitados. Rendimiento solo con benchmark. Mantenibilidad y estilo, nunca.</li>
     <li><strong>Modo sombra.</strong> Todo revisor, categoría, prompt o juez nuevo empieza solo avisando, y pasa a bloquear cuando demuestra precisión con nuestros datos. Si empeora, vuelve a modo sombra.</li>
-    <li><strong>Correcciones con tope.</strong> Hasta 4 rondas de Sonnet. Un hallazgo solo se cierra con evidencia sobre el nuevo SHA, nunca porque un LLM diga que está resuelto. Si el bucle se estanca, se pasa al Codex Fixer (con prueba antes y después y revisión de Opus), se vuelve a especificar la issue, o decide un humano.</li>
+    <li><strong>Si el fallo está en la spec.</strong> Si el código hace lo que pide la spec pero la spec está mal, el revisor lo marca como <code>spec_defect</code> y el juez decide. Si es de producto, pregunta a un humano. Si es técnico, la issue vuelve a preparación para una enmienda mínima que se aprueba de nuevo. Como máximo 2 enmiendas por ítem.</li>
+    <li><strong>Correcciones con tope.</strong> Hasta 4 rondas de Sonnet. Un hallazgo solo se cierra con evidencia sobre el nuevo SHA, nunca porque un LLM diga que está resuelto. Los hallazgos nuevos solo estáticos sobre código que la ronda no tocó no alargan el bucle: se aplazan con registro. Si el bucle se estanca, se pasa al Codex Fixer (con prueba antes y después y revisión de Opus), se vuelve a especificar la issue, o decide un humano.</li>
     <li><strong>Aprendizaje.</strong> Un hallazgo confirmado 3 o más veces se propone como regla determinista (lint, ast-grep o REVIEW.md) mediante un PR humano.</li>
   </ol>
 </section>
@@ -268,8 +271,15 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
     </p></div>
     <div class="card"><span class="tag t-a">Otros diseños</span><p>
       <strong>Sol 6.1:</strong> snapshot, fencing, ciclo de vida de los hallazgos.<br>
-      <strong>dev-harness:</strong> <code>Verify:</code>, <code>fak doctor</code>, fallos reales de los CLI.<br>
+      <strong>dev-harness:</strong> <code>Verify:</code>, <code>fak doctor</code>, fallos reales de los CLI, y la tercera corrida real (19 de octubre): decisiones dentro del AC, receta en el entorno real, informe de fin de tanda y esfuerzo explícito.<br>
       <strong>CodeRabbit:</strong> se copian sus ideas; no se compra.
+    </p></div>
+    <div class="card"><span class="tag t-a">Metodologías</span><p>
+      <strong>GSD, Superpowers, Spec Kit, OpenSpec y BMAD:</strong> no se adopta ninguno, porque son prompts para sesiones interactivas. Se copian técnicas (todos son MIT), validadas de forma independiente:<br>
+      aislar a nuestros agentes de plugins, skills y hooks instalados;<br>
+      interfaces entre slices; barrido anti-stub;<br>
+      reglas del implementador, del revisor y del juez;<br>
+      enmiendas de spec con tope.
     </p></div>
   </div>
 </section>
@@ -283,14 +293,14 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
       <tr><td>P1–P5</td><td>Preparación: formato AI-Ready y lint, triage, Planner, lectura en frío y Critic, publicación y aprobación</td><td>~15</td></tr>
       <tr><td>F1</td><td>Núcleo: SQLite, máquina de estados, outbox, fencing, fixtures de v1, fallos inyectados</td><td>5–6</td></tr>
       <tr><td>F2</td><td>Agent Runner: contratos, permisos, ledger y límites</td><td>3–4</td></tr>
-      <tr><td>F3</td><td>Implementación, Validator, pasada estática, oráculo, <code>fak doctor</code></td><td>3</td></tr>
-      <tr><td>F4</td><td>Revisión: filtro, aprendizajes, modo sombra, taxonomía, coordinator y juez</td><td>6–7</td></tr>
+      <tr><td>F3</td><td>Implementación, Validator, pasada estática y anti-stub, oráculo, prueba diferencial, <code>fak doctor</code> con aislamiento del home</td><td>3</td></tr>
+      <tr><td>F4</td><td>Revisión: filtro, aprendizajes, modo sombra, taxonomía, coordinator y juez, enmiendas de spec</td><td>6–7</td></tr>
       <tr><td>F6</td><td>Merge: niveles de autonomía, vigilancia y revert, tarjeta, <code>merge-async</code></td><td>4</td></tr>
-      <tr><td>F7</td><td>Cuotas, métricas, evidencia, reglas a partir de hallazgos repetidos</td><td>2–3</td></tr>
+      <tr><td>F7</td><td>Cuotas, métricas, evidencia, reglas a partir de hallazgos repetidos, informe de fin de tanda</td><td>2–3</td></tr>
       <tr><td>F8</td><td>Piloto en los repos actuales, empezando en L1</td><td>2 semanas</td></tr>
     </tbody>
   </table></div>
-  <p class="meta" style="margin-top:10px">Es una estimación sin datos de velocidad del equipo. En v2.1: Codex Fixer, varios implementadores, prueba diferencial, evaluación con bugs inyectados y concurrencia mayor que 1.</p>
+  <p class="meta" style="margin-top:10px">Es una estimación sin datos de velocidad del equipo. En v2.1: Codex Fixer, varios implementadores, evaluación con bugs inyectados y de prompts bajo presión, mapa del repo, última ronda con un modelo superior y concurrencia mayor que 1.</p>
 </section>
 
 <section id="abierto">
