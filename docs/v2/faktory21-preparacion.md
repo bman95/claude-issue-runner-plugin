@@ -1,10 +1,10 @@
-# Issue Runner v2: fase de preparación (de la petición a la issue AI-Ready)
+# Faktory21: fase de preparación (de la petición a la issue AI-Ready)
 
-> **Nombre provisional.** "Issue Runner v2", "IR" y el comando `ir` son nombres de trabajo: habrá un cambio de marca y el nombre definitivo está pendiente. Se usan aquí solo como marcadores; los nombres de etiquetas (`ir:*`), comandos y ficheros se renombrarán de forma mecánica cuando se decida.
+> **Nombre.** El producto se llama **Faktory21** (decidido el 2026-10-21) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
 
 Estado: **propuesta de diseño**, 2026-10-19. No hay código.
 
-Este documento completa [`issue-runner-v2-spec.md`](issue-runner-v2-spec.md), que cubre lo que pasa desde que una issue tiene `ir:ai-ready` hasta el merge. Aquí se diseña todo lo anterior. Usa la misma leyenda (**[A]** acuerdo, **[P]** propuesta, **[H]** hipótesis, **[Q]** pregunta, **[F]** hecho comprobado) y la misma infraestructura: coordinator determinista, SQLite, `gh` con el token del usuario, agentes como procesos acotados y sin hooks.
+Este documento completa [`faktory21-spec.md`](faktory21-spec.md), que cubre lo que pasa desde que una issue tiene `faktory21:ai-ready` hasta el merge. Aquí se diseña todo lo anterior. Usa la misma leyenda (**[A]** acuerdo, **[P]** propuesta, **[H]** hipótesis, **[Q]** pregunta, **[F]** hecho comprobado) y la misma infraestructura: coordinator determinista, SQLite, `gh` con el token del usuario, agentes como procesos acotados y sin hooks.
 
 Las fuentes y la evidencia están en [`research-log.md`](research-log.md), §12.
 
@@ -12,7 +12,7 @@ Las fuentes y la evidencia están en [`research-log.md`](research-log.md), §12.
 
 ## 0. Resumen para humanos
 
-**Principio de partida [A].** El implementador obtiene de la issue `ai-ready` todo lo que necesita. Lo que no está en la issue, en el repositorio o en sus ficheros de contexto confiables (CLAUDE.md, AGENTS.md, `.issue-runner/*` de la rama base) no existe para él. Por tanto, la fase de preparación tiene una sola responsabilidad: **producir un contrato autosuficiente y demostrar que lo es** antes de etiquetarlo.
+**Principio de partida [A].** El implementador obtiene de la issue `ai-ready` todo lo que necesita. Lo que no está en la issue, en el repositorio o en sus ficheros de contexto confiables (CLAUDE.md, AGENTS.md, `.faktory21/*` de la rama base) no existe para él. Por tanto, la fase de preparación tiene una sola responsabilidad: **producir un contrato autosuficiente y demostrar que lo es** antes de etiquetarlo.
 
 **Por qué importa (evidencia):**
 
@@ -25,7 +25,7 @@ Conclusión: la ambigüedad hay que resolverla **aquí**, con comprobaciones det
 
 **Flujo:**
 
-1. **Entrada.** Una petición llega por `ir plan "<idea>"`, por un fichero, por una issue existente o por una issue marcada `ir:needs-prep`.
+1. **Entrada.** Una petición llega por `fak plan "<idea>"`, por un fichero, por una issue existente o por una issue marcada `faktory21:needs-prep`.
 2. **Triage determinista.** Clasifica el tipo de trabajo y busca duplicados candidatos.
 3. **Exploración y reconciliación (Opus).** Opus explora el repo y reconcilia la petición con el trabajo existente: issues, PR y decisiones.
 4. **Entrevista.** Pocas preguntas, cada una con la respuesta recomendada, solo sobre lo que el repo no puede responder.
@@ -35,12 +35,12 @@ Conclusión: la ambigüedad hay que resolverla **aquí**, con comprobaciones det
    - *Lint* determinista.
    - **Lectura en frío**: Sonnet, el mismo modelo que implementará, lee solo la issue y el repo e intenta planificar el trabajo. Si le surgen preguntas bloqueantes, la issue no está lista.
    - **Revisión de la spec por Codex**, de otra familia de modelos y de solo lectura.
-8. **Publicación y aprobación.** Se publica como `ir:prepared`. Un humano aplica `ir:ai-ready` sobre el texto exacto que pasó la puerta. Si el texto cambia, hay que volver a pasar la puerta.
+8. **Publicación y aprobación.** Se publica como `faktory21:prepared`. Un humano aplica `faktory21:ai-ready` sobre el texto exacto que pasó la puerta. Si el texto cambia, hay que volver a pasar la puerta.
 9. **Caducidad.** La disponibilidad caduca: si el código que la issue cita cambió mucho antes de despacharla, se repite la lectura en frío.
 
 **Primera versión.** Incluye:
 
-- `ir plan` para texto, fichero o issue existente, con un camino rápido para una sola issue (`--quick`).
+- `fak plan` para texto, fichero o issue existente, con un camino rápido para una sola issue (`--quick`).
 - Reconciliación, entrevista, corte y redacción.
 - Lint, lectura en frío y revisión de Codex.
 - Publicación y aprobación.
@@ -61,7 +61,7 @@ Queda aplazado:
 | Fuente | ¿Cuenta como contexto? | Por qué |
 |---|---|---|
 | Cuerpo de la issue `ai-ready` (texto con hash aprobado) | **Sí, y es la autoridad** | Es el contrato |
-| Repositorio en la base, incluidos CLAUDE.md, AGENTS.md y `.issue-runner/*` | Sí | Son contenido de confianza, fusionado por humanos |
+| Repositorio en la base, incluidos CLAUDE.md, AGENTS.md y `.faktory21/*` | Sí | Son contenido de confianza, fusionado por humanos |
 | Issue de seguimiento (`Part of #P`) | **No** | Es el archivo humano del plan. Lo que el slice necesite de ella se copia en el slice |
 | Comentarios de la issue | **No** | Son datos de conversación. Un cambio de requisitos se hace editando el cuerpo, lo que fuerza a repasar la puerta |
 | Enlaces externos (documentos, Figma, chats) | **No** | El implementador no tiene red general, y su contenido puede cambiar. Lo necesario se **incorpora resumido** al cuerpo, indicando de dónde viene |
@@ -160,7 +160,7 @@ Usa el mismo coordinator, la misma base de datos y el mismo Agent Runner que la 
 | Spec Linter | Determinista | Lectura del repo | Reglas L1–L16 (§4) |
 | **Cold Reader** | Claude **Sonnet**, el mismo modelo que implementará; sesión nueva | Solo lectura del repo; sin red; recibe **solo** el cuerpo de la issue | Intenta planificar la implementación y lista lo que le falta (§5) |
 | **Spec Critic** | Codex `exec`, solo lectura | Solo lectura del repo; sin red | Revisa la spec al estilo del `analyze` de Spec Kit: ambigüedad, huecos, contradicciones, criterios no verificables (§6) |
-| Human | — | `write` en el repo | Responde preguntas, aprueba el corte y aplica `ir:ai-ready` |
+| Human | — | `write` en el repo | Responde preguntas, aprueba el corte y aplica `faktory21:ai-ready` |
 
 **El enlace entre roles lo resuelve el coordinator, no un agente.** El Planner nunca ve la conversación del Cold Reader ni del Critic, solo sus hallazgos estructurados. El Cold Reader nunca ve la conversación del Planner. Esa separación es la que da valor a la lectura en frío.
 
@@ -186,9 +186,9 @@ RECEIVED ─► TRIAGED ─► EXPLORING (Opus) ─► INTERVIEWING ⇄ (respues
                      │                     │ huecos de producto → INTERVIEWING
                      │                     │ huecos técnicos  → REVISING (Opus, ≤ 2 rondas)
                      │                     ▼
-                     │               PUBLISHING (outbox: issue de seguimiento + slices `ir:prepared`)
+                     │               PUBLISHING (outbox: issue de seguimiento + slices `faktory21:prepared`)
                      │                     ▼
-                     │               AWAITING_APPROVAL ─(humano aplica ir:ai-ready al hash aprobado)─► READY
+                     │               AWAITING_APPROVAL ─(humano aplica faktory21:ai-ready al hash aprobado)─► READY
                      │                     │ cuerpo editado → GATING de nuevo
                      └─────────────────────┘
 Salidas: COVERED (todo existía ya) · DUPLICATE (humano confirma) · NEEDS_RESEARCH (se crea una issue de
@@ -199,7 +199,7 @@ nunca se cierra de forma automática)
 ### 3.2 Pasos
 
 1. **Entrada [P].**
-   - `ir plan "<texto>"`, `ir plan --file spec.md`, `ir plan #123` (una issue existente) o el polling de issues con `ir:needs-prep`.
+   - `fak plan "<texto>"`, `fak plan --file spec.md`, `fak plan #123` (una issue existente) o el polling de issues con `faktory21:needs-prep`.
    - Se guarda la petición literal con su hash y su autor.
    - Si el autor no tiene `write`, la petición queda en TRIAGED con `needs-maintainer` hasta que un mantenedor la adopte. Una petición de un tercero nunca llega a READY sin pasar por un humano con permisos.
    - `--quick` sigue el mismo flujo, pero salta el corte (un único slice) y la issue de seguimiento. Es el equivalente del `/new-task` diario (rama de vela).
@@ -219,8 +219,8 @@ nunca se cierra de forma automática)
 4. **Entrevista [P].**
    - Rondas de **3 a 5 preguntas como máximo**. Cada una incluye la respuesta recomendada y las opciones, y solo se pregunta lo que cambiaría la implementación o la verificación (criterio de `clarify` de Spec Kit).
    - **Canales:**
-     - interactivo, en el terminal de `ir plan`;
-     - asíncrono, con un comentario marcado en la issue de seguimiento o de origen y respuestas `/ir answer Q2: …` de un usuario con `write`.
+     - interactivo, en el terminal de `fak plan`;
+     - asíncrono, con un comentario marcado en la issue de seguimiento o de origen y respuestas `/faktory21 answer Q2: …` de un usuario con `write`.
    - **Quién decide qué:**
      - Las decisiones de **producto** son solo humanas.
      - Las decisiones **técnicas** las puede tomar el Planner, pero quedan escritas como `Decision` en `## Context` y en el registro de decisiones, con su razón, y el humano las ve al aprobar.
@@ -228,15 +228,15 @@ nunca se cierra de forma automática)
 5. **Corte en slices.**
    - Slices verticales (*tracer bullets*), cada uno verificable por sí mismo y con ficheros disjuntos cuando sea posible.
    - Solo se declaran las dependencias reales. Cada slice cabe en un PR (**H-4**, ~400 líneas).
-   - El humano aprueba el corte (`ir approve-slices` o un comentario). Es la única aprobación previa a la redacción.
+   - El humano aprueba el corte (`fak approve-slices` o un comentario). Es la única aprobación previa a la redacción.
 6. **Redacción (Opus).** El Planner devuelve un `PlanDraft` (§7) con un `IssueSpec` por slice. El coordinator **renderiza** el cuerpo con una plantilla; el Planner no escribe Markdown libre. Así las cabeceras y el orden son siempre correctos, y el lint comprueba contenido, no formato.
 7. **Puerta de autosuficiencia (§4–§6).** Primero el lint. Después, la lectura en frío y la revisión de Codex en paralelo. Por último, la coordinación determinista (§6.3).
 8. **Publicación (outbox con `gh`).**
-   - Primero la issue de seguimiento (`Plan: …`, con Input, Decisions, Existing work, Slices y Plan file, como en v1). Después los slices en orden de dependencias, con `ir:prepared`, su `<!-- ir:readiness hash=… -->` y el resumen de la puerta en un comentario marcado.
+   - Primero la issue de seguimiento (`Plan: …`, con Input, Decisions, Existing work, Slices y Plan file, como en v1). Después los slices en orden de dependencias, con `faktory21:prepared`, su `<!-- faktory21:readiness hash=… -->` y el resumen de la puerta en un comentario marcado.
    - Es idempotente: si un marcador ya existe, se edita; nunca se duplica (v1 continuation).
-   - **Publicar no es aprobar.** El runner nunca toma una issue `ir:prepared`.
+   - **Publicar no es aprobar.** El runner nunca toma una issue `faktory21:prepared`.
 9. **Aprobación [A: la etiqueta es humana; Q3 decide si hay auto-aprobación con riesgo bajo].**
-   - El humano aplica `ir:ai-ready`, por slice o en bloque con `/ir approve-plan #P`.
+   - El humano aplica `faktory21:ai-ready`, por slice o en bloque con `/faktory21 approve-plan #P`.
    - El coordinator comprueba dos cosas:
      - que el actor tenga `write`;
      - que el **hash del cuerpo actual coincida con el que pasó la puerta**.
@@ -404,13 +404,13 @@ La pregunta que se mide es **si la puerta predice el éxito de la implementació
 
 | # | Situación | Salida |
 |---|---|---|
-| P-D1 | Quien pidió el trabajo no responde | Recordatorios a las 48 h y a los 7 días, luego STALE con `ir:stale`. Nunca se cierra solo, y se reanuda con cualquier respuesta |
+| P-D1 | Quien pidió el trabajo no responde | Recordatorios a las 48 h y a los 7 días, luego STALE con `faktory21:stale`. Nunca se cierra solo, y se reanuda con cualquier respuesta |
 | P-D2 | La lectura en frío sigue encontrando preguntas tras 2 revisiones | AWAITING_HUMAN con las preguntas. El humano responde, corta el slice o aprueba explícitamente con la pregunta abierta, lo que deja una Authorization y una marca en la issue |
 | P-D3 | El Planner y Codex discrepan sobre un punto bloqueante | Nunca deciden entre ellos. El rechazo del Planner aparece en la tarjeta de aprobación y decide el humano |
 | P-D4 | La petición es demasiado grande para un plan | Se propone un corte. Si incluso así hay incertidumbre técnica, NEEDS_RESEARCH: se crea una issue de investigación (nota 9 de v1, siempre hoja del DAG) y el plan de código se publica después, en dos fases |
 | P-D5 | Una dependencia está en otro repo | Reglas de v1: `run-elsewhere`, `override`, `drop` o `contract-first`. Nunca entra en el DAG |
-| P-D6 | El repo no tiene receta `verification` para el tipo de `Verify` que exige un criterio | L3 bloquea. La salida es un slice previo de "configurar verificación" (por ejemplo, `ir doctor --init`) o reformular el criterio como `cli`/`inspection` |
-| P-D7 | Alguien edita la issue tras la aprobación | El hash no coincide, se retira `ir:ai-ready` y se vuelve a pasar la puerta. Si ya estaba en implementación, aplica PAUSED_SPEC_DRIFT de la especificación principal |
+| P-D6 | El repo no tiene receta `verification` para el tipo de `Verify` que exige un criterio | L3 bloquea. La salida es un slice previo de "configurar verificación" (por ejemplo, `fak doctor --init`) o reformular el criterio como `cli`/`inspection` |
+| P-D7 | Alguien edita la issue tras la aprobación | El hash no coincide, se retira `faktory21:ai-ready` y se vuelve a pasar la puerta. Si ya estaba en implementación, aplica PAUSED_SPEC_DRIFT de la especificación principal |
 
 **Contradicciones revisadas:**
 
@@ -426,7 +426,7 @@ La pregunta que se mide es **si la puerta predice el éxito de la implementació
 
 **Incluido en v2.0:**
 
-- Entradas: `ir plan` con texto, fichero o `#issue`, más `--quick`.
+- Entradas: `fak plan` con texto, fichero o `#issue`, más `--quick`.
 - Triage determinista con duplicados candidatos.
 - Planner con Opus: exploración, reconciliación, entrevista interactiva y asíncrona, corte en slices y redacción con plantilla.
 - Puerta completa: Spec Linter, lectura en frío y Spec Critic con Codex, más la coordinación.
@@ -439,7 +439,7 @@ La pregunta que se mide es **si la puerta predice el éxito de la implementació
 |---|---|---|---|
 | P1 | Formato AI-Ready v2: renderizador, parser y Spec Linter (L1–L16) | Tests de tabla por regla. Las issues de v1 existentes se analizan sin error y sus carencias se informan | 3 |
 | P2 | Entrada, triage y duplicados candidatos | Fixtures con un duplicado plantado, un solape de ficheros y una lectura fallida (`not scanned`) | 2 |
-| P3 | Planner: reconciliación, entrevista (CLI y `/ir answer`), corte y `PlanDraft` | Una petición vaga produce preguntas; con las respuestas, slices aprobables | 4 |
+| P3 | Planner: reconciliación, entrevista (CLI y `/faktory21 answer`), corte y `PlanDraft` | Una petición vaga produce preguntas; con las respuestas, slices aprobables | 4 |
 | P4 | Lectura en frío, Spec Critic y coordinación | Una spec con un hueco plantado (falta un umbral, falta una decisión) se detecta y no llega a publicarse. Una spec completa pasa sin preguntas | 4 |
 | P5 | Publicación, aprobación ligada al hash y lint previo al despacho | Una edición posterior a la aprobación retira la etiqueta. Una ruta borrada en la base bloquea el despacho | 2 |
 
@@ -460,8 +460,8 @@ La pregunta que se mide es **si la puerta predice el éxito de la implementació
 
 | Pregunta | Decisión [A] |
 |---|---|
-| **Q-P1 Origen** | Normalmente pide el trabajo el desarrollador, desde el terminal (`ir plan`) o dejando una issue en GitHub (`ir:needs-prep`). Otras entradas, más adelante |
-| **Q-P2 Idioma** | **Inglés por defecto** en todas las issues AI-Ready y artefactos, porque los consumen agentes. La interacción con el desarrollador (preguntas de la entrevista, resúmenes) puede ir en su idioma (`ir config language es`) |
+| **Q-P1 Origen** | Normalmente pide el trabajo el desarrollador, desde el terminal (`fak plan`) o dejando una issue en GitHub (`faktory21:needs-prep`). Otras entradas, más adelante |
+| **Q-P2 Idioma** | **Inglés por defecto** en todas las issues AI-Ready y artefactos, porque los consumen agentes. La interacción con el desarrollador (preguntas de la entrevista, resúmenes) puede ir en su idioma (`fak config language es`) |
 | **Q-P3 Quién aprueba** | Cualquier usuario con `write` |
 | **Q-P4 Documentación externa** | Se pega el contenido relevante; sin conectores por ahora |
 | **Q-P5 Entrevista** | Las dos: en el terminal y en comentarios de la issue |

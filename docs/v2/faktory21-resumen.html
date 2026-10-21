@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Software factory v2</title>
-<meta name="description" content="Resumen del diseño final (nombre provisional): preparación, implementación, revisión y merge con agentes.">
+<title>Faktory21</title>
+<meta name="description" content="Resumen del diseño final de Faktory21: preparación, implementación, revisión y merge con agentes.">
 <style>
 :root{
   --bg:#f7f6f2; --surface:#ffffff; --ink:#1b2422; --muted:#5a6762; --line:#d9ded9;
@@ -73,10 +73,10 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
 <div class="wrap">
 <header>
   <button class="toggle" type="button" id="themeBtn">Tema claro / oscuro</button>
-  <div class="eyebrow">DOMO21 / Sicma21 · Diseño final · nombre provisional</div>
-  <h1>Software factory v2</h1>
+  <div class="eyebrow">DOMO21 / Sicma21 · Diseño final · comando <code>fak</code></div>
+  <h1>Faktory21</h1>
   <p class="lead">De la petición del desarrollador al PR fusionado, con agentes Claude Code y Codex. Un programa determinista lleva el control, la evidencia decide y la autonomía se gana repo a repo.</p>
-  <p class="meta">19 de octubre de 2026 · Rama <code>ccr-a980ef6d-7el8ci</code> · Documentos: <code>docs/v2/issue-runner-v2-preparacion.md</code> (preparación), <code>docs/v2/issue-runner-v2-spec.md</code> (implementación, revisión y merge), <code>docs/v2/industria-revision.md</code> (industria), <code>docs/v2/research-log.md</code> (investigación). "Issue Runner" e <code>ir</code> son nombres de trabajo, pendientes del cambio de marca. Diseño sin implementar.</p>
+  <p class="meta">19 de octubre de 2026 · Rama <code>ccr-a980ef6d-7el8ci</code> · Documentos: <code>docs/v2/faktory21-preparacion.md</code> (preparación), <code>docs/v2/faktory21-spec.md</code> (implementación, revisión y merge), <code>docs/v2/industria-revision.md</code> (industria), <code>docs/v2/research-log.md</code> (investigación). "Issue Runner" e <code>fak</code> son nombres de trabajo, pendientes del cambio de marca. Diseño sin implementar.</p>
   <nav aria-label="Secciones">
     <a href="#tesis">Tesis</a><a href="#decisiones">Decisiones</a><a href="#arquitectura">Arquitectura</a><a href="#preparacion">Preparación</a><a href="#implementacion">Implementación</a><a href="#revision">Revisión</a><a href="#autonomia">Autonomía y merge</a><a href="#agentes">Agentes</a><a href="#uso">Uso</a><a href="#evidencia">Evidencia</a><a href="#industria">Industria</a><a href="#plan">Plan</a><a href="#abierto">Abierto</a>
   </nav>
@@ -101,10 +101,10 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
       <tr><td>Modelos</td><td>Opus prepara y juzga. Sonnet implementa. Code Review y Security Review con Claude, en paralelo. Codex <code>gpt-6.1-sol</code> revisa en solo lectura y es Fixer excepcional. Varios implementadores: disponibles pero apagados.</td></tr>
       <tr><td>Coordinator</td><td>Principalmente determinista; Opus solo cuando hace falta juicio técnico.</td></tr>
       <tr><td>Planes y costes</td><td>Siempre planes, y el runner no depende de cuáles: Claude Max o Team, ChatGPT Plus, Pro o Business. Tres contabilidades: cuota, gasto incremental (0 € por defecto) y coste de referencia.</td></tr>
-      <tr><td>Host</td><td>Cualquiera: normalmente el portátil del desarrollador, en macOS o Linux. <code>ir doctor</code> comprueba la autenticación, el sandbox y las versiones. Los CLI se actualizan entre ítems.</td></tr>
-      <tr><td>GitHub</td><td>Solo GitHub, siempre con <code>gh</code> y con el token de cada usuario, sin bot ni App. La aprobación se registra con <code>ir approve</code>.</td></tr>
+      <tr><td>Host</td><td>Cualquiera: normalmente el portátil del desarrollador, en macOS o Linux. <code>fak doctor</code> comprueba la autenticación, el sandbox y las versiones. Los CLI se actualizan entre ítems.</td></tr>
+      <tr><td>GitHub</td><td>Solo GitHub, siempre con <code>gh</code> y con el token de cada usuario, sin bot ni App. La aprobación se registra con <code>fak approve</code>.</td></tr>
       <tr><td>Idioma</td><td>Artefactos en inglés por defecto. La interacción con el desarrollador puede ir en español.</td></tr>
-      <tr><td>Peticiones</td><td>Las hace el desarrollador desde el terminal (<code>ir plan</code>) o con una issue. Aprueba cualquiera con permiso de escritura. Los documentos externos se pegan.</td></tr>
+      <tr><td>Peticiones</td><td>Las hace el desarrollador desde el terminal (<code>fak plan</code>) o con una issue. Aprueba cualquiera con permiso de escritura. Los documentos externos se pegan.</td></tr>
       <tr><td>Autonomía</td><td>Alta y progresiva por repo (L1–L3), ganada con evidencia y con revert automático. Los humanos no leen todos los PR.</td></tr>
       <tr><td>Perfil solo-documentación</td><td>Si el PR solo cambia documentación, no se lanza Security Review.</td></tr>
       <tr><td>Evidencia</td><td>Un repo privado central para todos los proyectos, sin código.</td></tr>
@@ -148,7 +148,7 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
   <h2>Fase 1 · Preparación: de la petición a <code>ai-ready</code></h2>
   <p><strong>Principio:</strong> el implementador recibe solo el cuerpo aprobado de la issue y el repo. No ve la issue de seguimiento, los comentarios ni enlaces externos. La ambigüedad se resuelve aquí, porque los modelos casi nunca preguntan solos (Ambig-SWE).</p>
   <ol class="flow">
-    <li><strong>Entrada y triage determinista.</strong> Llega por <code>ir plan</code> o por una issue <code>ir:needs-prep</code>. Se clasifica el tipo de trabajo y se buscan duplicados candidatos, sin cerrar nada.</li>
+    <li><strong>Entrada y triage determinista.</strong> Llega por <code>fak plan</code> o por una issue <code>faktory21:needs-prep</code>. Se clasifica el tipo de trabajo y se buscan duplicados candidatos, sin cerrar nada.</li>
     <li><strong>Exploración y reconciliación (Opus).</strong> Opus mapea el código y las decisiones existentes, y clasifica cada solape como covered, extend, depends, supersedes, conflict o new. No pregunta lo que el repo puede responder.</li>
     <li><strong>Entrevista.</strong> Como máximo 5 preguntas por ronda, cada una con la respuesta recomendada, en el terminal o en comentarios. El producto lo decide un humano; lo técnico lo decide Opus y queda visible.</li>
     <li><strong>Slices y redacción.</strong> Slices verticales del tamaño de un PR. El coordinator escribe el cuerpo AI-Ready, en inglés, con estas secciones: contexto verificado, criterios <code>AC-n</code> con <code>Verify:</code> (http, cli, browser o inspection), comportamiento que no debe cambiar, restricciones con umbral, fuera de alcance, supuestos, datos y entorno, y pasos solo para humanos.</li>
@@ -158,7 +158,7 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
         <li><em>Lectura en frío</em>: Sonnet, el futuro implementador, intenta planificar solo con la issue. Si le quedan preguntas bloqueantes, no está lista.</li>
         <li><em>Spec Critic</em> (Codex), que debe citar el texto que señala.</li>
       </ul></li>
-    <li><strong>Publicación y aprobación.</strong> Se publica como <code>ir:prepared</code> y se aprueba <code>ir:ai-ready</code> ligado al hash del cuerpo. Si alguien edita después, hay que volver a pasar la puerta. En repos con nivel L2 o superior, una issue de riesgo bajo que pasa la puerta limpia se auto-aprueba. Antes de despachar se vuelve a pasar el lint.</li>
+    <li><strong>Publicación y aprobación.</strong> Se publica como <code>faktory21:prepared</code> y se aprueba <code>faktory21:ai-ready</code> ligado al hash del cuerpo. Si alguien edita después, hay que volver a pasar la puerta. En repos con nivel L2 o superior, una issue de riesgo bajo que pasa la puerta limpia se auto-aprueba. Antes de despachar se vuelve a pasar el lint.</li>
   </ol>
 </section>
 
@@ -205,7 +205,7 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
         <li>cobertura de todos los revisores requeridos y ningún bloqueante abierto;</li>
         <li>plano de control intacto.</li>
       </ul></li>
-    <li><strong>Merge:</strong> refresco de la base con merge (nunca rebase), <code>merge-async</code> con el <code>sha</code> fijado y reintento idempotente. El commit status <code>issue-runner/gate</code> lo exige el ruleset.</li>
+    <li><strong>Merge:</strong> refresco de la base con merge (nunca rebase), <code>merge-async</code> con el <code>sha</code> fijado y reintento idempotente. El commit status <code>faktory21/gate</code> lo exige el ruleset.</li>
     <li><strong>Cuando hace falta un humano:</strong> recibe una tarjeta con la intención, el riesgo por fichero, las decisiones tomadas sin consulta y los hallazgos descartados. Como máximo 3 PR esperando a un humano por repo, y PR de como máximo 600 líneas.</li>
   </ul>
 </section>
@@ -268,7 +268,7 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
     </p></div>
     <div class="card"><span class="tag t-a">Otros diseños</span><p>
       <strong>Sol 6.1:</strong> snapshot, fencing, ciclo de vida de los hallazgos.<br>
-      <strong>dev-harness:</strong> <code>Verify:</code>, <code>ir doctor</code>, fallos reales de los CLI.<br>
+      <strong>dev-harness:</strong> <code>Verify:</code>, <code>fak doctor</code>, fallos reales de los CLI.<br>
       <strong>CodeRabbit:</strong> se copian sus ideas; no se compra.
     </p></div>
   </div>
@@ -283,7 +283,7 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
       <tr><td>P1–P5</td><td>Preparación: formato AI-Ready y lint, triage, Planner, lectura en frío y Critic, publicación y aprobación</td><td>~15</td></tr>
       <tr><td>F1</td><td>Núcleo: SQLite, máquina de estados, outbox, fencing, fixtures de v1, fallos inyectados</td><td>5–6</td></tr>
       <tr><td>F2</td><td>Agent Runner: contratos, permisos, ledger y límites</td><td>3–4</td></tr>
-      <tr><td>F3</td><td>Implementación, Validator, pasada estática, oráculo, <code>ir doctor</code></td><td>3</td></tr>
+      <tr><td>F3</td><td>Implementación, Validator, pasada estática, oráculo, <code>fak doctor</code></td><td>3</td></tr>
       <tr><td>F4</td><td>Revisión: filtro, aprendizajes, modo sombra, taxonomía, coordinator y juez</td><td>6–7</td></tr>
       <tr><td>F6</td><td>Merge: niveles de autonomía, vigilancia y revert, tarjeta, <code>merge-async</code></td><td>4</td></tr>
       <tr><td>F7</td><td>Cuotas, métricas, evidencia, reglas a partir de hallazgos repetidos</td><td>2–3</td></tr>
@@ -296,8 +296,8 @@ footer{border-top:1px solid var(--line);padding-top:18px;font-size:13px;color:va
 <section id="abierto">
   <h2>Pendiente</h2>
   <div class="grid">
-    <div class="card"><span class="tag t-q">Nombre</span><p>El nombre del producto, del comando y de las etiquetas, pendiente del cambio de marca.</p></div>
-    <div class="card"><span class="tag t-q">Piloto</span><p>Listar los repos actuales y ejecutar <code>ir doctor --init</code> en cada uno para fijar su nivel máximo.</p></div>
+    <div class="card"><span class="tag t-q">Nombre</span><p>Decidido: Faktory21, comando <code>fak</code>. Falta el nombre del repo central de evidencias (por ejemplo, <code>faktory21-evidence</code>).</p></div>
+    <div class="card"><span class="tag t-q">Piloto</span><p>Listar los repos actuales y ejecutar <code>fak doctor --init</code> en cada uno para fijar su nivel máximo.</p></div>
     <div class="card"><span class="tag t-q">Umbrales</span><p>Calibrar en el piloto: precisión para bloquear (H-28), ascenso de autonomía (H-31) y tamaño de issue (H-P1).</p></div>
   </div>
 </section>

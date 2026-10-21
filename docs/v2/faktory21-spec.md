@@ -1,6 +1,6 @@
-# Issue Runner v2: especificación de diseño (DOMO21 / Sicma21)
+# Faktory21: especificación de diseño (DOMO21 / Sicma21)
 
-> **Nombre provisional.** "Issue Runner v2", "IR" y el comando `ir` son nombres de trabajo: habrá un cambio de marca y el nombre definitivo está pendiente. Se usan aquí solo como marcadores; los nombres de etiquetas (`ir:*`), comandos y ficheros se renombrarán de forma mecánica cuando se decida.
+> **Nombre.** El producto se llama **Faktory21** (decidido el 2026-10-21) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
 
 Estado: **propuesta de diseño, revisión 2** (2026-10-19), que incorpora la fase de investigación de [`research-log.md`](research-log.md). No hay código. Este documento se compara después con otro diseño independiente.
 Ámbito: de issue de GitHub a PR fusionado, con agentes Claude Code y Codex, para los repositorios de DOMO21/Sicma21.
@@ -11,7 +11,7 @@ Commit inspeccionado del repositorio actual: `23b7092f059fe2b1510f53e4bfec03c74c
 - Las objeciones de los revisores necesitan evidencia ejecutable, y se añade un filtro contrafactual (§6).
 - Tests de reproducción en las issues de tipo bug (§5.4).
 - El Codex Fixer pasa una puerta contrafactual y el commit lo hace el coordinator (§5.9).
-- Toda la interacción con GitHub va por `gh` con el token de cada usuario [A, Q10], con una puerta como commit status, aprobación registrada con `ir approve` y `merge-async` con `sha` (§5.11 y §5.12).
+- Toda la interacción con GitHub va por `gh` con el token de cada usuario [A, Q10], con una puerta como commit status, aprobación registrada con `fak approve` y `merge-async` con `sha` (§5.11 y §5.12).
 - Perfil solo-documentación sin Security Review [A, Q12] (§5.6).
 - Codex usa el plan de ChatGPT [A, Q11] (§8.2 y §10.2).
 - `claude -p` con stream-json y `codex exec`; `app-server` queda descartado (§8.2).
@@ -62,7 +62,7 @@ Cada cambio enlaza con la sección del registro de investigación que lo justifi
 - stdin cerrado en `codex exec` (§8.2).
 - Reintento ante "Base branch was modified" (§5.12).
 - `Verify:` por criterio, ejecutado por el Validator (§5.1, §5.5).
-- `ir doctor` (§3.1).
+- `fak doctor` (§3.1).
 - `merge_mode` y contrato de integración con `status` (§5.12).
 
 **No adoptado de ese diseño:** PostgreSQL, API con RBAC y Context Engine con grafo de procedencia, porque son excesivos para 1–2 ítems por host. Tampoco el contenedor por attempt, que queda aplazado (§16).
@@ -165,15 +165,15 @@ El inventario completo de invariantes que v2 debe conservar es I1–I26 (`resear
 
 Lo más importante, en resumen:
 
-1. **Contrato de validación** `.issue-runner/validation` (`preflight`/`full`). Se lee desde la punta de la rama base en `origin`. Si un PR lo modifica, queda bloqueado. La gramática es estricta. Se porta `validation-contract.sh` tal cual al principio, y después se reimplementa.
-2. **Contrato de integración** `.issue-runner/integration` (`hint:`). Se conserva tal cual.
+1. **Contrato de validación** `.faktory21/validation` (`preflight`/`full`). Se lee desde la punta de la rama base en `origin`. Si un PR lo modifica, queda bloqueado. La gramática es estricta. Se porta `validation-contract.sh` tal cual al principio, y después se reimplementa.
+2. **Contrato de integración** `.faktory21/integration` (`hint:`). Se conserva tal cual.
 3. **Formato de issue**: `## What to build`, `## Acceptance criteria`, `## Blocked by` y `Files likely touched:`. Es la base de la definición de AI-Ready (§5.1).
 4. **Scheduler del DAG**: cascade-skip, cadena bloqueada frente a ciclo, y aristas de conflicto por intersección de ficheros. Se porta desde `scheduler.sh` a Python con sus fixtures.
 5. **Prueba de merge** anclada a `headRefOid` (`classify.sh`). Un issue `CLOSED` sin PR fusionado queda como `closed-externally`, y nunca se hace `git branch -D` sin prueba.
 6. **`--match-head-commit`** en el merge (`merge-ready.sh`), y comprobación de frescura de base con re-validación (design-notes §2).
 7. **Degradación solo por código de salida y stderr de la herramienta**, nunca por el texto que escribe un agente.
 8. **Regla de confianza**: el texto de issues, PR y comentarios es dato, no instrucción. Las autorizaciones viajan por un canal tipado.
-9. **Resume-check**: no duplicar PR y detectar ramas huérfanas. Las ramas se nombran de forma determinista (`ir/<n>-<slug>`).
+9. **Resume-check**: no duplicar PR y detectar ramas huérfanas. Las ramas se nombran de forma determinista (`faktory21/<n>-<slug>`).
 10. **Draft PR como checkpoint remoto** que sobrevive a la pérdida del host.
 11. **Visibilidad del repositorio, con cierre por defecto si no se puede leer**, para los hallazgos de seguridad (design-notes §9.6).
 12. **Requisito de CI en drafts** (`ready_for_review` más los tipos por defecto).
@@ -216,7 +216,7 @@ Lo más importante, en resumen:
 
 ```
                          ┌────────────────────────── host dedicado (VM Linux) ──────────────────────────┐
- GitHub (issues, PRs,    │  ir (CLI + bucle "ir serve")                                                 │
+ GitHub (issues, PRs,    │  fak (CLI + bucle "fak serve")                                               │
  labels, checks, merge)  │  ┌──────────────┐  ┌───────────────────┐  ┌─────────────┐  ┌──────────────┐  │
   ▲            │         │  │ Scheduler    │→ │ Work-item state   │→ │ Agent       │→ │ claude -p    │  │
   │ escrituras │ lecturas│  │ (DAG, colas, │  │ machine           │  │ Runner      │  │ codex exec   │  │
@@ -247,10 +247,10 @@ Componentes:
 
 Puntos de entrada:
 
-- `ir serve`: bucle de *polling* cada 60–120 s. El polling elimina la necesidad de exponer webhooks.
-- Comandos puntuales: `ir prepare N`, `ir run N…`, `ir status`, `ir answer`, `ir approve`, `ir recover`, `ir report`, `ir doctor`.
-- **`ir doctor` [P; adoptado de `vela91/dev-harness`, `harness-doctor`].** Comprobación previa en dos niveles. Su existencia viene de pruebas reales: allí los problemas de entorno se descubrían a mitad de ejecución.
-  - **Nivel barato, en cada `ir run` y `ir serve`.** Si una comprobación falla, el runner no arranca.
+- `fak serve`: bucle de *polling* cada 60–120 s. El polling elimina la necesidad de exponer webhooks.
+- Comandos puntuales: `fak prepare N`, `fak run N…`, `fak status`, `fak answer`, `fak approve`, `fak recover`, `fak report`, `fak doctor`.
+- **`fak doctor` [P; adoptado de `vela91/dev-harness`, `harness-doctor`].** Comprobación previa en dos niveles. Su existencia viene de pruebas reales: allí los problemas de entorno se descubrían a mitad de ejecución.
+  - **Nivel barato, en cada `fak run` y `fak serve`.** Si una comprobación falla, el runner no arranca.
     - Configuración y `policy.yml` válidos.
     - `gh auth status`.
     - `claude auth status` con `authMethod` de suscripción y sin `ANTHROPIC_API_KEY` efectiva.
@@ -258,12 +258,12 @@ Puntos de entrada:
     - Binarios y versiones del manifiesto (§8.2).
     - Variables de entorno que exige `required_env` (solo nombres).
     - Contrato de validación de la base, válido.
-  - **Nivel caro, con `ir doctor --full`, bajo demanda.** Cuesta tokens y minutos, así que lo invoca una persona al cambiar de máquina, de CLI o de configuración. También se lanza solo cuando cambia `environment_digest` (§4.1).
+  - **Nivel caro, con `fak doctor --full`, bajo demanda.** Cuesta tokens y minutos, así que lo invoca una persona al cambiar de máquina, de CLI o de configuración. También se lanza solo cuando cambia `environment_digest` (§4.1).
     - Una llamada real mínima a `claude -p` y a `codex exec` con esquema, comprobando tokens de salida mayores que 0.
     - Si el sandbox de Codex permite abrir sockets cuando la verificación lo necesita.
     - La receta `verification` del repo: arrancar el servicio, esperar a que esté listo y apagarlo.
     - Los tests de base en verde.
-  - **`ir doctor --init`.** Prepara un proyecto nuevo, fuera de cualquier ejecución y con una persona delante. Detecta la rama destino y la pide confirmar. Propone `.issue-runner/validation`, `policy.yml` y el bloque `verification`, y los escribe como **un PR para revisión humana**, nunca directamente en la rama base. Crea las etiquetas `ir:*`.
+  - **`fak doctor --init`.** Prepara un proyecto nuevo, fuera de cualquier ejecución y con una persona delante. Detecta la rama destino y la pide confirmar. Propone `.faktory21/validation`, `policy.yml` y el bloque `verification`, y los escribe como **un PR para revisión humana**, nunca directamente en la rama base. Crea las etiquetas `ir:*`.
 - Una skill de Claude Code muy fina (`/ir`) que solo llama al CLI, para uso interactivo **[P]**.
 - **[A] Sin hooks de Claude Code.** El coordinator es un programa determinista que lanza cada agente como proceso propio, así que nada depende de eventos como `SubagentStop` o `Stop`. Los hooks solo tendrían sentido si la orquestación viviera dentro de una sesión de Claude Code, como en v1 o en `vela91/dev-harness`, donde además resultaron frágiles: se disparaban con el directorio equivocado o no se disparaban (H8, H13).
   - Si v2 se distribuye como plugin de Claude Code, el plugin es solo una fachada: la skill `/ir` llama al CLI y muestra el estado. No incluye hooks ni orquesta nada.
@@ -370,7 +370,7 @@ Terminales: DONE · ABANDONED (humano) · CLOSED_EXTERNALLY · FAILED_INFRA (tra
 | `item_reference_cost_usd` | 40 USD (**H-3**: calibrar) | AWAITING_HUMAN con el informe |
 | `item_wallclock` | 24 h activas, sin contar las esperas | AWAITING_HUMAN |
 
-Solo `ir answer`, `ir approve --extend` o una etiqueta humana reinician un contador. Cada reinicio queda registrado como Authorization.
+Solo `fak answer`, `fak approve --extend` o una etiqueta humana reinician un contador. Cada reinicio queda registrado como Authorization.
 
 ---
 
@@ -378,7 +378,7 @@ Solo `ir answer`, `ir approve --extend` o una etiqueta humana reinician un conta
 
 ### 5.1 Definición de AI-Ready [P]
 
-> **Fuente de autoridad**: la fase previa a `ir:ai-ready` (entrada, triage, reconciliación, entrevista, corte en slices, redacción, puerta de autosuficiencia, aprobación y caducidad) se especifica en [`issue-runner-v2-preparacion.md`](issue-runner-v2-preparacion.md).
+> **Fuente de autoridad**: la fase previa a `faktory21:ai-ready` (entrada, triage, reconciliación, entrevista, corte en slices, redacción, puerta de autosuficiencia, aprobación y caducidad) se especifica en [`faktory21-preparacion.md`](faktory21-preparacion.md).
 >
 > Ese documento sustituye en lo que choque a §5.1 y §5.2. Lo nuevo:
 >
@@ -423,10 +423,10 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
 
 1. TRIAGE ejecuta el lint. Si pasa y la issue lleva el marcador de spec v2 → AWAITING_APPROVAL. Si no → PREPARING.
 2. **Preparer (Opus, solo lectura)** recibe la issue, sus comentarios (como dato), el árbol del repo, CLAUDE.md, las issues y PR abiertos relacionados (por intersección de ficheros y referencias) y la plantilla AI-Ready. Devuelve `PreparedSpec` (§7.2): especificación reescrita, criterios de aceptación, fuera de alcance, ficheros probables, dependencias, riesgo propuesto, plan de validación, `open_questions[]` (marcadas como `blocking` o no) y `alternatives[]` (enfoques materialmente distintos, si existen).
-3. El coordinator escribe la especificación en el cuerpo de la issue, dentro de un bloque delimitado `<!-- ir:spec v1 hash=… -->`, y conserva el texto original del autor bajo `## Original request`. Aplica la etiqueta `ir:prepared`.
-4. Si hay preguntas bloqueantes, se publican en un comentario con marcador, se aplica `ir:needs-input` y el ítem pasa a AWAITING_INPUT. La respuesta entra por un comentario humano con `/ir answer …` o por `ir answer`. Al recibirla, se vuelve a PREPARING; el contexto es el anterior más la respuesta.
+3. El coordinator escribe la especificación en el cuerpo de la issue, dentro de un bloque delimitado `<!-- faktory21:spec v1 hash=… -->`, y conserva el texto original del autor bajo `## Original request`. Aplica la etiqueta `faktory21:prepared`.
+4. Si hay preguntas bloqueantes, se publican en un comentario con marcador, se aplica `faktory21:needs-input` y el ítem pasa a AWAITING_INPUT. La respuesta entra por un comentario humano con `/faktory21 answer …` o por `fak answer`. Al recibirla, se vuelve a PREPARING; el contexto es el anterior más la respuesta.
 5. **Aprobación**:
-   - Por defecto, un humano con permiso `write` o superior aplica `ir:ai-ready`. El coordinator verifica el actor del evento de etiqueta en el *timeline* de la issue y su permiso; una etiqueta puesta por otra persona se ignora y se registra.
+   - Por defecto, un humano con permiso `write` o superior aplica `faktory21:ai-ready`. El coordinator verifica el actor del evento de etiqueta en el *timeline* de la issue y su permiso; una etiqueta puesta por otra persona se ignora y se registra.
    - Política opcional `auto_ready: [low]`.
    - **[Q3]** decide el valor por defecto.
 6. Al pasar a READY se congela un **SpecSnapshot**. Si el cuerpo de la issue cambia después (hash distinto), el ítem pasa a PAUSED_SPEC_DRIFT y un humano elige entre *continuar con el snapshot* y *re-preparar*.
@@ -446,7 +446,7 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
 
 ### 5.4 Implementación (Sonnet) [A]
 
-1. El coordinator crea el worktree `…/wt/<item>-r<round>` desde `origin/<base>` (o desde el candidato existente si es una reanudación) y la rama `ir/<n>-<slug>`.
+1. El coordinator crea el worktree `…/wt/<item>-r<round>` desde `origin/<base>` (o desde el candidato existente si es una reanudación) y la rama `faktory21/<n>-<slug>`.
 2. **Implementer (Sonnet, effort medium)** recibe el contrato (§7.3) y trabaja en el worktree. Puede editar ficheros, ejecutar tests y hacer commits locales. No puede hacer push ni usar `gh`, no tiene red salvo la lista de dominios permitidos, y no puede tocar rutas protegidas (§8.3).
 3. Salida `ImplementationResult` (§7.3): estado `completed|blocked|needs_clarification`, mapeo AC→evidencia, tests añadidos, notas de riesgo y `knowledge_candidates[]`.
    - `needs_clarification` con una pregunta de producto → AWAITING_INPUT. Los contadores no cambian.
@@ -461,7 +461,7 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
    Si falla cualquier comprobación, se genera un hallazgo determinista para la siguiente ronda o, si toca rutas protegidas, se va a AWAITING_HUMAN.
 
 5. **Test de reproducción para bugs [P; `research-log.md` §5.1, Agentless].** Si el SpecSnapshot clasifica la issue como `kind: bug` y el repo tiene harness de tests:
-   - El implementador escribe **primero** un test de reproducción, en un commit separado y marcado con el trailer `IR-Repro: <ruta::test>`.
+   - El implementador escribe **primero** un test de reproducción, en un commit separado y marcado con el trailer `Faktory21-Repro: <ruta::test>`.
    - El coordinator lo ejecuta en un worktree temporal **sobre la base**. Debe fallar (y, si se puede comprobar, por la razón descrita en la issue).
    - Después lo ejecuta sobre el candidato, donde debe pasar.
    - Si no falla en la base, se genera un hallazgo determinista `repro_invalid`.
@@ -480,13 +480,13 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
   - Se arranca el servicio con la receta `verification` del repo, en un worktree temporal y con timeout.
   - Se ejecuta cada `Verify (http|cli|browser)` del SpecSnapshot y se registra por criterio `passed|failed|error`, con la salida como evidencia.
   - `failed` genera un hallazgo sintético `category: spec_mismatch`, `ev = confirmed`, que se convierte en MUST_FIX (R1).
-  - `error` (no arranca el servicio, falta Playwright) **no es un defecto del candidato**: se reintenta una vez y después va a FAILED_INFRA, con la sugerencia de ejecutar `ir doctor --full`.
+  - `error` (no arranca el servicio, falta Playwright) **no es un defecto del candidato**: se reintenta una vez y después va a FAILED_INFRA, con la sugerencia de ejecutar `fak doctor --full`.
   - Las comprobaciones `inspection` las evalúa Code Review dentro de `acceptance[]`.
   - Así nadie improvisa la verificación al final: el criterio y cómo comprobarlo se decidieron juntos en la preparación, y el implementador sabe desde el principio contra qué se le mide.
 - **Pasada determinista de análisis (A1)** [P; `industria-revision.md` §3]. Se ejecuta tras el `preflight` en verde y antes de las revisiones LLM, sobre el diff entre base y candidato. Cada herramienta se declara en `policy.yml`, con su versión en el manifiesto del entorno:
   - Linters del proyecto.
   - `semgrep`/`opengrep` con reglas de seguridad propias o de licencia permisiva.
-  - Reglas `ast-grep` del repo, en `.issue-runner/rules/`, en la base.
+  - Reglas `ast-grep` del repo, en `.faktory21/rules/`, en la base.
   - `gitleaks` (secretos).
   - `osv-scanner` (dependencias vulnerables), más una comprobación de dependencias sin versión fija.
 
@@ -576,7 +576,7 @@ Al activarse → STALLED. El Judge, en **modo stall**, recibe un historial compa
 1. **`codex_fix`** [A: excepcional]. Para hallazgos localizados y concretos que Sonnet no ha resuelto. Requisito: `codex_fix < 1`.
    - El Codex Fixer trabaja con `codex exec --sandbox workspace-write`, sin red, en un **worktree separado** creado desde el candidato.
    - Recibe solo los clusters asignados (con sus `repro`) y la especificación, con la instrucción de hacer un **parche mínimo que conserve la estructura**.
-   - **No hace commits**: en `workspace-write`, `.git` es de solo lectura [F]. El coordinator toma el diff del árbol de trabajo y hace el commit con el trailer `IR-Role: codex_fixer`.
+   - **No hace commits**: en `workspace-write`, `.git` es de solo lectura [F]. El coordinator toma el diff del árbol de trabajo y hace el commit con el trailer `Faktory21-Role: codex_fixer`.
    - El coordinator valida (`preflight`) y verifica las rutas protegidas.
    - **Puerta contrafactual [P; `research-log.md` §6.2]**. Ejecuta los `repro` asignados y la suite de validación **antes y después** del parche, y registra por separado *fixes* (tests que pasan de rojo a verde) y *regresiones* (de verde a rojo).
      - Se rechaza el parche si no cambia el resultado de ningún `repro` asignado: no corrige lo que decía corregir.
@@ -595,7 +595,7 @@ Al activarse → STALLED. El Judge, en **modo stall**, recibe un historial compa
 
 - **Disparadores**:
   - El Judge en modo stall elige `alt_impl`.
-  - La preparación marca `alternatives` con impacto arquitectónico y un humano habilita el modo para ese ítem (`/ir multi`).
+  - La preparación marca `alternatives` con impacto arquitectónico y un humano habilita el modo para ese ítem (`/faktory21 multi`).
   - Etiqueta `risk:critical`.
 - **Por qué está apagado (evidencia).**
   - Un sistema multiagente consume unas 15 veces los tokens de un chat, y "domains that require… many dependencies… are not a good fit… today", con la programación citada como ejemplo.
@@ -626,7 +626,7 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
    - Un cambio de política vuelve a evaluar las reglas y repite las revisiones.
    - Un cambio de validación o de entorno repite la validación.
    - Un cambio de spec pasa por PAUSED_SPEC_DRIFT.
-9. Se cumple la **política de autonomía del repo** (ver abajo). Si exige aprobación humana, tiene que haber una registrada por el runner (`ir approve` o `/ir approve`) de un usuario con `write`, que puede ser el propio usuario que lo ejecuta (§5.11, Identidad), además de las reviews que exija el repo.
+9. Se cumple la **política de autonomía del repo** (ver abajo). Si exige aprobación humana, tiene que haber una registrada por el runner (`fak approve` o `/faktory21 approve`) de un usuario con `write`, que puede ser el propio usuario que lo ejecuta (§5.11, Identidad), además de las reviews que exija el repo.
 
 **[A, Q3] Objetivo: autonomía alta y fiable.** Los humanos no van a leer todos los PR, así que el sistema debe quitar el cuello de botella humano sin perder fiabilidad. Para eso, la autonomía es **progresiva y se gana con evidencia**, por repo. Es el patrón de Meta RADAR y de los niveles de riesgo de Anthropic.
 
@@ -636,7 +636,7 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 | **L2** | `low` y `medium` | `high`, plano de control |
 | **L3** | `low`, `medium` y `high` | Plano de control (rutas protegidas, CI, validación, `policy.yml`) e invariantes marcadas como `human_required` en `policy.yml` |
 
-- **Nivel máximo por repo según la fuerza de su oráculo.** `ir doctor` calcula si el repo tiene CI en PR, contrato de validación y tests que cubran los ficheros tocados. Un repo sin tests o sin CI **no pasa de L1**: la verificación solo es tan fuerte como sus tests (Spotify, compilador de Anthropic).
+- **Nivel máximo por repo según la fuerza de su oráculo.** `fak doctor` calcula si el repo tiene CI en PR, contrato de validación y tests que cubran los ficheros tocados. Un repo sin tests o sin CI **no pasa de L1**: la verificación solo es tan fuerte como sus tests (Spotify, compilador de Anthropic).
 - **Nivel inicial:** L1, o el que fije `policy.yml` hasta el máximo permitido.
 - **Ascenso automático** al siguiente nivel cuando se cumplen estas condiciones (umbrales en `policy.yml`, **H-31**):
   - los últimos N merges automáticos del nivel actual (por defecto 15) no tienen *reverts*;
@@ -679,17 +679,17 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 
 Consecuencias que el diseño absorbe:
 
-- **Aprobación del merge.** En GitHub, el autor de un PR no puede aprobar su propio PR, y los PR del runner aparecen como del usuario que lo ejecuta. Por eso la aprobación humana que exige la política de riesgo (§5.11, puerta 9) **la registra el runner, no una review de GitHub**: `ir approve <item>`, o un comentario `/ir approve` de un usuario con permiso `write` verificado. Puede ser el mismo usuario que lanzó el runner, y queda guardada como Authorization.
+- **Aprobación del merge.** En GitHub, el autor de un PR no puede aprobar su propio PR, y los PR del runner aparecen como del usuario que lo ejecuta. Por eso la aprobación humana que exige la política de riesgo (§5.11, puerta 9) **la registra el runner, no una review de GitHub**: `fak approve <item>`, o un comentario `/faktory21 approve` de un usuario con permiso `write` verificado. Puede ser el mismo usuario que lanzó el runner, y queda guardada como Authorization.
 - **Reglas propias del repo.** Si un repo exige reviews de GitHub en su protección de rama, esa regla sigue aplicándose: el ítem espera en AWAITING_MERGE_APPROVAL hasta que otra persona apruebe en GitHub. Es una espera visible, no un bloqueo.
 - **No hay que activar** "Require approval of the most recent reviewable push" solo por el runner. Esa decisión es del repo.
-- **Trazabilidad.** Los commits y los comentarios llevan marcas que los distinguen del trabajo manual del mismo usuario: trailers `IR-*` y la tarjeta con su marcador.
+- **Trazabilidad.** Los commits y los comentarios llevan marcas que los distinguen del trabajo manual del mismo usuario: trailers `Faktory21-*` y la tarjeta con su marcador.
 - **Varios usuarios sobre el mismo repo.** Cada usuario tiene su propia base de datos, y el lock local no ve a los demás. Para no trabajar dos veces la misma issue, se usa un **reclamo en GitHub**:
-  - Al pasar a IMPLEMENTING, el runner asigna la issue a su usuario y pone la etiqueta `ir:in-progress` con un comentario marcador `<!-- ir:claim user=… host=… since=… -->`.
+  - Al pasar a IMPLEMENTING, el runner asigna la issue a su usuario y pone la etiqueta `faktory21:in-progress` con un comentario marcador `<!-- faktory21:claim user=… host=… since=… -->`.
   - Otro runner ignora las issues ya reclamadas.
-  - Un reclamo sin actividad más de 24 h queda a disposición de un humano (`/ir release`). Nunca se toma automáticamente.
+  - Un reclamo sin actividad más de 24 h queda a disposición de un humano (`/faktory21 release`). Nunca se toma automáticamente.
   - Véase D14 en §14.2.
 
-**La puerta en GitHub es un commit status** `issue-runner/gate` (`gh api repos/{o}/{r}/statuses/{sha}`) sobre `head_sha`.
+**La puerta en GitHub es un commit status** `faktory21/gate` (`gh api repos/{o}/{r}/statuses/{sha}`) sobre `head_sha`.
 
 - La descripción lleva el id del candidato y `target_url` la tarjeta de estado.
 - GitHub exige que el status pase en el **último** SHA. Un resultado tardío para un SHA anterior se descarta, y antes de escribirlo se comprueba que el SHA sigue siendo la cabeza.
@@ -700,7 +700,7 @@ Consecuencias que el diseño absorbe:
 
 **Configuración recomendada del ruleset de la rama base:**
 
-- Checks requeridos: CI más `issue-runner/gate`.
+- Checks requeridos: CI más `faktory21/gate`.
 - Descartar aprobaciones obsoletas, si el repo usa reviews de GitHub.
 - "Do not allow bypassing".
 
@@ -730,11 +730,11 @@ Además, `pull_request` no se ejecuta si hay conflictos, y por eso el refresco d
 
 **Modo de merge por repo [P; adoptado de `vela91/dev-harness`]**: `merge_mode: auto | request_only` en `policy.yml`.
 
-- **`request_only`** deja el PR listo y verde, con el commit status en verde, y se detiene en AWAITING_MERGE_APPROVAL **sea cual sea el riesgo**. El merge lo hace una persona, desde GitHub o con `ir approve`.
+- **`request_only`** deja el PR listo y verde, con el commit status en verde, y se detiene en AWAITING_MERGE_APPROVAL **sea cual sea el riesgo**. El merge lo hace una persona, desde GitHub o con `fak approve`.
 - Es el valor recomendado para repos cuya rama destino **despliega automáticamente a producción**. Ahí el merge equivale a un despliegue y queda fuera de lo que el runner debe decidir solo. Fue el caso real de un proyecto de cliente.
 - `auto` aplica la política de riesgo de §5.11.
 
-**Contrato de integración con estado [P; amplía el `hint:` de v1, adoptado de `vela91/dev-harness`, decisión 2]**. Además de `hint:`, `.issue-runner/integration` puede declarar `status: <comando>`.
+**Contrato de integración con estado [P; amplía el `hint:` de v1, adoptado de `vela91/dev-harness`, decisión 2]**. Además de `hint:`, `.faktory21/integration` puede declarar `status: <comando>`.
 
 - El comando recibe el SHA y responde con un vocabulario cerrado: `pending|running|green|failed|superseded|unknown`.
 - Si existe, el merge exige `green` sobre el `head_sha`, como una puerta más de §5.11.
@@ -788,7 +788,7 @@ Los `ReviewReport` validados contra el esquema; el resultado de CI y de validaci
   4. **Tope por revisor.** 5 hallazgos de severidad `minor` o inferior por revisor y ronda. Los `major` y superiores no tienen tope.
   5. **Supresión por aprendizajes (A3)**: ver §6.4.
 
-  Todo lo descartado se guarda en un **registro de supresiones** con su motivo. Se puede consultar (`ir trace`) y alimenta las métricas (§12.1).
+  Todo lo descartado se guarda en un **registro de supresiones** con su motivo. Se puede consultar (`fak trace`) y alimenta las métricas (§12.1).
 
 ### 6.3 Agrupación (clustering)
 
@@ -826,7 +826,7 @@ Dos hallazgos forman parte del mismo cluster si coinciden la ruta y la categorí
 - Un hallazgo nuevo se **suprime** si se parece a **3 o más** rechazos distintos del mismo repo: misma categoría, misma ruta o directorio, y similitud de texto ≥ umbral (**H-29**).
 - La supresión nunca afecta a `security` con `ev ≥ concrete`, ni a R1 ni a R1b.
 - Al principio, a nuestra escala, basta con palabras clave y rutas, sin embeddings.
-- `ir learnings` lista y permite revertir una supresión.
+- `fak learnings` lista y permite revertir una supresión.
 
 **Modo sombra por defecto para lo nuevo (A5)** [P; Anthropic, Google, CodeRabbit, Spotify, Atlassian].
 - Cada revisor, categoría o versión de prompt nueva entra en estado `shadow`: sus hallazgos se registran y se muestran como **aviso**, pero solo cuentan para bloquear si los respalda evidencia ejecutable (R0/R1) o una herramienta determinista (R1b).
@@ -906,17 +906,17 @@ Un candidato solo puede ser ACCEPTED si cada commit entre la base y `head_sha` e
 
 ## 7. Contratos
 
-Todos los contratos son JSON Schema 2020-12 versionados (`ir/schemas/*.v1.json`). La salida de los agentes se obtiene con `--json-schema` (Claude, en `structured_output`) y con `--output-schema` (Codex), y el coordinator **la vuelve a validar** con `jsonschema`.
+Todos los contratos son JSON Schema 2020-12 versionados (`fak/schemas/*.v1.json`). La salida de los agentes se obtiene con `--json-schema` (Claude, en `structured_output`) y con `--output-schema` (Codex), y el coordinator **la vuelve a validar** con `jsonschema`.
 
 ### 7.1 Sobre común de entrada (lo genera el coordinator; el agente lo recibe en un fichero)
 
 ```json
 {
-  "contract": "ir.input.v1",
+  "contract": "fak.input.v1",
   "role": "implementer|code_reviewer|security_reviewer|codex_reviewer|judge|preparer|codex_fixer|opus_reviewer|alt_implementer",
   "item": {"repo": "domo21/x", "issue": 42, "risk": "medium", "spec_hash": "…"},
   "spec": {"what": "…", "acceptance": [{"id": "AC-1", "text": "…"}], "out_of_scope": ["…"], "files_likely": ["src/a.ts"]},
-  "candidate": {"branch": "ir/42-foo", "base_sha": "…", "head_sha": "…", "prev_reviewed_sha": null},
+  "candidate": {"branch": "faktory21/42-foo", "base_sha": "…", "head_sha": "…", "prev_reviewed_sha": null},
   "inputs": {"diff_path": "…/diff.patch", "delta_path": null, "validation_log_path": "…", "ci_summary_path": null},
   "open_clusters": [{"id": "C-7", "fingerprint": "…", "summary": "…", "class": "MUST_FIX", "directive": null}],
   "environment": {"manifest_path": "…/environment.md"},
@@ -1034,8 +1034,8 @@ El coordinator **rechaza** cualquier `stall_choice` que la política no permita 
 Para un revisor Claude:
 
 ```bash
-env -i HOME="$IR_AGENT_HOME" PATH="$SAFE_PATH" LANG=C.UTF-8 \
-    CLAUDE_CODE_OAUTH_TOKEN="$(ir-secret claude-sub)" \
+env -i HOME="$FAK_AGENT_HOME" PATH="$SAFE_PATH" LANG=C.UTF-8 \
+    CLAUDE_CODE_OAUTH_TOKEN="$(fak-secret claude-sub)" \
   claude -p "$(cat prompt.md)" \
     --session-id "$ATTEMPT_UUID" \
     --model sonnet --effort medium \
@@ -1047,7 +1047,7 @@ env -i HOME="$IR_AGENT_HOME" PATH="$SAFE_PATH" LANG=C.UTF-8 \
     --disallowedTools "Bash(git push *)" "Bash(gh *)" "Bash(curl *)" "Edit" "Write" \
     --append-system-prompt-file roles/code_reviewer.md \
     --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
-    --settings ir/settings/reviewer.json \
+    --settings fak/settings/reviewer.json \
     --max-turns 40 --max-budget-usd 3 \
     --no-session-persistence
 ```
@@ -1055,7 +1055,7 @@ env -i HOME="$IR_AGENT_HOME" PATH="$SAFE_PATH" LANG=C.UTF-8 \
 Para Codex Reviewer:
 
 ```bash
-env -i HOME="$IR_CODEX_HOME" PATH="$SAFE_PATH" \
+env -i HOME="$FAK_CODEX_HOME" PATH="$SAFE_PATH" \
   codex exec --sandbox read-only --ask-for-approval never --ephemeral \
     --ignore-user-config -C "$WT" -m "$CODEX_MODEL" \
     --output-schema review.v1.json -o out.json --json \
@@ -1097,7 +1097,7 @@ Detalles de la invocación:
   - El uso sale de `turn.completed`, en tokens; no hay coste en USD, así que el coste de referencia se calcula con una tabla de precios versionada.
   - AGENTS.md se lee del repo y no hay interruptor documentado para desactivarlo, de nuevo con la base como fuente de confianza.
   - `.git`, `.codex` y `.agents` son de solo lectura incluso en `workspace-write` [F].
-  - Autenticación: el plan de ChatGPT con `auth.json` en `$IR_CODEX_HOME` [A, Q11]. Nunca se pone una API key en el entorno (§10.2).
+  - Autenticación: el plan de ChatGPT con `auth.json` en `$FAK_CODEX_HOME` [A, Q11]. Nunca se pone una API key en el entorno (§10.2).
 - Los flags concretos se fijan con `claude --help` y `codex exec --help` de la versión instalada, mediante el *preflight* de versión **[H-1]**. Algunos son recientes, como `--permission-prompts` (v2.1.259+) o `--effort`. **Las diez pruebas locales pendientes** están en `research-log.md` §3 y forman la fase F0.
 
 ### 8.3 Rutas protegidas (plano de control) [P]
@@ -1105,7 +1105,7 @@ Detalles de la invocación:
 Rutas protegidas por defecto:
 
 - `.claude/**`, `.mcp.json`, `CLAUDE.md`, `AGENTS.md`, `.codex/**`
-- `.issue-runner/**`
+- `.faktory21/**` y `.issue-runner/**`. **Compatibilidad con v1:** si un repo aún no tiene `.faktory21/`, se leen `.issue-runner/validation` e `.issue-runner/integration` de la base. `fak doctor --init` propone moverlos mediante un PR.
 - `.github/workflows/**`, `.husky/**`, `.git/hooks`
 - Más las que añada `policy.yml`.
 
@@ -1116,7 +1116,7 @@ Reglas:
 1. Los agentes solo se ejecutan sobre worktrees cuyo plano de control es **idéntico al de la base** (comprobación por hash antes de cada lanzamiento).
 2. Si un candidato modifica una ruta protegida: AWAITING_HUMAN antes de cualquier revisión. Tras la aprobación, los revisores se ejecutan con `--setting-sources user` (flag documentado; su efecto exacto es **H-2**) y en una copia con el plano de control de la base, más el diff de control como texto.
 3. El Validator ejecuta los comandos de validación de la **base**, nunca los del candidato (regla de v1).
-4. **Dependencias transitivas de la validación** [P; adoptado del diseño Sol 6.1]. v1 solo protegía el fichero del contrato. Pero un PR puede dejar intacto `.issue-runner/validation` y vaciar el script que ese contrato ejecuta (`scripts/preflight.sh`, un `Makefile`, la configuración del runner de tests).
+4. **Dependencias transitivas de la validación** [P; adoptado del diseño Sol 6.1]. v1 solo protegía el fichero del contrato. Pero un PR puede dejar intacto `.faktory21/validation` y vaciar el script que ese contrato ejecuta (`scripts/preflight.sh`, un `Makefile`, la configuración del runner de tests).
    - El **manifiesto de validación** es la lista de ficheros que la validación ejecuta o lee como configuración. Se declara en `policy.yml` (`validation_manifest:`) y se completa automáticamente con:
      - el script referido por cada clave del contrato;
      - los ficheros de configuración conocidos del runner de tests: `package.json` (sección `scripts`), `pytest.ini`, `pyproject.toml` (secciones de test), `jest.config.*`, `vitest.config.*`, `Makefile`;
@@ -1136,8 +1136,8 @@ Reglas:
 ### 8.4 Sandbox y host
 
 - **[A, Q2] Se ejecuta donde haga falta**: normalmente el portátil del desarrollador (macOS o Linux), o una VM o servidor siempre encendido para colas largas sin nadie delante. Nada del diseño depende del host.
-  - Requisitos, comprobados por `ir doctor`: Python 3.12, `git`, `gh`, `claude` y `codex` autenticados y actualizados, y el sandbox del sistema disponible (Seatbelt en macOS, bubblewrap en Linux).
-  - Si el portátil se duerme o se cierra, los attempts se cortan por lease y `ir recover` los retoma al volver.
+  - Requisitos, comprobados por `fak doctor`: Python 3.12, `git`, `gh`, `claude` y `codex` autenticados y actualizados, y el sandbox del sistema disponible (Seatbelt en macOS, bubblewrap en Linux).
+  - Si el portátil se duerme o se cierra, los attempts se cortan por lease y `fak recover` los retoma al volver.
   - En una máquina compartida, se recomienda un usuario de sistema por persona y sin sudo.
 - Bash dentro del sandbox de Claude Code (Seatbelt en macOS, bubblewrap en Linux) con `failIfUnavailable: true` y `allowUnsandboxedCommands: false` [F: sin `failIfUnavailable`, el sandbox se degrada en silencio].
 - La red del implementador pasa por `network.allowedDomains`: registros de paquetes y el mirror interno.
@@ -1163,7 +1163,7 @@ Reglas:
 ### 9.1 Almacenamiento [P]
 
 ```
-$IR_HOME/                          (por defecto ~/.local/state/issue-runner-v2)
+$FAK_HOME/                          (por defecto ~/.local/state/faktory21)
   ir.db                            SQLite WAL (una por host; repo es columna)
   artifacts/<repo>/<item>/<attempt_id>/
       input.json  prompt.md  stdout.jsonl  result.json  diff.patch  validation.log  meta.json
@@ -1206,9 +1206,9 @@ Lo que se refleja en GitHub:
 
 - Etiquetas `ir:*`: `needs-prep`, `needs-input`, `prepared`, `ai-ready` (humana), `in-progress`, `needs-human`, `blocked`.
 - **Una** tarjeta de estado por PR, un comentario con marcador que se edita (no se añaden comentarios nuevos): estado, rondas, clusters abiertos, coste de referencia y enlaces.
-- El commit status `issue-runner/gate`, publicado con `gh` (§5.11).
+- El commit status `faktory21/gate`, publicado con `gh` (§5.11).
 
-Las respuestas humanas entran por comentarios `/ir …` de actores con permiso `write` (verificado), o por el CLI.
+Las respuestas humanas entran por comentarios `/faktory21 …` de actores con permiso `write` (verificado), o por el CLI.
 
 ### 9.3 Memoria compartida (tres niveles) [P]
 
@@ -1221,38 +1221,38 @@ Las respuestas humanas entran por comentarios `/ir …` de actores con permiso `
 2. **Memoria del repositorio**: se reutilizan **CLAUDE.md y AGENTS.md** del repo, ya cargados por cada CLI, en lugar de inventar otro almacén.
    - Los agentes proponen `knowledge_candidates`.
    - Un paso semanal (o cada 10 ítems) agrupa las propuestas. Un **Opus curator** las filtra y abre **un PR** que modifica CLAUDE.md o AGENTS.md. Es ruta protegida, así que exige revisión humana.
-   - Tope de tamaño de la sección `## Issue Runner notes`: unos 1.500 tokens, para no inflar todos los prompts.
-   - En v2.0 los candidatos se acumulan en SQLite y se listan en `ir report`; el curator llega en v2.1.
+   - Tope de tamaño de la sección `## Faktory21 notes`: unos 1.500 tokens, para no inflar todos los prompts.
+   - En v2.0 los candidatos se acumulan en SQLite y se listan en `fak report`; el curator llega en v2.1.
 3. **Memoria de la organización**: el Evidence Registry (§12). **No** se inyecta en los prompts; sirve para decisiones de política.
 
 Sin base de datos vectorial ni RAG en v2: el coste y la opacidad no se justifican con issues de tamaño PR (**H-15**).
 
 ### 9.4 Trazabilidad
 
-Cada decisión registra `actor` (`coordinator`, `judge:<attempt>`, `human:<login>`), `rule` (R0…R10) o `rationale`, y las referencias a los findings y attempts. `ir trace <item>` reconstruye la línea temporal completa: qué vio cada agente (input.json), qué devolvió, qué decidió quién y con qué SHA. Los commits del implementador llevan los trailers `IR-Item: 42`, `IR-Attempt: <id>` e `IR-Role: implementer`.
+Cada decisión registra `actor` (`coordinator`, `judge:<attempt>`, `human:<login>`), `rule` (R0…R10) o `rationale`, y las referencias a los findings y attempts. `fak trace <item>` reconstruye la línea temporal completa: qué vio cada agente (input.json), qué devolvió, qué decidió quién y con qué SHA. Los commits del implementador llevan los trailers `Faktory21-Item: 42`, `Faktory21-Attempt: <id>` e `Faktory21-Role: implementer`.
 
 ### 9.5 Recuperación ante fallos
 
 | Fallo | Detección | Acción |
 |---|---|---|
-| Se cae el proceso `ir serve` | `flock` liberado; attempts con `lease_until` vencido y pid muerto | `ir serve` (o `ir recover`) arranca: los attempts `running` con pid muerto pasan a `lost` y se reintentan una vez (`infra_retries`). Si el pid vive, se adopta y se espera. |
+| Se cae el proceso `fak serve` | `flock` liberado; attempts con `lease_until` vencido y pid muerto | `fak serve` (o `fak recover`) arranca: los attempts `running` con pid muerto pasan a `lost` y se reintentan una vez (`infra_retries`). Si el pid vive, se adopta y se espera. |
 | Agente colgado | Sin escritura en stdout (stream-json) durante `hang_s`, o se supera `deadline_s` | SIGTERM y después SIGKILL; `lost`, reintento 1 |
 | Salida que no cumple el esquema | Validación | 1 reintento con el error; después FAILED_INFRA para ese paso |
 | Límite de cuota | `system/api_retry` con `rate_limit`, código de salida o patrón en **stderr del CLI**, nunca en el texto del modelo | WAITING_QUOTA para la línea de ese proveedor y modelo (§10). El ítem no consume contadores. |
 | Crash entre la llamada de merge y el registro | Al arrancar, se reconcilia el outbox | Si hay UUID guardado: `GET …/merge-async/{uuid}`. Si no: se repite `merge-async` con el mismo `sha` (409 devuelve el UUID pendiente; 200 significa ya fusionado). Después se comprueba con `GET …/merge` (204/404). Nunca se reintenta sin `sha`. |
 | Push incierto (timeout) | Outbox con el SHA previsto | `git ls-remote`: si coincide con el previsto, llegó; si sigue el anterior, se repite con lease; si hay otro, conflicto y AWAITING_HUMAN |
-| Comentario o etiqueta inciertos | Outbox | Se lista y se busca el marcador `<!-- ir:item=…:kind=… -->`; se edita el existente o se crea. Las etiquetas son idempotentes |
+| Comentario o etiqueta inciertos | Outbox | Se lista y se busca el marcador `<!-- faktory21:item=…:kind=… -->`; se edita el existente o se crea. Las etiquetas son idempotentes |
 | Resultado tardío de un attempt detenido o de un SHA antiguo | `attempt_id` o `head_sha` distinto del actual | Se descarta y se registra (I17) |
 | Alguien hace push a la rama | `head_sha` remoto ≠ el registrado | Nuevo Candidate `external`; se invalidan las revisiones; vuelta a VALIDATING |
 | PR cerrado o issue cerrada por un humano | Polling | ABANDONED o CLOSED_EXTERNALLY (sin borrar ramas) |
-| Se pierde el host | Draft PR más rama remota más spec en la issue | En un host nuevo, `ir adopt <repo>` reconstruye los ítems desde las marcas de GitHub (resume-check de v1). Se pierden el historial de clusters y el ledger salvo que haya copia: backup diario de `ir.db` con `sqlite3 .backup` en un almacenamiento externo. |
+| Se pierde el host | Draft PR más rama remota más spec en la issue | En un host nuevo, `fak adopt <repo>` reconstruye los ítems desde las marcas de GitHub (resume-check de v1). Se pierden el historial de clusters y el ledger salvo que haya copia: backup diario de `ir.db` con `sqlite3 .backup` en un almacenamiento externo. |
 | Disco lleno | Error de escritura | PAUSED_OPERATOR global; se limpian worktrees de ítems DONE |
 | Lectura de GitHub o de git fallida | Error de API o de proceso | **Nunca se interpreta como ausencia** (I8): el paso se reintenta con backoff y después va a FAILED_INFRA. Nunca se crea un PR o una rama "porque no se encontró" |
 
 **Estrategia de pruebas de la recuperación [P; `research-log.md` §4].**
 
 - La state machine es pura y testeable sin red.
-- Se añade un arnés de **fallos inyectados**: en cada frontera (antes y después del commit SQLite, antes y después de cada efecto del outbox, durante cada attempt) se mata el proceso y se comprueba que `ir recover` llega al mismo estado final sin duplicar efectos en un GitHub falso.
+- Se añade un arnés de **fallos inyectados**: en cada frontera (antes y después del commit SQLite, antes y después de cada efecto del outbox, durante cada attempt) se mata el proceso y se comprueba que `fak recover` llega al mismo estado final sin duplicar efectos en un GitHub falso.
 - El GitHub falso extiende el stub de `gh` de v1 con un *bare origin* real.
 - Es la parte que suele fallar en una máquina de estados hecha a mano, y por eso su coste está en F1 y F6.
 
@@ -1276,7 +1276,7 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
 
 - **[A, Q11] Siempre se usan los planes**, por rentabilidad: suscripción de Claude para todos los roles Claude, y plan de ChatGPT para Codex Reviewer y Codex Fixer.
 - **Codex con el plan de ChatGPT, en la práctica:**
-  - `codex login` se hace una sola vez en el host. `auth.json` vive en `$IR_CODEX_HOME`, con permisos 0600 y propietario el usuario `ir`, y se trata como una contraseña.
+  - `codex login` se hace una sola vez en el host. `auth.json` vive en `$FAK_CODEX_HOME`, con permisos 0600 y propietario el usuario `fak`, y se trata como una contraseña.
   - El host es persistente, así que el refresco automático del token se conserva entre ejecuciones. OpenAI documenta este modo como "advanced" y solo para repos privados [F]; nuestros repos son privados.
   - `CODEX_API_KEY` y `OPENAI_API_KEY` se eliminan siempre del entorno, porque no está documentado qué credencial gana si coexisten (F0, prueba 5).
   - `--ignore-user-config` no afecta a la autenticación, que sigue leyendo `CODEX_HOME` [F].
@@ -1312,8 +1312,8 @@ Cada `ledger` guarda por attempt: `provider`, `model`, `billing_line` (`claude_s
 
 ## 11. Observabilidad
 
-- **`ir status`**: tabla de ítems (estado, ronda, clusters abiertos, esperando a quién o a qué, coste de referencia y estado de cada línea de cuota).
-- **`ir report --since 7d`**: Markdown con resultados por ítem, tiempos de ciclo, rondas, distribución de clusters por revisor y clase, *unique catches* por familia, coste en las tres contabilidades, eventos de límite, `knowledge_candidates` pendientes y follow-ups DEFER (para que un humano decida: la regla de v1 se mantiene).
+- **`fak status`**: tabla de ítems (estado, ronda, clusters abiertos, esperando a quién o a qué, coste de referencia y estado de cada línea de cuota).
+- **`fak report --since 7d`**: Markdown con resultados por ítem, tiempos de ciclo, rondas, distribución de clusters por revisor y clase, *unique catches* por familia, coste en las tres contabilidades, eventos de límite, `knowledge_candidates` pendientes y follow-ups DEFER (para que un humano decida: la regla de v1 se mantiene).
 - **Tarjeta de estado en el PR** y etiquetas en la issue.
 - **Notificaciones**: en v2.0, una mención a `owners` (de `policy.yml`) en el comentario cuando un ítem entra en AWAITING_*. En v2.1, correo o Slack.
 - **Logs**: `events` en SQLite más `artifacts/` (`stdout.jsonl` íntegro de cada agente).
@@ -1393,8 +1393,8 @@ Ejemplos:
 ### 12.4 Reglas de higiene
 
 - Ningún cambio de valores por defecto sin un claim en estado `supported`, o una decisión humana explícita registrada como tal ("decisión sin evidencia"). Se permiten, pero quedan marcadas.
-- **[A, Q8] Repo privado central de evidencia**, separado de los repos de proyecto (nombre por decidir con el cambio de marca).
-  - Cada runner, que es local a cada desarrollador, exporta cada semana con `ir evidence push` un JSONL/CSV **sin código**: métricas, metadatos de hallazgos (ruta, categoría, revisor, desenlace), hipótesis y decisiones.
+- **[A, Q8] Repo privado central de evidencia**, separado de los repos de proyecto (nombre propuesto: `faktory21-evidence`).
+  - Cada runner, que es local a cada desarrollador, exporta cada semana con `fak evidence push` un JSONL/CSV **sin código**: métricas, metadatos de hallazgos (ruta, categoría, revisor, desenlace), hipótesis y decisiones.
   - Así la evidencia sobrevive al portátil y se agrega entre proyectos y personas.
   - Las decisiones de política, como el paso de `shadow` a `enforcing` o el cambio de modelo, se toman con los datos agregados y se registran ahí con su revisión humana.
   - No va en los repos de proyecto: mezclaría el proceso con el producto, expondría datos internos en repos de clientes y daría muestras demasiado pequeñas.
@@ -1403,13 +1403,13 @@ Ejemplos:
 
 ## 13. Modelo de confianza y seguridad
 
-- **Autores de issues de confianza** (se hereda de v1). El runner solo procesa repos privados de la organización o issues con `ir:ai-ready` puesto por un actor verificado. Una issue escrita por alguien externo nunca llega a READY sin pasar por PREPARING y por la aprobación humana.
+- **Autores de issues de confianza** (se hereda de v1). El runner solo procesa repos privados de la organización o issues con `faktory21:ai-ready` puesto por un actor verificado. Una issue escrita por alguien externo nunca llega a READY sin pasar por PREPARING y por la aprobación humana.
 - **Inyección de prompts**: ningún agente tiene credenciales de GitHub ni red general. La escritura externa la hace el coordinator, que solo ejecuta acciones de un catálogo cerrado (push de la rama del ítem, comentario con marcador, etiqueta `ir:*`, status, merge con puertas). Un agente comprometido puede, como mucho, producir un candidato malo, que pasa por las revisiones y las puertas.
 - La herramienta oficial de security review declara que **no está endurecida frente a inyección** [F]. Por eso su veredicto nunca es la única barrera: R2 es fail-closed con riesgo high, y hay rutas protegidas y aprobación humana para riesgo high.
 - **Los `repro` aportados por agentes son código no fiable.** Se ejecutan solo con el runner de tests del contrato de la base, en un worktree desechable, sin red, sin credenciales y con timeout.
 - **El texto no fiable nunca pasa por una shell** (I25): todo se invoca con listas de argumentos.
 - **Repos públicos o de visibilidad desconocida**: los hallazgos de seguridad no se publican en comentarios; van a la tarjeta privada (el CLI) y se avisa a `owners`.
-- **Secretos**: tokens en un almacén del sistema (por ejemplo, `systemd-creds` o un fichero 0600 del usuario `ir`), inyectados solo en el proceso que los necesita.
+- **Secretos**: tokens en un almacén del sistema (por ejemplo, `systemd-creds` o un fichero 0600 del usuario `fak`), inyectados solo en el proceso que los necesita.
 
 ---
 
@@ -1434,7 +1434,7 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | # | Situación | Riesgo | Resolución |
 |---|---|---|---|
 | D1 | Codex sin cuota indefinidamente | Ítems parados para siempre | Espera máxima de 12 h y después AWAITING_HUMAN con dos opciones: esperar o degradar con la marca `reduced_independence` (prohibido en riesgo high) |
-| D2 | El Judge pide un humano y nadie responde | Dependientes del DAG bloqueados | Un estado AWAITING_HUMAN visible, con recordatorio a las 24 h y 72 h. Los ítems independientes siguen. Opción `/ir abandon`. |
+| D2 | El Judge pide un humano y nadie responde | Dependientes del DAG bloqueados | Un estado AWAITING_HUMAN visible, con recordatorio a las 24 h y 72 h. Los ítems independientes siguen. Opción `/faktory21 abandon`. |
 | D3 | Disputa repetida entre el implementador y el revisor sobre el mismo cluster | Bucle | La segunda disputa equivalente, tras una decisión del Judge, es estancamiento (§6.4) y no vuelve al Judge |
 | D4 | El Judge elige `codex_fix` con el contador agotado | Elección imposible | El código rechaza la elección y la trata como `human` (§7.5) |
 | D5 | El Opus Reviewer rechaza el fix de Codex y Sonnet ya había agotado sus rondas | Sin salida automática | Hay **una** ronda de Sonnet reservada para después del Fixer, aparte de `impl_rounds`. Si falla, AWAITING_HUMAN. |
@@ -1443,9 +1443,9 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | D8 | La especificación cambia durante la implementación | Trabajo sobre una spec obsoleta | PAUSED_SPEC_DRIFT, y un humano elige |
 | D9 | El candidato toca rutas protegidas de forma legítima (por ejemplo, la issue pide modificar CI) | Ningún revisor puede ejecutarse | AWAITING_HUMAN **antes** de revisar. Tras la aprobación, revisión con `--setting-sources user` (**H-2**). Si el flag no existe, la revisión se hace sobre una copia saneada con el plano de control de la base más el diff de control como texto. |
 | D10 | Un revisor falla siempre (salida inválida) | La puerta de cobertura nunca se cumple | `infra_retries`, y después FAILED_INFRA para ese paso, que va a un humano con la opción de *waive* del revisor para ese ítem (Authorization registrada; prohibida para Security con riesgo ≥ medium) |
-| D11 | AWAITING_APPROVAL sin aprobador | Cola parada | No es un bloqueo: es la cola visible en `ir status`. Política opcional `auto_ready: [low]`. |
+| D11 | AWAITING_APPROVAL sin aprobador | Cola parada | No es un bloqueo: es la cola visible en `fak status`. Política opcional `auto_ready: [low]`. |
 | D12 | El implementador devuelve `completed` sin commits | Ronda vacía | Hallazgo determinista `no_changes`, que consume ronda. A la segunda vez, estancamiento. |
-| D14 | Dos usuarios ejecutan el runner sobre el mismo repo, cada uno con su base de datos | Doble trabajo sobre la misma issue, o dos PR | Reclamo en GitHub (asignación, `ir:in-progress` y comentario marcador) antes de IMPLEMENTING; los demás runners lo respetan. Un reclamo inactivo más de 24 h lo libera un humano con `/ir release`, nunca de forma automática |
+| D14 | Dos usuarios ejecutan el runner sobre el mismo repo, cada uno con su base de datos | Doble trabajo sobre la misma issue, o dos PR | Reclamo en GitHub (asignación, `faktory21:in-progress` y comentario marcador) antes de IMPLEMENTING; los demás runners lo respetan. Un reclamo inactivo más de 24 h lo libera un humano con `/faktory21 release`, nunca de forma automática |
 | D15 | La política exige aprobación humana pero el repo también exige una review de GitHub, y el único humano disponible es el autor del PR | AWAITING_MERGE_APPROVAL sin fin | No es un bloqueo oculto: la tarjeta indica "falta una review de otra persona" y se avisa a los `owners`. Es una regla del repo, no del runner |
 | D13 | Varios ítems en paralelo agotan juntos la cuota de Opus | Preparaciones nuevas dejan sin Judge a los ítems en curso | Reserva del 25 % para Judge y Opus Reviewer (§10.3), y prioridad del Scheduler: los ítems más avanzados primero |
 
@@ -1458,7 +1458,7 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 5. **"Opus solo cuando hace falta juicio" frente a Security Review con Opus en riesgo medium.** Security Review es un revisor de [A], no el Coordinator, y elegir su modelo es una propuesta medible (**H-6**). Si el usuario prefiere Sonnet siempre, el diseño no cambia.
 6. **Una verificación independiente que no añade otro LLM en riesgo low o medium.** Se puede objetar que "verificación independiente" pide un agente. Mi postura: la independencia la aportan las puertas deterministas ligadas al SHA y la invariante de cobertura; el Opus final solo aporta valor en riesgo high (**H-10**). Si la otra propuesta usa un verificador LLM siempre, la diferencia es medible.
 7. **"Aprovechar la cuota Anthropic" frente a las Consumer Terms.** Es una tensión real, no resuelta en el diseño (§17 Q1).
-8. **Merge automático frente a riesgo.** Si `auto_merge.low` está activo y la preparación clasifica mal el riesgo, se fusionaría sin humano. Mitigación: el riesgo solo sube de forma automática, las reglas de ruta lo elevan y la etiqueta `ir:ai-ready` es humana por defecto, así que un humano vio la clasificación.
+8. **Merge automático frente a riesgo.** Si `auto_merge.low` está activo y la preparación clasifica mal el riesgo, se fusionaría sin humano. Mitigación: el riesgo solo sube de forma automática, las reglas de ruta lo elevan y la etiqueta `faktory21:ai-ready` es humana por defecto, así que un humano vio la clasificación.
 9. **Seguridad fail-closed frente a objeciones falsas** (contradicción nueva de la revisión 2). La revisión 1 bloqueaba ante cualquier hallazgo de seguridad `major`. Pero la evidencia muestra que los revisores LLM rechazan código correcto con frecuencia, y más cuando se les pide explicar y arreglar. Bloquear sin evidencia empuja a Sonnet a "arreglar" código correcto (Jin y Chen; Xiang et al.).
    - **Resolución**: fail-closed solo con riesgo high, o con evidencia concreta y confianza media o mayor. En los demás casos, VERIFY: el Judge debe aportar un escenario de explotación.
    - **Riesgo residual aceptado**: una vulnerabilidad real descrita solo con razonamiento estático, en riesgo bajo o medio, depende del Judge. Se mide en el Registry (escapes de seguridad por clase de riesgo).
@@ -1474,16 +1474,16 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 
 **Incluido**:
 
-- CLI `ir` en Python 3.12 + `jsonschema`, SQLite y outbox.
+- CLI `fak` en Python 3.12 + `jsonschema`, SQLite y outbox.
 - Un repo por configuración, `max_parallel = 1`, DAG respetado.
-- TRIAGE con lint AI-Ready; PREPARING con Opus; aprobación con la etiqueta `ir:ai-ready` verificada.
+- TRIAGE con lint AI-Ready; PREPARING con Opus; aprobación con la etiqueta `faktory21:ai-ready` verificada.
 - Implementer Sonnet; Validator (contrato de v1); draft PR; tarjeta de estado.
 - Tres revisores en paralelo, más espera de CI.
 - Review Coordinator completo (§6), Judge en modo `adjudicate`, bucle de corrección, detector de estancamiento. En v2.0, **STALLED solo sale a `respecify` o a `human`**.
 - Puertas de §5.11 y merge serializado; merge automático solo para riesgo low (configurable a ninguno).
 - Las tres contabilidades, el ritmo por `rate_limit` (pausa y reanudación) y los disyuntores.
-- Evidence Registry en modo observacional (§12.1) e `ir report`.
-- Recuperación: `ir recover`, reconciliación del outbox y backup de `ir.db`.
+- Evidence Registry en modo observacional (§12.1) e `fak report`.
+- Recuperación: `fak recover`, reconciliación del outbox y backup de `ir.db`.
 - Rutas protegidas y el entorno `env -i`.
 
 **Excluido**: lo que lista §16.
@@ -1493,13 +1493,13 @@ Las esperas (WAITING_QUOTA, WAITING_BASE, AWAITING_*) no consumen contadores, pe
 | Fase | Entregable | Criterio de aceptación | Esfuerzo orientativo |
 |---|---|---|---|
 | F0 | *Spike* de verificación: **las 10 pruebas locales** de `research-log.md` §3 (autenticación OAuth sin API key y aislamiento sin `--bare`; fallos de esquema en Claude y en Codex; señales y códigos de salida; precedencia de credenciales en Codex; aprobaciones en `exec`; qué carga Codex de un repo; bloqueo real de escritura en revisores; heartbeat y `rate_limit_event`; uso al reanudar), más H-1, H-2 y H-16 y las preguntas Q1, Q2, Q5, Q10 y Q11 | Documento con las salidas reales, ejecutado contra un repo *sandbox* desechable y nunca contra repos de producto | 2–3 días |
-| F1 | Núcleo: esquema SQLite, state machine pura, outbox, **fencing tokens, snapshot de evaluación y RuntimeResultEnvelope**, GitHub Gateway (solo lectura y etiquetas), `ir status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
+| F1 | Núcleo: esquema SQLite, state machine pura, outbox, **fencing tokens, snapshot de evaluación y RuntimeResultEnvelope**, GitHub Gateway (solo lectura y etiquetas), `fak status`. **Portar los fixtures de v1** (`test-scheduler`, `test-classify`, `test-resume-check`, `test-run-state`) y el GitHub falso (stub de `gh` y *bare origin*) | La state machine pasa los escenarios portados de `docs/scenarios.md` que apliquen, las invariantes I1–I14 como tests y los nuevos D1–D13. **Arnés de fallos inyectados** en cada frontera de estado | 5–6 días |
 | F2 | Agent Runner: contratos, perfiles de permisos, `env -i`, validación de esquemas, ledger, timeouts y detección de cuelgue, detección de `rate_limit` | Ejecuciones simuladas (un *fake* `claude`/`codex` que emite JSON grabado) cubren éxito, esquema inválido, cuelgue y límite | 3–4 días |
-| F3 | Implementación y validación: worktrees, Implementer, Validator (incluidas las líneas `Verify:` y la receta `verification`), **pasada estática A1 (linters, semgrep, ast-grep, gitleaks, osv-scanner) y oráculo de tests A6**, **`ir doctor` en sus dos niveles**, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
+| F3 | Implementación y validación: worktrees, Implementer, Validator (incluidas las líneas `Verify:` y la receta `verification`), **pasada estática A1 (linters, semgrep, ast-grep, gitleaks, osv-scanner) y oráculo de tests A6**, **`fak doctor` en sus dos niveles**, push y draft PR, comprobación de rutas protegidas | Una issue de prueba en un repo *sandbox* llega a draft PR con validación en verde | 3 días |
 | F4 | Revisiones y coordinación: tres revisores (Codex solo P0/P1, alcance y reglas por ruta), **filtro barato A2, aprendizajes A3, modo sombra A5, taxonomía A8, revisión incremental A15**, Coordinator (tests de tabla para R0–R10 y R1b, clustering, cobertura, **ciclo de vida de clusters**), **manifiesto de validación transitivo y detector de debilitamiento de tests**, **filtro contrafactual de `repro`**, test de reproducción para bugs, Judge con evidencia, bucle de corrección, estancamiento | Tests de tabla de §6 en verde. En el repo *sandbox*: un defecto plantado se detecta y se corrige, **y una objeción falsa plantada en código correcto queda `refuted` o descartada sin que Sonnet toque el código** | 6–7 días |
-| F5 | Preparación y aprobación: lint AI-Ready (con `Verify:` por criterio), `ir doctor --init`, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
-| F6 | Merge y verificación: **tarjeta de aprobación, límites de PR esperando a un humano y de tamaño (A10), muestreo de merges automáticos (A14)**, Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `issue-runner/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
-| F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `ir report`, captura de evidencia, **métricas de hallazgos atendidos por revisor y categoría (A12), propuestas de reglas a partir de hallazgos repetidos (A4)** | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
+| F5 | Preparación y aprobación: lint AI-Ready (con `Verify:` por criterio), `fak doctor --init`, Preparer, preguntas y respuestas, SpecSnapshot y drift | Una issue vaga pasa a pregunta, la respuesta da una spec y la aprobación pasa a READY | 3 días |
+| F6 | Merge y verificación: **tarjeta de aprobación, límites de PR esperando a un humano y de tamaño (A10), muestreo de merges automáticos (A14)**, Gateway sobre `gh` con el token del usuario, reclamo de issues entre usuarios, commit status `faktory21/gate` requerido en el ruleset, lock, refresco (orden I21), puertas, `merge-async` con `sha` y UUID en el outbox, push con lease, prueba de merge (I10, I22), devolución a draft (I18), limpieza | Escenarios de crash entre merge y registro, push incierto, base en rojo, push externo y resultado tardío de un SHA antiguo, todos con fallos inyectados | 4 días |
+| F7 | Cuotas e informes: ventanas, admisión, reserva de Opus, `fak report`, captura de evidencia, **métricas de hallazgos atendidos por revisor y categoría (A12), propuestas de reglas a partir de hallazgos repetidos (A4)** | El informe semanal sale de datos reales del *sandbox* | 2–3 días |
 | F8 | Piloto: 10–20 issues reales de riesgo low en un repo de DOMO21, sin merge automático (`auto_merge: none`) | Métricas base en el Registry: tasa de éxito sin humano, rondas, tasa de `rejected_by_judge`, coste de referencia por ítem | 2 semanas de calendario |
 
 Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistencia de agentes (la revisión 2 añade F0 ampliado, fallos inyectados y el filtro contrafactual). **[H]**: es una estimación sin datos de velocidad del equipo.
@@ -1550,30 +1550,30 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 
 ## 17. Preguntas pendientes para el usuario
 
-1. **Q1. Resuelta [A]: independiente del plan.** El runner solo exige que `claude`, `codex` y `gh` estén autenticados donde se ejecuta; `ir doctor` lo comprueba. Vale Max individual o asientos Team; lo habitual será Team.
+1. **Q1. Resuelta [A]: independiente del plan.** El runner solo exige que `claude`, `codex` y `gh` estén autenticados donde se ejecuta; `fak doctor` lo comprueba. Vale Max individual o asientos Team; lo habitual será Team.
    - Nota de condiciones de uso: el uso propio con el plan propio encaja. Un servicio compartido de empresa encaja mejor con Team o Enterprise.
    - El runner mide la cuota de quien lo ejecuta.
 2. **Q2. Resuelta [A]: cualquier host.** Normalmente el portátil del desarrollador. Requisitos y efectos en §8.4.
 3. **Q3. Resuelta [A]: autonomía alta y progresiva.** El objetivo es eliminar el cuello de botella humano sin perder fiabilidad. Niveles L1–L3 por repo, que se ganan con evidencia, más vigilancia tras el merge y revert automático (§5.11).
-4. **Q4. Resuelta [A]: los repos en los que trabaja actualmente el usuario.** Cada uno se incorpora con `ir doctor --init`, que detecta CI, tests, protección de rama y si despliega a producción; esto fija el nivel máximo de autonomía del repo.
+4. **Q4. Resuelta [A]: los repos en los que trabaja actualmente el usuario.** Cada uno se incorpora con `fak doctor --init`, que detecta CI, tests, protección de rama y si despliega a producción; esto fija el nivel máximo de autonomía del repo.
 5. **Q5. Resuelta [A]: independiente del plan**, como Q1.
-6. **Q6. Resuelta [A]:** la preparación reescribe el cuerpo de la issue con el formato AI-Ready y conserva el texto original (`issue-runner-v2-preparacion.md`).
+6. **Q6. Resuelta [A]:** la preparación reescribe el cuerpo de la issue con el formato AI-Ready y conserva el texto original (`faktory21-preparacion.md`).
 7. **Q7. Resuelta [A]: Python.**
-8. **Q8. Resuelta [A]: repo privado central de evidencia**, separado de los proyectos, que reúne la de todos los repos y desarrolladores. El nombre se decidirá con el cambio de marca. Cada runner exporta un resumen semanal con `ir evidence push`, sin código: solo métricas y metadatos. Ver §12.4.
-16. **Nombre del producto [Q].** Pendiente de cambio de marca; "Issue Runner" e `ir` son provisionales.
+8. **Q8. Resuelta [A]: repo privado central de evidencia**, separado de los proyectos, que reúne la de todos los repos y desarrolladores. El nombre se decidirá con el cambio de marca. Cada runner exporta un resumen semanal con `fak evidence push`, sin código: solo métricas y metadatos. Ver §12.4.
+16. **Nombre del producto [A].** Faktory21, comando `fak`, nombre largo en todo lo visible en GitHub.
 9. **Q9. Resuelta [A]: Codex con `gpt-6.1-sol`** (configurable) para el revisor y para el Fixer.
-   - **Herramientas al día:** `ir doctor` compara las versiones instaladas de `claude` y `codex` con las últimas publicadas y comprueba que los modelos configurados aparecen en sus catálogos. Un CLI desactualizado puede no cargar modelos nuevos.
-   - `ir update` actualiza los CLI **solo entre ítems, nunca a mitad**. Una actualización cambia `environment_digest` e invalidaría las revisiones en curso (**H-25**).
-   - Tras actualizar, se vuelve a pasar `ir doctor --full`.
+   - **Herramientas al día:** `fak doctor` compara las versiones instaladas de `claude` y `codex` con las últimas publicadas y comprueba que los modelos configurados aparecen en sus catálogos. Un CLI desactualizado puede no cargar modelos nuevos.
+   - `fak update` actualiza los CLI **solo entre ítems, nunca a mitad**. Una actualización cambia `environment_digest` e invalidaría las revisiones en curso (**H-25**).
+   - Tras actualizar, se vuelve a pasar `fak doctor --full`.
 10. **Q10. Resuelta [A]: GitHub CLI siempre, con el token de cada usuario.**
     - Toda la interacción con GitHub va por `gh` (§5.11).
     - El runner usa los permisos del usuario que lo ejecuta. No hay cuenta de bot ni GitHub App.
-    - La aprobación del merge se registra con `ir approve` (§5.11).
+    - La aprobación del merge se registra con `fak approve` (§5.11).
 11. **Q11. Resuelta [A]: planes siempre, por rentabilidad.**
     - Codex usa el login del plan de ChatGPT (`codex login`, `auth.json`), igual que Claude usa la suscripción (§10.2).
     - Consecuencia para Q1: la línea de Claude es la suscripción. Lo único que queda abierto en Q1 es **qué plan y qué titular**, por la nota sobre los términos de uso.
 12. **Q12. Resuelta [A]: se permite el perfil solo-documentación** (§5.6). Si todos los ficheros cambiados son documentación, no se lanza Security Review.
-14. **Idioma [A].** Por defecto, **todo artefacto se escribe en inglés**: issues AI-Ready, PR, comentarios, tarjetas y commits, porque los consumen sobre todo agentes. Solo la interacción con el desarrollador (CLI, preguntas y resúmenes finales) puede ir en el idioma que pida cada usuario (`ir config language es`). Las cabeceras de la spec son siempre tokens en inglés.
+14. **Idioma [A].** Por defecto, **todo artefacto se escribe en inglés**: issues AI-Ready, PR, comentarios, tarjetas y commits, porque los consumen sobre todo agentes. Solo la interacción con el desarrollador (CLI, preguntas y resúmenes finales) puede ir en el idioma que pida cada usuario (`fak config language es`). Las cabeceras de la spec son siempre tokens en inglés.
 15. **CodeRabbit [A]:** no por ahora.
 13. **Q13. Resuelta [A]: solo GitHub.** No se usará GitLab, así que el Gateway no necesita una abstracción de forge (`gh` y `glab`) como la de `vela91/dev-harness`.
 

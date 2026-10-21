@@ -1,12 +1,12 @@
-# Cómo construye y revisa código la industria (octubre de 2026): lecciones para Issue Runner v2
+# Cómo construye y revisa código la industria (octubre de 2026): lecciones para Faktory21
 
-> **Nombre provisional.** "Issue Runner v2", "IR" y el comando `ir` son nombres de trabajo: habrá un cambio de marca y el nombre definitivo está pendiente. Se usan aquí solo como marcadores; los nombres de etiquetas (`ir:*`), comandos y ficheros se renombrarán de forma mecánica cuando se decida.
+> **Nombre.** El producto se llama **Faktory21** (decidido el 2026-10-21) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
 
 Fecha: 2026-10-19. Es un trabajo de investigación: no se ha hecho ningún experimento ni se ha contratado ningún servicio.
 
 El documento sintetiza siete investigaciones paralelas sobre fuentes primarias, con foco especial en **la revisión de código y en cómo se valida el merge final**.
 
-Se apoya en dos documentos: [`issue-runner-v2-spec.md`](issue-runner-v2-spec.md) (la implementación) y [`issue-runner-v2-preparacion.md`](issue-runner-v2-preparacion.md) (la preparación).
+Se apoya en dos documentos: [`faktory21-spec.md`](faktory21-spec.md) (la implementación) y [`faktory21-preparacion.md`](faktory21-preparacion.md) (la preparación).
 
 **Cómo leer las cifras.** Cada una va etiquetada así:
 

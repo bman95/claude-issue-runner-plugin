@@ -1,7 +1,7 @@
-# Issue Runner v2: registro de investigación
+# Faktory21: registro de investigación
 
 Fecha: 2026-10-19. Fase de investigación y diseño. No se ha ejecutado ningún experimento ni CLI, y no se ha hecho ninguna llamada a la API de GitHub que modifique algo.
-Complementa a [`issue-runner-v2-spec.md`](issue-runner-v2-spec.md). Los cambios que esta investigación provoca en la especificación están en §9.
+Complementa a [`faktory21-spec.md`](faktory21-spec.md). Los cambios que esta investigación provoca en la especificación están en §9.
 
 **Método.** Para cada fuente se registra:
 
@@ -42,7 +42,7 @@ Clave: **S** = la impone un script con test; **P** = solo está en prosa.
 | I4 | Las aristas de conflicto se serializan en un orden total (orden topológico, la primera issue en orden de alcance). | — | P, `dag.md:73-80` | Scheduler, ahora con test |
 | I5 | Un lock por repositorio. Un lock vivo se rechaza, nunca se borra. Toma de control de un lock obsoleto. **Defecto conocido**: la adquisición es *check-then-write* y no es atómica. | `8d923d3` | S, `run-state.sh` | `flock` + lease en SQLite (adquisición atómica) |
 | I6 | Rotar el estado nunca destruye el de una ejecución caída. | `8d923d3` | S | Como SQLite no se rota, solo queda archivar |
-| I7 | No duplicar PR. Hay tres sondas: rama `/issue-N-` (el guion final evita que `issue-7-` coincida con `issue-70-`), palabra de cierre sin ambigüedad fuera de bloques de código, y ramas huérfanas. Las listas se piden con `--limit 1000`. | Filas 7, 8, 22, 23 | S, `resume-check.sh` | `ir adopt` y reanudación |
+| I7 | No duplicar PR. Hay tres sondas: rama `/issue-N-` (el guion final evita que `issue-7-` coincida con `issue-70-`), palabra de cierre sin ambigüedad fuera de bloques de código, y ramas huérfanas. Las listas se piden con `--limit 1000`. | Filas 7, 8, 22, 23 | S, `resume-check.sh` | `fak adopt` y reanudación |
 | I8 | Una sonda que no ve el estado nunca devuelve "none": si falla, el ítem pasa a `blocked`. Así el bucle siempre tiene salida. | — | S | Reconciliación (un error de lectura nunca se toma por ausencia) |
 | I9 | Una rama huérfana se reanuda; nunca se lanza una ejecución nueva encima. `stale` se borra con `--force-with-lease=<tip>`. | — | S | Reconciliación |
 | I10 | **Prueba de merge**: `done` exige la issue CLOSED y un PR fusionado en la rama de prueba cuyo `headRefOid` sea igual a HEAD. CLOSED sin prueba es `closed-externally` (terminal, conserva la rama). Fusionado pero abierto pasa a un humano. Un error de consulta nunca equivale a "sin prueba". Nunca se consulta con `--head ""`. | Tres agujeros reales (`REFERENCE.md:40`) | S, `classify.sh:214-257` | Merger y reconciliación |
@@ -490,7 +490,7 @@ Material: markdown oficial de docs.github.com.
 
 ## 9. Cambios en la especificación derivados de esta investigación
 
-Aplicados en `issue-runner-v2-spec.md`; cada uno lleva su sección indicada:
+Aplicados en `faktory21-spec.md`; cada uno lleva su sección indicada:
 
 1. **§5.6 y §6**: evidencia ejecutable.
    - Campo `evidence_kind` (`test|input|trace|static`) y `repro` opcional en los hallazgos.
@@ -516,7 +516,7 @@ Aplicados en `issue-runner-v2-spec.md`; cada uno lleva su sección indicada:
 - **Q10: GitHub CLI siempre.**
   - Cada usuario ejecuta el runner con su propio token y sus permisos. No hay cuenta de bot ni GitHub App: el veredicto de §7 sobre la App queda descartado por decisión del usuario.
   - La puerta pasa a ser un commit status escrito con `gh`, con la limitación documentada de que cualquiera con push puede escribirlo.
-  - GitHub no deja que el autor apruebe su propio PR, así que la aprobación humana del merge se registra en el runner (`ir approve`).
+  - GitHub no deja que el autor apruebe su propio PR, así que la aprobación humana del merge se registra en el runner (`fak approve`).
   - Varios usuarios sobre el mismo repo se coordinan mediante un reclamo en GitHub.
 - **Q11: planes siempre.** Codex usa el login de ChatGPT en el host persistente, en el modo "advanced" documentado, solo con repos privados.
 - **Q12: se permite el perfil solo-documentación** (sin Security Review cuando todo el diff es documentación).
@@ -579,7 +579,7 @@ Se leyó como datos, sin cargar sus skills ni ejecutar nada.
 - stdin cerrado en `codex exec`.
 - Reintento ante "Base branch was modified".
 - `Verify:` por criterio, ejecutado por el Validator.
-- `ir doctor` en dos niveles, con `--init`.
+- `fak doctor` en dos niveles, con `--init`.
 - `merge_mode: request_only`.
 - Contrato de integración con `status`.
 
@@ -621,7 +621,7 @@ Se leyó como datos, sin cargar sus skills ni ejecutar nada.
 - **Deduplicación.** GitHub `ai-inference`/`action-genai-issue-dedup` comenta y no cierra [CLAIM]. CUPID [EXP].
 - **INVEST** (Wake, 2003). La Scrum Guide no define Definition of Ready.
 
-**Aplicado en `issue-runner-v2-preparacion.md`:**
+**Aplicado en `faktory21-preparacion.md`:**
 
 - Contrato de autosuficiencia.
 - Formato AI-Ready v2, que conserva los tokens de v1.

@@ -1,6 +1,6 @@
 # Metodologías de trabajo con agentes: qué absorber (GSD, Superpowers, Spec Kit, OpenSpec, BMAD)
 
-> Nombre provisional: "Issue Runner" e `ir` son nombres de trabajo; el producto se renombrará.
+> **Nombre.** El producto se llama **Faktory21** (decidido el 2026-10-21) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
 
 Fecha: 2026-10-21. Modo: investigación y diseño. No se instaló ni ejecutó nada de estos repos; se leyeron como datos.
 
@@ -42,7 +42,7 @@ El criterio final del resumen ("elegir uno según el problema y no combinarlos")
 | `converge`: spec frente a código (Spec Kit) | `acceptance[]` de Code Review más la puerta 5 de Verify |
 | Límite de uso a mitad de una wave (GSD #3095) | WAITING_QUOTA y reanudación |
 | Worktree aislado (Superpowers) | Lo crea el coordinador |
-| Contexto por rutas y resultado corto (GSD, Superpowers) | Sobre `ir.input.v1` con rutas y salida JSON por esquema |
+| Contexto por rutas y resultado corto (GSD, Superpowers) | Sobre `fak.input.v1` con rutas y salida JSON por esquema |
 
 ## 3. Propuestas B1–B12
 
@@ -78,7 +78,7 @@ Notación: **[P]** propuesta, **[H]** hipótesis que medir. La columna "coste" e
 
 **B4. Mapa del repo como contexto de confianza** [P/H; GSD `map-codebase`]
 
-- `ir doctor --init` (y luego `ir map`) genera `.issue-runner/codebase.md` con stack, arquitectura, estructura, convenciones, cómo se testea y zonas delicadas.
+- `fak doctor --init` (y luego `fak map`) genera `.faktory21/codebase.md` con stack, arquitectura, estructura, convenciones, cómo se testea y zonas delicadas.
 - Lo genera una ejecución de solo lectura y entra en el repo **mediante un PR que revisa una persona**. Así pasa a ser contexto de confianza, coherente con el contrato de autosuficiencia.
 - El fichero lleva el SHA del que se generó. El coordinador avisa cuando quedan obsoletos muchos de los ficheros que describe.
 - Lo usan el Planner, la lectura en frío y el implementador.
@@ -176,12 +176,12 @@ Amplía A13:
 
 ### Aislamiento frente a metodologías instaladas (corrección de seguridad)
 
-**B0. `IR_AGENT_HOME` sin plugins, skills ni hooks** [P; consecuencia de Superpowers]
+**B0. `FAK_AGENT_HOME` sin plugins, skills ni hooks** [P; consecuencia de Superpowers]
 
 - Superpowers se activa con un hook `SessionStart` que inyecta instrucciones "EXTREMELY_IMPORTANT" en cada sesión, y GSD usa hooks PreCompact y Stop.
 - Si un desarrollador los tiene instalados a nivel de usuario y nuestros agentes heredaran su `HOME`, `--setting-sources user` los cargaría y cambiaría el comportamiento de nuestros roles sin que lo viéramos.
-- El diseño ya usa `env -i HOME="$IR_AGENT_HOME"`. Falta hacerlo explícito:
-  - `ir doctor` comprueba que `$IR_AGENT_HOME/.claude` no tiene `plugins/`, `skills/`, `hooks` ni `settings.json` con hooks, y que `$IR_CODEX_HOME` no tiene configuración ni `AGENTS.md` global ajenos;
+- El diseño ya usa `env -i HOME="$FAK_AGENT_HOME"`. Falta hacerlo explícito:
+  - `fak doctor` comprueba que `$FAK_AGENT_HOME/.claude` no tiene `plugins/`, `skills/`, `hooks` ni `settings.json` con hooks, y que `$FAK_CODEX_HOME` no tiene configuración ni `AGENTS.md` global ajenos;
   - si encuentra algo, el runner no arranca.
 - Los ficheros de esas metodologías que vivan **en el repo** (`.planning/`, `docs/superpowers/`, `openspec/`) son contenido del repo:
   - el implementador puede leerlos, pero son datos, no instrucciones de rol;
@@ -206,13 +206,13 @@ Amplía A13:
 ## 5. Aplazado
 
 - **Specs vivas** (OpenSpec `archive`). Al fusionar, los criterios del slice se integran en `docs/specs/<dominio>.md` del repo mediante un PR. Útil para conservar el porqué de cada comportamiento, pero añade mantenimiento. Se reconsidera en v2.2 si las issues cerradas no bastan como historial.
-- **Ancho por tamaño** (*planning paths* de BMAD). `ir plan --quick` ya cubre lo trivial. Una vía "proyecto" (más de 20 sesiones, varios epics) queda fuera del alcance de v2.
+- **Ancho por tamaño** (*planning paths* de BMAD). `fak plan --quick` ya cubre lo trivial. Una vía "proyecto" (más de 20 sesiones, varios epics) queda fuera del alcance de v2.
 
 ## 6. Dónde caería cada propuesta si se aprueba
 
 | Propuesta | Documento y sección |
 |---|---|
-| B0 | Spec §8.2 y §8.4 (`ir doctor`), §13 |
+| B0 | Spec §8.2 y §8.4 (`fak doctor`), §13 |
 | B1, B2, B3 | Preparación §1.2 (formato), §4 (lint L17), §5 (lectura en frío) |
 | B4 | Preparación §2, spec §8.5; H-32 |
 | B5, B6 | Spec §5.4 y §7.3 (`completed_with_concerns`, `concerns[]`, `tdd_evidence[]`, `blocker.kind = architecture`) |

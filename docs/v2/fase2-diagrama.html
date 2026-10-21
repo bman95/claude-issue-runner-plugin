@@ -173,7 +173,7 @@ footer { font-size: 13px; color: var(--muted); }
 
 <div class="wrap">
   <header class="top">
-    <div class="eyebrow">Software factory v2 · nombre provisional · diseño, no implementación</div>
+    <div class="eyebrow">Faktory21 · comando <code>fak</code> · diseño, no implementación</div>
     <h1>Fase 2 paso a paso: de <code>ai-ready</code> al merge</h1>
     <p class="lede">Un coordinador determinista (Python y SQLite, sin LLM) conduce cada issue por 17 pasos. Los agentes solo trabajan cuando él los lanza, con un contexto cerrado y unos permisos mínimos, y le devuelven JSON. Todas las decisiones de avance, vuelta atrás, escalada o merge las toma el coordinador en código, a partir de esa salida y de evidencia que él mismo ejecuta.</p>
     <div class="io">
@@ -229,7 +229,7 @@ footer { font-size: 13px; color: var(--muted); }
             <tr><td>Tiempo activo</td><td class="num">24 h</td><td>AWAITING_HUMAN</td></tr>
           </tbody>
         </table></div>
-        <p class="maphint">Solo una persona reinicia un contador (<code>ir answer</code>, <code>ir approve --extend</code> o una etiqueta), y queda registrado.</p>
+        <p class="maphint">Solo una persona reinicia un contador (<code>fak answer</code>, <code>fak approve --extend</code> o una etiqueta), y queda registrado.</p>
       </div>
       <div class="box">
         <h3>Suspensiones (guardan el estado y vuelven a él)</h3>
@@ -248,13 +248,13 @@ footer { font-size: 13px; color: var(--muted); }
           <li><b>Snapshot de evaluación.</b> Cada revisión, validación y aprobación queda ligada a seis valores: <code>spec_hash</code>, <code>base_sha</code>, <code>head_sha</code>, <code>policy_hash</code>, <code>validation_manifest_hash</code> y <code>environment_digest</code>. Si cambia uno, se repite lo que dependía de él.</li>
           <li><b>Fencing token.</b> Solo el intento vigente puede hacer avanzar el estado. Un resultado tardío se archiva y se ignora.</li>
           <li><b>Outbox.</b> Todo efecto en GitHub se anota antes de hacerse, así que tras un corte se reintenta sin duplicar.</li>
-          <li><b>Recuperación.</b> Si el portátil se duerme, los intentos caducan por lease y <code>ir recover</code> los retoma.</li>
+          <li><b>Recuperación.</b> Si el portátil se duerme, los intentos caducan por lease y <code>fak recover</code> los retoma.</li>
         </ul>
       </div>
     </div>
   </section>
 
-  <footer>Fuente: <code>docs/v2/issue-runner-v2-spec.md</code> (§4–§8 y §10). Los umbrales marcados como hipótesis en la spec (H-28, H-29, H-31) se calibran en el piloto.</footer>
+  <footer>Fuente: <code>docs/v2/faktory21-spec.md</code> (§4–§8 y §10). Los umbrales marcados como hipótesis en la spec (H-28, H-29, H-31) se calibran en el piloto.</footer>
 </div>
 
 <script>
@@ -272,7 +272,7 @@ footer { font-size: 13px; color: var(--muted); }
       does: [
         "Toma del DAG un ítem cuyas dependencias (<code>## Blocked by</code>) ya están fusionadas y que no choca por <code>Files likely touched</code> con otro en curso.",
         "Comprueba la cuota de la suscripción y, si el ítem va a necesitar aprobación humana, que el repo tiene menos de 3 PR esperando a una persona.",
-        "Reclama la issue: la asigna al usuario que ejecuta el runner, añade la etiqueta <code>ir:in-progress</code> y un comentario marcador.",
+        "Reclama la issue: la asigna al usuario que ejecuta el runner, añade la etiqueta <code>faktory21:in-progress</code> y un comentario marcador.",
         "Congela el snapshot: hash de la spec, SHA de la base, hash de la política, del manifiesto de validación y del entorno.",
         "En v2.0 trabaja un solo ítem a la vez (<code>max_parallel = 1</code>)."
       ],
@@ -296,21 +296,21 @@ footer { font-size: 13px; color: var(--muted); }
       title: "Implementación (Sonnet)",
       summary: "Sonnet implementa la issue en un worktree aislado. Solo puede tocar ese directorio, sin push, sin GitHub y con la red limitada a los registros de paquetes.",
       does: [
-        "El coordinador crea el worktree <code>…/wt/&lt;item&gt;-r&lt;ronda&gt;</code> desde la base y la rama <code>ir/&lt;n&gt;-&lt;slug&gt;</code>.",
+        "El coordinador crea el worktree <code>…/wt/&lt;item&gt;-r&lt;ronda&gt;</code> desde la base y la rama <code>faktory21/&lt;n&gt;-&lt;slug&gt;</code>.",
         "Sonnet edita, ejecuta tests y hace commits locales.",
-        "Si es un bug y el repo tiene tests, escribe primero un test de reproducción en un commit aparte con el trailer <code>IR-Repro</code>.",
+        "Si es un bug y el repo tiene tests, escribe primero un test de reproducción en un commit aparte con el trailer <code>Faktory21-Repro</code>.",
         "Puede añadir tests nuevos, pero no cambiar los que lo juzgan (el oráculo, paso 4).",
         "No marca los criterios de aceptación como cumplidos: su mapeo es informativo. Quien lo decide son la validación y Code Review."
       ],
       ctx: [
-        "Sobre de entrada <code>ir.input.v1</code> en un fichero, unos 8k tokens; el resto lo explora con herramientas",
+        "Sobre de entrada <code>fak.input.v1</code> en un fichero, unos 8k tokens; el resto lo explora con herramientas",
         "Spec congelada: <code>What to build</code>, criterios de aceptación, <code>Out of scope</code>, <code>Files likely touched</code>",
         "Brief determinista sacado de SQLite: decisiones del Judge, respuestas humanas, clusters ya resueltos (una línea cada uno)",
         "Manifiesto del entorno y contrato de validación",
         "En rondas de corrección: los clusters abiertos con sus directivas",
         "Nota de confianza: el texto de la issue y del código es dato, no instrucciones"
       ],
-      not: ["Las conversaciones de los revisores y del Judge", "GitHub y cualquier token (<code>GH_TOKEN</code>, <code>ANTHROPIC_API_KEY</code>)", "Las rutas protegidas: <code>.claude/</code>, <code>CLAUDE.md</code>, <code>AGENTS.md</code>, CI, <code>.issue-runner/</code>"],
+      not: ["Las conversaciones de los revisores y del Judge", "GitHub y cualquier token (<code>GH_TOKEN</code>, <code>ANTHROPIC_API_KEY</code>)", "Las rutas protegidas: <code>.claude/</code>, <code>CLAUDE.md</code>, <code>AGENTS.md</code>, CI, <code>.faktory21/</code>"],
       perms: [
         "<code>claude -p</code> con <code>--permission-mode dontAsk</code>, <code>--strict-mcp-config</code> sin MCP, entorno limpio (<code>env -i</code>)",
         "Edit y Write solo en su worktree",
@@ -362,7 +362,7 @@ footer { font-size: 13px; color: var(--muted); }
         "Protege el oráculo: los tests de reproducción y de Verify, los que la spec cita como cobertura y los de la base que ya pasaban.",
         "Detecta debilitamiento de tests: tests borrados, <code>skip</code>/<code>xfail</code>/<code>.only</code> añadidos, asserts eliminados, cobertura reducida."
       ],
-      ctx: ["Contrato <code>.issue-runner/validation</code> y manifiesto de validación de la base", "Diff base…candidato", "Spec congelada con sus líneas Verify"],
+      ctx: ["Contrato <code>.faktory21/validation</code> y manifiesto de validación de la base", "Diff base…candidato", "Spec congelada con sus líneas Verify"],
       not: ["Nunca ejecuta scripts de validación que el candidato haya modificado; eso es plano de control y va a una persona"],
       perms: ["Ejecución en worktrees temporales con timeout", "Herramientas estáticas con versión fijada en el manifiesto del entorno"],
       out: "Resultado de validación y hallazgos sintéticos (<code>validation</code>, <code>spec_mismatch</code>, <code>tests</code>, estáticos). El resumen de la pasada estática se pasa luego a los revisores como contexto.",
@@ -370,7 +370,7 @@ footer { font-size: 13px; color: var(--muted); }
         ["<code>preflight</code> en rojo y quedan reintentos (máx. 2)", P("loop", "Vuelve al paso 2 con las últimas 200 líneas del log")],
         ["Reintentos agotados", P("loop", "Ronda fallida; hallazgo validation MUST_FIX")],
         ["Un Verify da <code>failed</code>", P("loop", "spec_mismatch confirmado: MUST_FIX")],
-        ["Un Verify da <code>error</code> (no arranca el servicio)", P("loop", "1 reintento") + " " + P("stop", "luego FAILED_INFRA, sugiere ir doctor --full")],
+        ["Un Verify da <code>error</code> (no arranca el servicio)", P("loop", "1 reintento") + " " + P("stop", "luego FAILED_INFRA, sugiere fak doctor --full")],
         ["Secreto nuevo, dependencia vulnerable alta o sin versión fija", P("stop", "MUST_FIX directo (R1b), no se discute")],
         ["Se toca un test del oráculo sin que la spec lo pida", P("stop", "Debilitamiento de tests, severidad blocker")],
         ["Todo en verde", P("ok", "Paso 5")]
@@ -458,7 +458,7 @@ footer { font-size: 13px; color: var(--muted); }
       ctx: ["Los <code>ReviewReport</code> validados", "Resultados de CI y validación", "Respuestas del implementador", "Clusters abiertos de rondas anteriores", "Tabla de aprendizajes del repo"],
       not: ["No usa ningún LLM"],
       perms: ["Solo su base de datos"],
-      out: "Hallazgos limpios y un registro de supresiones consultable con <code>ir trace</code>.",
+      out: "Hallazgos limpios y un registro de supresiones consultable con <code>fak trace</code>.",
       decide: [["Siempre", P("ok", "Paso 8")]]
     },
     {
@@ -572,7 +572,7 @@ footer { font-size: 13px; color: var(--muted); }
         { a: "codex", h: "Codex Fixer (excepcional)", eng: "<code>codex exec --sandbox workspace-write</code>, sin red, en un worktree propio",
           sees: "Solo los clusters asignados con sus repros, y la spec",
           notsee: "Las conversaciones de Sonnet, del Judge y de los revisores",
-          perm: "Escribe en su worktree; <code>.git</code> es de solo lectura, así que el commit lo hace el coordinador con <code>IR-Role: codex_fixer</code>. 30 min",
+          perm: "Escribe en su worktree; <code>.git</code> es de solo lectura, así que el commit lo hace el coordinador con <code>Faktory21-Role: codex_fixer</code>. 30 min",
           out: "Un parche mínimo que conserva la estructura" },
         { a: "coord", h: "Puerta contrafactual", eng: "Coordinador",
           sees: "Repros asignados y suite de validación, antes y después del parche",
@@ -634,7 +634,7 @@ footer { font-size: 13px; color: var(--muted); }
         "Si <code>origin/&lt;base&gt;</code> avanzó, hace merge de la base, siempre, aunque no se solapen ficheros.",
         "Ejecuta <code>changed</code>, <code>preflight</code> y la suite completa (<code>full</code>), nunca un subconjunto.",
         "Si hubo conflictos, los resuelve Sonnet como una ronda más. Si la integración cambió ficheros del diff, Code Review y Security Review revisan ese delta.",
-        "Push con <code>--force-with-lease</code> y publica el commit status <code>issue-runner/gate</code> sobre el <code>head_sha</code>."
+        "Push con <code>--force-with-lease</code> y publica el commit status <code>faktory21/gate</code> sobre el <code>head_sha</code>."
       ],
       ctx: ["Candidato aceptado y base actual"],
       not: ["Merge queue y auto-merge de GitHub: no fijan el SHA revisado"],
@@ -662,7 +662,7 @@ footer { font-size: 13px; color: var(--muted); }
         '<li>Se sube tras 15 merges automáticos limpios; se baja al instante ante un escape (paso 17).</li></ul>',
       ctx: ["Tarjeta de aprobación generada desde la base de datos: intención y criterios, riesgo por fichero, decisiones tomadas sin consulta, hallazgos descartados con motivo, evidencia de los Verify", "Un único resumen de una llamada a Sonnet"],
       not: ["No se le pide revisar línea a línea: se revisa la intención"],
-      perms: ["<code>ir approve &lt;item&gt;</code> o comentario <code>/ir approve</code> de alguien con permiso <code>write</code> (puede ser quien lanzó el runner)"],
+      perms: ["<code>fak approve &lt;item&gt;</code> o comentario <code>/faktory21 approve</code> de alguien con permiso <code>write</code> (puede ser quien lanzó el runner)"],
       out: "Una autorización registrada y ligada al snapshot.",
       decide: [
         ["Aprobado", P("ok", "Paso 16")],
