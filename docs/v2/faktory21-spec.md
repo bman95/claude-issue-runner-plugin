@@ -65,6 +65,8 @@ Cada cambio enlaza con la sección del registro de investigación que lo justifi
 | C6 Evidencia de la corrida de `almacen21` (19 de octubre) | Solo documentación | `research-log.md` §11; H-26 |
 | B4, B11 y las evaluaciones de presión de B12 | Aplazadas a v2.1 | §16 |
 
+**Cambio del 2026-10-22:** proyecciones legibles generadas desde SQLite (§9.1b), tras el análisis de BMAD-METHOD y del caso d0 de Vercel. SQLite sigue siendo la única fuente de verdad; se añade `fak export`.
+
 **Ideas adoptadas del diseño independiente Sol 6.1** (2026-10-19), cada una marcada en su sección:
 
 - Snapshot de evaluación con seis campos (§4.1, §5.11).
@@ -1263,6 +1265,26 @@ El JSON del modelo (`structured_output`) es solo el **payload** dentro del sobre
 Los secretos se redactan antes de guardar cualquier artefacto. El backup de `ir.db` y del directorio de artefactos se hace junto, y la restauración se comprueba con los hashes de los artefactos.
 
 Cada transición de estado es **una transacción** que inserta el evento y actualiza `work_items`. Las acciones externas (push, comentario, merge) se registran como `outbox` y se ejecutan después del commit. Se marcan como hechas al confirmar la respuesta de GitHub, con una clave de idempotencia (patrón *outbox*).
+
+### 9.1b Proyecciones legibles [P; 2026-10-22]
+
+SQLite es la única fuente de verdad del estado (§9.1): varios escritores a la vez (`fak serve`, `fak approve` desde otra terminal, `/faktory21 answer` desde GitHub, el mod leyendo cada pocos segundos), transición y `fencing_token` en la misma transacción (§4.1), recuperación tras crash con leases y outbox, y consultas transversales (`fak status` multi-repo, `fak report`, A4). Un almacén de ficheros Markdown con el estado en el *frontmatter*, como el de BMAD, no da ninguna de esas cuatro cosas; son los ficheros de estado de una línea que v1 descartó (§1.3).
+
+Lo que sí se toma de ese modelo es que el estado se pueda **leer sin SQL**. Para eso el coordinator mantiene **proyecciones**: vistas generadas desde la base, pensadas para quien las lee, que se pueden regenerar en cualquier momento y que **nadie edita a mano**.
+
+| Proyección | Para quién | Dónde | Cuándo se regenera |
+|---|---|---|---|
+| Dossier del ítem `artifacts/<repo>/<item>/item.md` | Personas y `fak attach`: spec congelada, decisiones con actor, clusters con su ciclo de vida, una fila por hallazgo con su disposición (ningún hallazgo desaparece sin fila) | `$FAK_HOME/artifacts/` | En cada transición del ítem |
+| Tarjeta de estado del PR (§9.2) | Colaboradores en GitHub | Comentario con marcador | En cada transición visible |
+| `fak show <N>` y `fak status`, con `--json` | Operador, skill `fak` y mod | Salida del CLI | Bajo demanda |
+| `fak export [--since]` a JSONL | Diff, archivo, auditoría externa y Evidence Registry | Fichero o stdout | Bajo demanda y en el resumen semanal |
+
+Reglas:
+
+- Las proyecciones las genera **código con una plantilla fija**, nunca un LLM: son una lectura del estado, no un resumen. Si una proyección y la base discrepan, manda la base y la proyección se regenera.
+- Todo cambio de estado que quiera una persona entra por un comando (`approve`, `answer`, `pause`, `abandon`) o por un comentario `/faktory21 …` verificado, para que la autorización lleve actor (§13; lección de v1, #83 y #84). Editar el dossier no tiene efecto.
+- Los *briefs* que reciben los agentes (§7.1) son también proyecciones: ficheros planos con nombres estables que el agente lee directamente, sin herramientas de consulta ni resúmenes intermedios. Es el patrón del agente d0 de Vercel (diciembre de 2025): sustituir quince herramientas por un sandbox con la capa semántica en ficheros YAML, Markdown y JSON dio 3,5× menos tiempo y un 37 % menos de tokens, con la advertencia de que solo funciona si los ficheros están bien estructurados y con nombres consistentes.
+- Lo que ya es Markdown sigue siendo la verdad en su sitio: la spec en el cuerpo de la issue (hash en `spec_snapshots`), `CLAUDE.md` y `AGENTS.md` (§9.3), los prompts de rol y los artefactos brutos de cada intento. SQLite guarda hashes y punteros, no copias.
 
 ### 9.2 GitHub como espejo público, no como fuente de verdad interna
 
