@@ -427,10 +427,11 @@ Una issue es **AI-Ready** cuando cumple las dos partes siguientes.
 
 - `## What to build` no vacío.
 - `## Acceptance criteria` con al menos un ítem en lista. Cada criterio recibe un identificador estable `AC-1…`.
-- **Cada criterio lleva una línea `Verify:`** [P; adoptado de `vela91/dev-harness`, decisión 6] con un chequeo ejecutable y su resultado esperado, de tres tipos:
+- **Cada criterio lleva una línea `Verify:`** [P; adoptado de `vela91/dev-harness`, decisión 6] con un chequeo ejecutable y su resultado esperado, de dos tipos:
   - `Verify (http): DELETE /api/tasks/999 → 404, body {"error":"task not found"}`
-  - `Verify (browser): <pasos> → <estado visible esperado>` (Playwright)
   - `Verify (cli): npm test → exit 0`
+
+  **Sin `Verify (browser)` [A, 2026-10-26].** No se levanta ningún navegador: consume demasiados recursos del portátil y limita cuántas issues se pueden llevar en paralelo. Un criterio de interfaz se expresa, si se puede, como `cli` con tests de componente que no necesitan navegador (por ejemplo, vitest con jsdom o Testing Library), y si no, como `inspection`. Se acepta la pérdida de garantía en los criterios visuales.
 
   Si un criterio no se puede verificar ejecutando algo, usa `Verify (inspection): <qué mirar y qué debe verse>`, y lo comprueba Code Review con evidencia. El tipo por defecto y **cómo se arranca el servicio son del repo**, no de la issue: bloque `verification` de `policy.yml` (`default_kind`, `start`, `ready`, `base_url`, `stop`).
 - `## Blocked by` presente, aunque diga "None".
@@ -520,9 +521,9 @@ El riesgo **solo puede subir de forma automática**. Las reglas de ruta de `poli
 - `full` se ejecuta una vez por candidato aceptado, en MERGE_PREP.
 - **Ejecución de las líneas `Verify:`** [P; adoptado de `vela91/dev-harness`]. Las ejecuta **el Validator, no un agente**.
   - Se arranca el servicio con la receta `verification` del repo, en un worktree temporal y con timeout.
-  - Se ejecuta cada `Verify (http|cli|browser)` del SpecSnapshot y se registra por criterio `passed|failed|error`, con la salida como evidencia.
+  - Se ejecuta cada `Verify (http|cli)` del SpecSnapshot y se registra por criterio `passed|failed|error`, con la salida como evidencia.
   - `failed` genera un hallazgo sintético `category: spec_mismatch`, `ev = confirmed`, que se convierte en MUST_FIX (R1).
-  - `error` (no arranca el servicio, falta Playwright) **no es un defecto del candidato**: se reintenta una vez y después va a FAILED_INFRA, con la sugerencia de ejecutar `fak doctor --full`.
+  - `error` (no arranca el servicio o falta una herramienta) **no es un defecto del candidato**: se reintenta una vez y después va a FAILED_INFRA, con la sugerencia de ejecutar `fak doctor --full`.
   - Las comprobaciones `inspection` las evalúa Code Review dentro de `acceptance[]`.
   - Así nadie improvisa la verificación al final: el criterio y cómo comprobarlo se decidieron juntos en la preparación, y el implementador sabe desde el principio contra qué se le mide.
 - **Pasada determinista de análisis (A1)** [P; `industria-revision.md` §3]. Se ejecuta tras el `preflight` en verde y antes de las revisiones LLM, sobre el diff entre base y candidato. Cada herramienta se declara en `policy.yml`, con su versión en el manifiesto del entorno:
@@ -680,7 +681,7 @@ ACCEPTED solo pasa a MERGING si **todas** las puertas son verdaderas para el `he
 2. `preflight` (y `full`, si existe) en verde sobre `head_sha` mezclado con la base actual.
 3. Las tres revisiones cubren `head_sha`, como revisión completa o delta.
 4. Ningún cluster en MUST_FIX, VERIFY ni NEEDS_HUMAN.
-5. Todos los criterios de aceptación pasan: los `Verify (http|cli|browser)` en `passed` en el Validator sobre `head_sha`, y los `inspection` en `met` en el `acceptance[]` del último Code Review. Un criterio `not_checked` o `error` bloquea.
+5. Todos los criterios de aceptación pasan: los `Verify (http|cli)` en `passed` en el Validator sobre `head_sha`, y los `inspection` en `met` en el `acceptance[]` del último Code Review. Un criterio `not_checked` o `error` bloquea.
 5b. Si el repo declara `status:` en su contrato de integración, devuelve `green` para `head_sha` (§5.12).
 6. Las rutas protegidas no han cambiado, o hay una Authorization humana.
 7. Si hubo Codex Fixer, existe la aprobación del Opus Reviewer sobre un SHA ancestro con delta revisado.
@@ -1686,6 +1687,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 12. **Q12. Resuelta [A]: se permite el perfil solo-documentación** (§5.6). Si todos los ficheros cambiados son documentación, no se lanza Security Review.
 14. **Idioma [A].** Por defecto, **todo artefacto se escribe en inglés**: issues AI-Ready, PR, comentarios, tarjetas y commits, porque los consumen sobre todo agentes. Solo la interacción con el desarrollador (CLI, preguntas y resúmenes finales) puede ir en el idioma que pida cada usuario (`fak config language es`). Las cabeceras de la spec son siempre tokens en inglés.
 15. **CodeRabbit [A]:** no por ahora.
+17. **Sin verificación con navegador [A, 2026-10-26].** No existe `Verify (browser)`. Los criterios de interfaz van como `cli` (tests de componente sin navegador) o como `inspection` (§5.1). Motivo: el coste en recursos locales limita el paralelismo.
 13. **Q13. Resuelta [A]: solo GitHub.** No se usará GitLab, así que el Gateway no necesita una abstracción de forge (`gh` y `glab`) como la de `vela91/dev-harness`.
 
 ---

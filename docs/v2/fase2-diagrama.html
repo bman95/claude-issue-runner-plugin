@@ -362,7 +362,7 @@ footer { font-size: 13px; color: var(--muted); }
       summary: "Se ejecutan los comandos de validación de la base, los criterios Verify y una pasada de herramientas estáticas. Aquí no decide ningún modelo.",
       does: [
         "Ejecuta <code>preflight</code> del contrato de validación de la <b>base</b>, nunca el del candidato, con timeout y salida guardada.",
-        "Ejecuta cada línea <code>Verify (http|cli|browser)</code> de la spec: arranca el servicio con la receta del repo en un worktree temporal y anota <code>passed | failed | error</code> por criterio.",
+        "Ejecuta cada línea <code>Verify (http|cli)</code> de la spec (no se levanta ningún navegador): arranca el servicio con la receta del repo en un worktree temporal y anota <code>passed | failed | error</code> por criterio.",
         "Pasada estática sobre el diff: linters del proyecto, <code>semgrep</code>/<code>opengrep</code>, reglas <code>ast-grep</code> de la base, <code>gitleaks</code> y <code>osv-scanner</code>, más dependencias sin versión fija.",
         "Protege el oráculo: los tests de reproducción y de Verify, los que la spec cita como cobertura y los de la base que ya pasaban.",
         "Detecta debilitamiento de tests: tests borrados, <code>skip</code>/<code>xfail</code>/<code>.only</code> añadidos, asserts eliminados, cobertura reducida.",

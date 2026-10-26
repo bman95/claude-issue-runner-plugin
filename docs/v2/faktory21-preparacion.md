@@ -123,7 +123,7 @@ Files likely touched: `src/api/tasks.ts`, `src/api/tasks.test.ts`
 |---|---|---|
 | `What to build` | Sí | |
 | `Context` | Sí (o `None` justificado) | Cada puntero a fichero, símbolo o línea **debe existir** en la base (lo comprueba el lint). Cada decisión cita su origen. Cada contenido externo se marca `From external doc …` con su fecha |
-| `Acceptance criteria` | Sí | Ids `AC-n`. Forma EARS (While / When / Where / If…then / The … shall) o Given/When/Then. **Cada criterio lleva su `Verify (http\|cli\|browser\|inspection)`** |
+| `Acceptance criteria` | Sí | Ids `AC-n`. Forma EARS (While / When / Where / If…then / The … shall) o Given/When/Then. **Cada criterio lleva su `Verify (http\|cli\|inspection)`**. No hay `browser` [A, 2026-10-26]: un criterio de interfaz va como `cli` con tests de componente sin navegador, o como `inspection` |
 | `Unchanged behavior` | Sí en `bug` y `refactor` | Protege contra regresiones. Se adapta del `bugfix.md` de Kiro |
 | `Constraints` | Si hay requisitos no funcionales | Rendimiento, seguridad, compatibilidad, i18n, accesibilidad o migraciones, **con umbral numérico y cómo se mide**. "Rápido" sin número no pasa el lint |
 | `Context`: `Produces` / `Consumes` [P; B2] | Si el slice tiene dependencias (`Blocked by`) o dependientes | El productor declara la firma exacta que expone (`Produces:`) y el consumidor la que usa (`Consumes (provided_by: #N):`). Lo comprueba L17 |
@@ -258,7 +258,7 @@ nunca se cierra de forma automática)
 |---|---|---|
 | L1 | Están las secciones obligatorias según `Kind`, con las cabeceras exactas | Lo arregla la plantilla del coordinator; si persiste, error interno |
 | L2 | Cada `AC-n` es único y tiene una línea `Verify (…)` de un tipo válido | Hallazgo bloqueante |
-| L3 | El tipo de `Verify` tiene receta `verification` en `policy.yml` de la base (`http`/`browser` necesitan `start`/`ready`) | Bloqueante: el repo necesita la receta, o el criterio se reformula. Nunca se inventa una receta (regla de dev-harness) |
+| L3 | El tipo de `Verify` tiene receta `verification` en `policy.yml` de la base (`http` necesita `start`/`ready`). `browser` no es un tipo válido | Bloqueante: el repo necesita la receta, o el criterio se reformula. Nunca se inventa una receta (regla de dev-harness) |
 | L4 | Forma del criterio: EARS (`^(While\|When\|Where\|If .* then\|The .* shall)`) o Given/When/Then | Aviso en `feature`/`bug`, bloqueante con riesgo alto. No se exige en `refactor`/`docs` |
 | L5 | Léxico vago sin número: "rápido", "robusto", "intuitivo", "fácil", "adecuado", "como se espera", "etc." (lista por idioma en `policy.yml`) | Bloqueante si aparece en un criterio o restricción; aviso en el resto |
 | L6 | Ningún `TODO`, `TBD`, `[NEEDS CLARIFICATION`, `???` ni supuesto pendiente | Bloqueante |
