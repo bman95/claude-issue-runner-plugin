@@ -1,6 +1,6 @@
-# Faktory21: especificación de diseño (DOMO21 / Sicma21)
+# Faktory 21: especificación de diseño (DOMO21 / Sicma21)
 
-> **Nombre.** El producto se llama **Faktory21** (decidido el 2026-10-21) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
+> **Nombre.** El producto se llama **Faktory 21** (decidido el 2026-10-21; grafía con espacio fijada el 2026-10-27; `faktory21` en ficheros e identificadores) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
 
 Estado: **propuesta de diseño, revisión 4** (2026-10-21), que incorpora la fase de investigación de [`research-log.md`](research-log.md). No hay código. Este documento se compara después con otro diseño independiente.
 Ámbito: de issue de GitHub a PR fusionado, con agentes Claude Code y Codex, para los repositorios de DOMO21/Sicma21.
@@ -1308,7 +1308,7 @@ Las respuestas humanas entran por comentarios `/faktory21 …` de actores con pe
 2. **Memoria del repositorio**: se reutilizan **CLAUDE.md y AGENTS.md** del repo, ya cargados por cada CLI, en lugar de inventar otro almacén.
    - Los agentes proponen `knowledge_candidates`.
    - Un paso semanal (o cada 10 ítems) agrupa las propuestas. Un **Opus curator** las filtra y abre **un PR** que modifica CLAUDE.md o AGENTS.md. Es ruta protegida, así que exige revisión humana.
-   - Tope de tamaño de la sección `## Faktory21 notes`: unos 1.500 tokens, para no inflar todos los prompts.
+   - Tope de tamaño de la sección `## Faktory 21 notes`: unos 1.500 tokens, para no inflar todos los prompts.
    - En v2.0 los candidatos se acumulan en SQLite y se listan en `fak report`; el curator llega en v2.1.
 3. **Memoria de la organización**: el Evidence Registry (§12). **No** se inyecta en los prompts; sirve para decisiones de política.
 
@@ -1672,7 +1672,7 @@ Total aproximado hasta el piloto: unas 6–7 semanas de una persona con asistenc
 6. **Q6. Resuelta [A]:** la preparación reescribe el cuerpo de la issue con el formato AI-Ready y conserva el texto original (`faktory21-preparacion.md`).
 7. **Q7. Resuelta [A]: Python.**
 8. **Q8. Resuelta [A]: repo privado central de evidencia**, separado de los proyectos, que reúne la de todos los repos y desarrolladores. El nombre se decidirá con el cambio de marca. Cada runner exporta un resumen semanal con `fak evidence push`, sin código: solo métricas y metadatos. Ver §12.4.
-16. **Nombre del producto [A].** Faktory21, comando `fak`, nombre largo en todo lo visible en GitHub.
+16. **Nombre del producto [A].** Faktory 21, comando `fak`, nombre largo en todo lo visible en GitHub.
 9. **Q9. Resuelta [A]: Codex con `gpt-6.1-sol`** (configurable) para el revisor y para el Fixer.
    - **Herramientas al día:** `fak doctor` compara las versiones instaladas de `claude` y `codex` con las últimas publicadas y comprueba que los modelos configurados aparecen en sus catálogos. Un CLI desactualizado puede no cargar modelos nuevos.
    - `fak update` actualiza los CLI **solo entre ítems, nunca a mitad**. Una actualización cambia `environment_digest` e invalidaría las revisiones en curso (**H-25**).

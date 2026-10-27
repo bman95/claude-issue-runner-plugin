@@ -1,6 +1,6 @@
-# Faktory21: fase de preparación (de la petición a la issue AI-Ready)
+# Faktory 21: fase de preparación (de la petición a la issue AI-Ready)
 
-> **Nombre.** El producto se llama **Faktory21** (decidido el 2026-10-21) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
+> **Nombre.** El producto se llama **Faktory 21** (decidido el 2026-10-21; grafía con espacio fijada el 2026-10-27; `faktory21` en ficheros e identificadores) y su comando es `fak`. En GitHub se usa siempre el nombre largo: etiquetas `faktory21:*`, commit status `faktory21/gate`, comandos de comentario `/faktory21 …`, ramas `faktory21/…` y trailers `Faktory21-*`. "Issue Runner" designa solo a la v1 (`claude-issue-runner-plugin`).
 
 Estado: **propuesta de diseño**, 2026-10-19. No hay código.
 

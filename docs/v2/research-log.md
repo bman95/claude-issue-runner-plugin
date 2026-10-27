@@ -1,4 +1,4 @@
-# Faktory21: registro de investigación
+# Faktory 21: registro de investigación
 
 Fecha: 2026-10-19. Fase de investigación y diseño. No se ha ejecutado ningún experimento ni CLI, y no se ha hecho ninguna llamada a la API de GitHub que modifique algo.
 Complementa a [`faktory21-spec.md`](faktory21-spec.md). Los cambios que esta investigación provoca en la especificación están en §9.
