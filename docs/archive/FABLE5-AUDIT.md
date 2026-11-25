@@ -56,7 +56,7 @@ Concrete issues:
 ## Hygiene
 
 - Clean tree apart from the three intentionally-modified skill files. No dead files, build artifacts, screenshots, or scratch content; 10 tracked files total.
-- **No secrets found.** Grep for keys/tokens/passwords returns only prose about Codex token spend. The author email `bfrias@sicma21.com` appears in `plugin.json` and `marketplace.json` — intentional public plugin metadata, but note it is a work address on a personal plugin.
+- **No secrets found.** Grep for keys/tokens/passwords returns only prose about Codex token spend. The author email `bryanfrias95@gmail.com` appears in `plugin.json` and `marketplace.json` — intentional public plugin metadata, but note it is a work address on a personal plugin.
 - Minor: the ineffective `/tmp/issue-runner/` gitignore entry (see above); `FABLE5-AUDIT.md` (this file) is the only untracked addition.
 
 ## Verdict

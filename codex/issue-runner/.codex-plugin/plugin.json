@@ -4,7 +4,7 @@
   "description": "Plan GitHub work as dependency-aware issues, then implement, review, and merge them with isolated Codex subagents.",
   "author": {
     "name": "Bryan Frias",
-    "email": "bfrias@sicma21.com",
+    "email": "bryanfrias95@gmail.com",
     "url": "https://github.com/bman95"
   },
   "homepage": "https://github.com/bman95/claude-issue-runner-plugin",

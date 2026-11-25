@@ -2,7 +2,7 @@
   "name": "bman95-plugins",
   "owner": {
     "name": "Bryan Frias",
-    "email": "bfrias@sicma21.com"
+    "email": "bryanfrias95@gmail.com"
   },
   "description": "Claude Code plugins by Bryan Frias.",
   "plugins": [
@@ -13,7 +13,7 @@
       "version": "0.15.0",
       "author": {
         "name": "Bryan Frias",
-        "email": "bfrias@sicma21.com"
+        "email": "bryanfrias95@gmail.com"
       },
       "category": "workflow",
       "tags": [
