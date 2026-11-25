@@ -5,6 +5,20 @@ A self-sufficient Codex and Claude Code plugin for the full agentic issue pipeli
 - **`/issue-plan`** turns an idea, plan, or spec into ready-to-run issues: it reconciles the scope with the repository's existing issues, PRs, earlier plans and design documents (covered, extend, depends, supersedes, conflict, or new — a conflict with a recorded decision goes to you before anything is published), asks only the questions the input needs, slices the work into tracer-bullet vertical slices, and publishes issues in the format the runner parses, under a tracking issue that keeps the input, the existing work it reconciled with, and the interview's decisions.
 - **`/issue-runner`** reads the issue queue, builds a dependency DAG, and dispatches each issue to an **autonomous implementer subagent** in an isolated worktree. Implementers spawn their own subagents — `Explore`/`Plan` helpers, fresh-eyes reviewers, delegated `general-purpose` chunks (helpers don't nest further) — then converge the PR through a Codex gate and merge it. Independent issues run in parallel up to a configurable cap; failures cascade-skip downstream dependents.
 
+```mermaid
+flowchart LR
+    idea([Idea, plan or spec]) --> plan["/issue-plan<br/>reconcile with existing work<br/>interview · vertical slices"]
+    plan --> issues[["Tracking issue<br/>+ one issue per slice"]]
+    issues --> runner["/issue-runner<br/>dependency DAG<br/>parallel dispatch"]
+    runner --> w1["Implementer #1<br/>isolated worktree"]
+    runner --> w2["Implementer #2<br/>isolated worktree"]
+    runner --> w3["Implementer #N<br/>isolated worktree"]
+    w1 & w2 & w3 --> review{"Fresh-eyes reviewers<br/>+ Codex gate"}
+    review --> merged([Merged PRs])
+    w1 & w2 & w3 -. blocker .-> runner
+    runner -. scope / risk decision .-> human([You])
+```
+
 Run-time doubts escalate up the chain: implementer → parent (resolves coordination/context blockers from run-wide knowledge, retrying on its own only while an issue's Step 4 re-dispatches stay under `--max-retries`) → human (scope, product-behavior, or risk decisions — and every blocker once an issue's retry cap is reached).
 
 ## Status
